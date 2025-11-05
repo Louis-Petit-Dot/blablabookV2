@@ -1,0 +1,37 @@
+# Dockerfile pour Backend Deno + Hono (Production)
+FROM denoland/deno:alpine
+
+# Mise à jour Alpine et correction vulnérabilités OpenSSL
+RUN apk update && \
+    apk upgrade --no-cache && \
+    apk add --no-cache libstdc++ libgcc && \
+    rm -rf /var/cache/apk/*
+
+# Créer utilisateur non-root pour sécurité
+RUN addgroup --system --gid 1001 denouser && \
+    adduser --system --uid 1001 denouser
+
+# Définir le répertoire de travail
+WORKDIR /app
+
+# Copier les fichiers de configuration Deno avec ownership
+COPY --chown=denouser:denouser deno.json deno.lock ./
+
+# Copier le code source avec ownership
+COPY --chown=denouser:denouser src/ ./src/
+
+# Cache des dépendances Deno
+RUN deno cache src/index.ts
+
+# Basculer vers utilisateur non-root
+USER denouser
+
+# Exposer le port de l'API
+EXPOSE 3000
+
+# Commande pour démarrer l'application en production (permissions minimales)
+CMD ["deno", "run", \
+     "--allow-net", \
+     "--allow-read", \
+     "--allow-env", \
+     "src/index.ts"]

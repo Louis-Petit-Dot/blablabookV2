@@ -1,0 +1,568 @@
+= Controller UserController - Analyse Complète
+:toc:
+:toclevels: 3
+
+== Vue d'ensemble
+
+Le controller userController constitue la couche de présentation pour la gestion des utilisateurs et l'authentification dans l'API BlaBlaBook V2. Il expose les endpoints HTTP RESTful pour l'inscription, la connexion, la consultation, la modification et la suppression des comptes utilisateurs avec une sécurité renforcée et une gestion d'erreurs sophistiquée.
+
+== Architecture du controller
+
+=== Rôle dans l'architecture MVC sécurisée
+Le controller userController agit comme l'interface HTTP sécurisée entre le client et la logique métier :
+
+1. **Authentification centralisée** : Gestion des connexions avec protection anti-brute force
+2. **Validation middleware** : Intégration avec Zod pour validation des schémas
+3. **Gestion d'erreurs stratifiée** : Try/catch spécifique avec codes de statut personnalisés
+4. **Sécurité des mots de passe** : Endpoints spécialisés pour changement de mot de passe
+5. **Audit des connexions** : Enregistrement des tentatives réussies et échouées
+
+=== Intégration avec les middlewares de sécurité
+```typescript
+import { recordFailedLogin, recordSuccessfulLogin } from "../middlewares/authLockout.ts";
+```
+
+**Fonctionnalités sécurisées :**
+- **Protection anti-brute force** : Limitation des tentatives de connexion
+- **Validation Zod** : Schémas de données stricts côté middleware
+- **Audit logging** : Traçabilité des connexions et échecs
+- **Gestion des sessions** : Retour de tokens d'authentification
+
+== Endpoints disponibles
+
+=== GET /users - getAll()
+**Objectif:** Récupérer la liste complète des utilisateurs (administrateurs)
+**Méthode HTTP:** GET
+**Paramètres:** Aucun
+**Sécurité:** Endpoint admin (middleware d'autorisation requis)
+
+**Flux de traitement :**
+1. Appel direct à `userService.getAll()`
+2. Retour JSON immédiat sans transformation
+3. Code de statut 200 (succès)
+
+**Réponse type :**
+```json
+{
+  "users": [...],
+  "total_users": 1250
+}
+```
+
+=== GET /users/:id - getById()
+**Objectif:** Récupérer un utilisateur spécifique par son ID
+**Méthode HTTP:** GET
+**Paramètres:**
+- `id` (URL parameter) : Identifiant de l'utilisateur
+
+**Flux de traitement :**
+1. Extraction de l'ID depuis `c.req.param('id')`
+2. Appel à `userService.getById(userId)`
+3. Retour JSON des informations utilisateur
+
+**Codes de réponse :**
+- `200` : Utilisateur trouvé et retourné
+- `404` : Utilisateur non trouvé
+- `500` : Erreur serveur
+
+=== POST /users/login - login()
+**Objectif:** Authentifier un utilisateur avec protection anti-brute force
+**Méthode HTTP:** POST
+**Body JSON (validé par middleware Zod):**
+```json
+{
+  "email": "user@example.com",
+  "password": "motdepasse123"
+}
+```
+
+**Flux de traitement sécurisé :**
+1. Récupération des données validées : `c.get('validatedData')`
+2. Appel à `userService.login(email, password)`
+3. **Gestion des échecs** : Enregistrement via `recordFailedLogin()`
+4. **Gestion des succès** : Enregistrement via `recordSuccessfulLogin()`
+5. Retour du token d'authentification ou erreur 401
+
+**Sécurité implémentée :**
+```typescript
+const result = await userService.login(validatedData.email, validatedData.password);
+
+if (!result) {
+    recordFailedLogin(validatedData.email);
+    return c.json({
+        error: 'Invalid email or password'
+    }, 401);
+}
+
+recordSuccessfulLogin(validatedData.email);
+```
+
+**Réponse de succès :**
+```json
+{
+  "message": "Login successful",
+  "token": "jwt_token_here",
+  "user": {
+    "id_user": "...",
+    "username": "...",
+    "email": "...",
+    "firstname": "...",
+    "lastname": "..."
+  }
+}
+```
+
+**Codes de réponse :**
+- `200` : Connexion réussie avec token
+- `401` : Identifiants invalides
+- `429` : Trop de tentatives (via middleware)
+
+=== POST /users - create()
+**Objectif:** Créer un nouveau compte utilisateur avec validation complète
+**Méthode HTTP:** POST
+**Body JSON (validé par middleware Zod):**
+```json
+{
+  "username": "nouvel_utilisateur",
+  "email": "user@example.com",
+  "password": "motdepasse123",
+  "firstname": "John",
+  "lastname": "Doe"
+}
+```
+
+**Flux de traitement avec gestion d'erreurs sophistiquée :**
+1. Récupération des données validées via middleware
+2. Appel à `userService.create(validatedData)`
+3. **Gestion d'erreurs stratifiée** : Try/catch avec codes de statut personnalisés
+4. Retour utilisateur créé avec code 201
+
+**Gestion d'erreurs avancée :**
+```typescript
+try {
+    const result = await userService.create(validatedData);
+    return c.json(result, 201);
+} catch (error: any) {
+    // Erreurs avec status personnalisé (ex: 409 pour conflit)
+    if (error.status) {
+        return c.json({
+            success: false,
+            error: error.message
+        }, error.status);
+    }
+
+    // Erreur générique (protection des détails internes)
+    return c.json({
+        success: false,
+        error: 'Internal server error'
+    }, 500);
+}
+```
+
+**Codes de réponse :**
+- `201` : Utilisateur créé avec succès
+- `400` : Données invalides (validation Zod)
+- `409` : Conflit (email/username déjà utilisé)
+- `500` : Erreur serveur interne
+
+=== PUT /users/:id - update()
+**Objectif:** Mettre à jour les informations d'un utilisateur
+**Méthode HTTP:** PUT
+**Paramètres:**
+- `id` (URL parameter) : Identifiant de l'utilisateur
+**Body JSON (validé par middleware Zod):** Champs modifiables
+
+**Flux de traitement :**
+1. Extraction de l'ID et des données validées
+2. Appel à `userService.update(userId, validatedData)`
+3. Retour utilisateur mis à jour
+
+**Codes de réponse :**
+- `200` : Mise à jour réussie
+- `404` : Utilisateur non trouvé
+- `400` : Données invalides
+
+=== PUT /users/:id/password - updatePassword()
+**Objectif:** Changer le mot de passe d'un utilisateur avec validation de l'ancien
+**Méthode HTTP:** PUT
+**Paramètres:**
+- `id` (URL parameter) : Identifiant de l'utilisateur
+**Body JSON (validé par middleware Zod):**
+```json
+{
+  "current_password": "ancien_mot_de_passe",
+  "new_password": "nouveau_mot_de_passe"
+}
+```
+
+**Flux de traitement sécurisé :**
+1. Extraction de l'ID et des données validées
+2. Appel à `userService.updatePassword(userId, currentPassword, newPassword)`
+3. Validation de l'ancien mot de passe côté service
+4. Retour message de confirmation
+
+**Sécurité :**
+- **Validation de l'ancien mot de passe** : Obligatoire pour changement
+- **Hashage du nouveau** : Géré par le service
+- **Audit trail** : Enregistrement du changement
+
+**Codes de réponse :**
+- `200` : Mot de passe changé avec succès
+- `400` : Ancien mot de passe incorrect
+- `404` : Utilisateur non trouvé
+
+=== DELETE /users/:id - delete()
+**Objectif:** Supprimer un utilisateur (soft delete)
+**Méthode HTTP:** DELETE
+**Paramètres:**
+- `id` (URL parameter) : Identifiant de l'utilisateur
+
+**Flux de traitement :**
+1. Extraction de l'ID depuis `c.req.param('id')`
+2. Appel à `userService.delete(userId)`
+3. Retour message de confirmation avec données utilisateur
+
+**Réponse de succès :**
+```json
+{
+  "message": "User deleted successfully",
+  "user": { /* Données de l'utilisateur supprimé */ }
+}
+```
+
+**Codes de réponse :**
+- `200` : Suppression réussie
+- `404` : Utilisateur non trouvé
+- `403` : Pas d'autorisation de suppression
+
+=== POST /users/logout - logout()
+**Objectif:** Déconnecter l'utilisateur actuel et nettoyer la session
+**Méthode HTTP:** POST
+**Authentification:** Token JWT requis (middleware)
+
+**Flux de traitement :**
+1. Import dynamique du module auth : `await import("../middlewares/auth.ts")`
+2. Suppression du cookie authToken via `authUtils.clearCookieToken(c)`
+3. Retour message de confirmation
+
+**Code de nettoyage du cookie :**
+```typescript
+async logout(c: Context) {
+    // Supprime le cookie en le définissant avec Max-Age=0
+    const { authUtils } = await import("../middlewares/auth.ts");
+    authUtils.clearCookieToken(c);
+
+    return c.json({ message: 'Logout successful' });
+}
+```
+
+**Mécanisme de déconnexion :**
+- **Cookie invalidé** : Max-Age=0 pour suppression immédiate côté client
+- **Pas de blacklist token** : Simplicité de l'implémentation
+- **Session terminée** : L'utilisateur doit se reconnecter
+
+**Réponse de succès :**
+```json
+{
+  "message": "Logout successful"
+}
+```
+
+**Codes de réponse :**
+- `200` : Déconnexion réussie
+- `401` : Token manquant ou invalide (middleware)
+
+== Gestion d'erreurs sophistiquée
+
+=== Stratégie d'erreurs par niveau de criticité
+
+**create() - Gestion fine des conflits :**
+```typescript
+catch (error: any) {
+    if (error.status) {
+        // Erreurs métier avec status personnalisé (409, 400, etc.)
+        return c.json({
+            success: false,
+            error: error.message
+        }, error.status);
+    }
+
+    // Protection des détails internes
+    return c.json({
+        success: false,
+        error: 'Internal server error'
+    }, 500);
+}
+```
+
+**login() - Sécurité anti-brute force :**
+```typescript
+if (!result) {
+    recordFailedLogin(validatedData.email);
+    return c.json({
+        error: 'Invalid email or password'
+    }, 401);
+}
+recordSuccessfulLogin(validatedData.email);
+```
+
+**Autres endpoints - Délégation simple :**
+Gestion d'erreurs via middlewares globaux pour endpoints moins critiques.
+
+=== Format d'erreur standardisé
+```json
+{
+  "success": false,
+  "error": "Message d'erreur explicite"
+}
+```
+
+== Intégration avec les middlewares
+
+=== Middleware Zod pour validation
+```typescript
+const validatedData = c.get('validatedData'); // Données validées par middleware
+```
+
+**Avantages :**
+- **Validation automatique** : Schémas appliqués avant controller
+- **Type safety** : Données garanties conformes aux types
+- **Erreurs 400 automatiques** : Rejection des données malformées
+- **Code controller simplifié** : Pas de validation manuelle
+
+=== Middleware d'authentification/autorisation
+**Endpoints protégés :**
+- `getAll()` : Accès administrateur uniquement
+- `update()` : Propriétaire ou admin
+- `updatePassword()` : Propriétaire uniquement
+- `delete()` : Admin ou auto-suppression avec restrictions
+
+=== Audit et sécurité
+```typescript
+// Enregistrement des tentatives de connexion
+recordFailedLogin(email);   // Échec
+recordSuccessfulLogin(email); // Succès
+```
+
+**Fonctionnalités d'audit :**
+- **Tracking des IP** : Identification des sources d'attaque
+- **Rate limiting** : Limitation des tentatives par IP/email
+- **Logs sécurisés** : Enregistrement sans exposer les mots de passe
+- **Alertes admin** : Notification des tentatives suspectes
+
+== Sécurité avancée
+
+=== Protection des mots de passe
+```typescript
+// updatePassword() - Validation de l'ancien mot de passe
+await userService.updatePassword(userId, validatedData.current_password, validatedData.new_password);
+```
+
+**Sécurité implémentée :**
+- **Double validation** : Ancien + nouveau mot de passe
+- **Hashage côté service** : Jamais de mots de passe en clair
+- **Expiration de session** : Reconnexion requise après changement
+- **Audit trail** : Enregistrement des changements
+
+=== Gestion des sessions
+```typescript
+// login() - Retour de token d'authentification
+return c.json({
+    message: 'Login successful',
+    ...result // Contient token JWT + données utilisateur
+});
+```
+
+=== Protection contre les attaques
+
+**Brute force :**
+- Enregistrement des échecs via `recordFailedLogin()`
+- Rate limiting par IP et email
+- Blocage temporaire après X tentatives
+
+**Injection de données :**
+- Validation Zod stricte
+- Sanitisation automatique
+- ORM Drizzle pour protection SQL
+
+**Exposition d'informations :**
+- Messages d'erreur génériques en production
+- Masquage des détails internes via try/catch
+- Logs sécurisés séparés des réponses client
+
+== Exemple de flux complet
+
+=== Scénario : Inscription et première connexion sécurisée
+
+**1. Création de compte :**
+```http
+POST /users
+Content-Type: application/json
+
+{
+  "username": "alice_reader",
+  "email": "alice@example.com",
+  "password": "SecureP@ssw0rd123",
+  "firstname": "Alice",
+  "lastname": "Smith"
+}
+```
+
+**Traitement sécurisé :**
+1. Middleware Zod valide le schéma (email valide, mot de passe fort, etc.)
+2. Controller récupère `validatedData`
+3. Service vérifie unicité email/username
+4. Hashage du mot de passe + création utilisateur
+5. Retour 201 avec données utilisateur (sans mot de passe)
+
+**2. Première connexion :**
+```http
+POST /users/login
+Content-Type: application/json
+
+{
+  "email": "alice@example.com",
+  "password": "SecureP@ssw0rd123"
+}
+```
+
+**Traitement avec audit :**
+1. Validation des identifiants
+2. Si succès : `recordSuccessfulLogin("alice@example.com")`
+3. Génération token JWT
+4. Retour token + données session
+
+**3. Changement de mot de passe :**
+```http
+PUT /users/550e8400-e29b-41d4-a716-446655440000/password
+Authorization: Bearer jwt_token
+Content-Type: application/json
+
+{
+  "current_password": "SecureP@ssw0rd123",
+  "new_password": "NewSecureP@ssw0rd456"
+}
+```
+
+== Diagramme de séquence - Authentification sécurisée
+
+[mermaid]
+----
+sequenceDiagram
+    participant Client
+    participant UserController
+    participant ZodMiddleware
+    participant UserService
+    participant AuthLockout
+    participant Database
+
+    Note over Client, Database: POST /users/login
+
+    Client->>ZodMiddleware: POST /users/login {email, password}
+    ZodMiddleware->>ZodMiddleware: Validate email format + password strength
+
+    alt Si validation Zod échoue
+        ZodMiddleware-->>Client: 400 Validation errors
+    else Validation réussie
+        ZodMiddleware->>UserController: Next with validatedData
+        UserController->>UserController: Extract validatedData from context
+        UserController->>UserService: login(email, password)
+        UserService->>Database: SELECT user WHERE email = ? AND deleted_at IS NULL
+        Database-->>UserService: userData || null
+        UserService->>UserService: Compare password hash
+
+        alt Si identifiants invalides
+            UserService-->>UserController: null
+            UserController->>AuthLockout: recordFailedLogin(email)
+            AuthLockout->>AuthLockout: Increment failed attempts for email
+            UserController-->>Client: 401 "Invalid email or password"
+        else Identifiants valides
+            UserService->>UserService: Generate JWT token
+            UserService-->>UserController: {token, user}
+            UserController->>AuthLockout: recordSuccessfulLogin(email)
+            AuthLockout->>AuthLockout: Reset failed attempts for email
+            UserController-->>Client: 200 {message: "Login successful", token, user}
+        end
+    end
+
+    Note over Client, Database: POST /users (création)
+
+    Client->>ZodMiddleware: POST /users {username, email, password, firstname, lastname}
+    ZodMiddleware->>ZodMiddleware: Validate schema + password requirements
+
+    alt Si validation échoue
+        ZodMiddleware-->>Client: 400 Validation errors
+    else Validation réussie
+        ZodMiddleware->>UserController: Next with validatedData
+        UserController->>UserController: Extract validatedData
+
+        alt Try block
+            UserController->>UserService: create(validatedData)
+            UserService->>Database: Check uniqueness + INSERT user
+            Database-->>UserService: newUser
+            UserService-->>UserController: {user: newUser}
+            UserController-->>Client: 201 {user: newUser}
+        and Catch with status
+            UserService-->>UserController: throw Error with status (409)
+            UserController-->>Client: 409 {success: false, error: message}
+        and Catch generic
+            UserService-->>UserController: throw generic Error
+            UserController-->>Client: 500 {success: false, error: "Internal server error"}
+        end
+    end
+
+    Note over Client, Database: PUT /users/:id/password
+
+    Client->>UserController: PUT /users/123/password {current_password, new_password}
+    UserController->>UserController: Extract userId + validatedData
+    UserController->>UserService: updatePassword(userId, currentPassword, newPassword)
+    UserService->>Database: Verify current password
+    Database-->>UserService: password match result
+
+    alt Si ancien mot de passe incorrect
+        UserService-->>UserController: throw "Current password is incorrect"
+        UserController-->>Client: 400 Error
+    else Mot de passe correct
+        UserService->>UserService: Hash new password
+        UserService->>Database: UPDATE user SET password_hash = ?
+        Database-->>UserService: update success
+        UserService-->>UserController: success
+        UserController-->>Client: 200 {message: "Password updated successfully"}
+    end
+----
+
+== Tests et validation
+
+=== Points de test critiques
+
+**Tests de sécurité :**
+- Tentatives de brute force sur login
+- Validation des schémas Zod avec données malformées
+- Changement de mot de passe avec ancien incorrect
+- Gestion des tokens JWT expirés
+
+**Tests d'intégration :**
+- Workflow complet inscription → connexion → modification
+- Gestion des erreurs avec codes de statut appropriés
+- Audit trail des connexions réussies/échouées
+- Protection contre les injections SQL
+
+**Tests de charge :**
+- Connexions simultanées multiples
+- Création de comptes en masse
+- Performance des middlewares de validation
+- Résistance aux attaques DDoS
+
+== Résumé
+
+Le controller userController est l'**interface HTTP sécurisée pour la gestion des utilisateurs** de l'API BlaBlaBook V2. Il expose **7 endpoints critiques** avec :
+
+- **Authentification robuste** : Protection anti-brute force avec audit complet
+- **Validation middleware** : Intégration Zod pour schémas stricts côté validation
+- **Gestion d'erreurs sophistiquée** : Try/catch avec codes de statut personnalisés
+- **Sécurité des mots de passe** : Endpoints spécialisés avec double validation
+- **Audit de sécurité** : Tracking des connexions et tentatives échouées
+- **Protection des données** : Masquage des détails internes en cas d'erreur
+- **Type safety complet** : Utilisation exhaustive des types avec middleware
+
+**Il constitue le pilier sécuritaire pour l'authentification et la gestion des comptes utilisateurs.**

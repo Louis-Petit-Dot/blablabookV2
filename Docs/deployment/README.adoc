@@ -1,0 +1,73 @@
+= Deployment Runbook - BlaBlaBook V2
+:toc: left
+:version: 2.0
+:date: {docdate}
+
+== Overview
+
+This document explains step-by-step how to deploy BlaBlaBook V2 on a VPS using Docker Compose. It assumes you have SSH access to the VPS and Docker + Docker Compose installed.
+
+== Prerequisites
+
+* A VPS (Hostinger) with a public IP
+* Domain name pointing to the VPS (A record)
+* Docker & Docker Compose installed on the VPS
+* Repo cloned on the VPS or accessible (git)
+* File `.env.prod` created (see `../.env.prod.example`)
+
+== Prepare the VPS
+
+. Create directories and set permissions
+----
+sudo mkdir -p /opt/blablabookV2/postgres/data
+sudo chown -R 999:999 /opt/blablabookV2/postgres/data
+----
+
+. Copy repo and env file
+----
+# on your local machine
+scp -r ./blablabookV2 user@vps:/opt/
+ssh user@vps
+cd /opt/blablabookV2
+cp .env.prod.example .env.prod
+# edit .env.prod with secrets
+----
+
+
+
+== Build and Run (Docker Compose)
+
+. Build and run
+----
+docker compose -f docker-compose.prod.yml up -d --build
+----
+
+. Check services
+----
+docker compose -f docker-compose.prod.yml ps
+docker compose -f docker-compose.prod.yml logs -f backend
+----
+
+== Migrations
+
+If you use Drizzle/Deno migrations, execute migrations after backend is up and DB available:
+
+----
+docker compose -f docker-compose.prod.yml exec backend deno run --allow-net --allow-read --allow-env src/migrations/run.ts
+----
+
+Adjust the command to match your migration script. If migrations modify schema in a non-backwards compatible way, snapshot DB before running.
+
+== Rollback
+
+1. Stop the new backend: `docker compose -f docker-compose.prod.yml stop backend`
+2. Re-deploy previous image tag: edit docker-compose to use the previous `image: blablabookv2-backend:previous-tag` and `docker compose up -d --no-deps --build backend`
+
+== Backups
+
+See `../ops/backup-restore.adoc` for backup scripts and restore procedures.
+
+== Notes
+
+* Do not commit `.env.prod` to git.
+* Use managed Postgres if possible to reduce ops overhead.

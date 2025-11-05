@@ -1,0 +1,511 @@
+= Architecture des Fichiers Principaux - BlaBlaBookV2
+:toc:
+:toc-title: Table des matières
+:sectnums:
+
+== Introduction
+
+Ce document explique le rôle et la responsabilité des fichiers principaux de l'application, côté frontend et backend.
+
+== Frontend (React + Vite)
+
+=== main.tsx - Point d'entrée de l'application
+
+**Chemin** : `frontend/src/main.tsx`
+
+**Rôle** : Point d'entrée JavaScript de l'application React
+
+[source,typescript]
+----
+import { StrictMode } from 'react'
+import { createRoot } from 'react-dom/client'
+import { BrowserRouter } from 'react-router-dom'
+import App from './App.tsx'
+import './styles/index.scss'
+
+createRoot(document.getElementById('root')!).render(
+    <StrictMode>
+        <BrowserRouter>
+            <App />
+        </BrowserRouter>
+    </StrictMode>,
+)
+----
+
+**Responsabilités** :
+
+1. **Montage de l'application**
+   - Trouve l'élément `#root` dans `index.html`
+   - Utilise `createRoot` (React 18+) pour créer la racine React
+
+2. **Configuration des providers globaux**
+   - `<StrictMode>` : Active les vérifications de développement React
+   - `<BrowserRouter>` : Fournit le contexte de routage React Router
+
+3. **Imports de styles globaux**
+   - Importe les styles SCSS globaux qui s'appliquent à toute l'app
+
+**Quand le modifier** :
+- Ajouter des providers globaux (Redux, Theme, Auth Context, etc.)
+- Changer de stratégie de routage (`HashRouter`, `MemoryRouter`)
+- Configurer des outils de monitoring (Sentry, Analytics)
+
+**Ne PAS** :
+- Ajouter de la logique métier
+- Créer des composants ici
+- Gérer des states ou effets
+
+---
+
+=== App.tsx - Composant racine et routeur
+
+**Chemin** : `frontend/src/App.tsx`
+
+**Rôle** : Composant racine définissant la structure et le routage de l'application
+
+[source,typescript]
+----
+import { Routes, Route } from 'react-router-dom'
+import DemoPage from './components/DemoPage'
+
+function App() {
+  return (
+    <div className="app">
+      <Routes>
+        <Route path="/" element={<DemoPage />} />
+      </Routes>
+    </div>
+  )
+}
+
+export default App
+----
+
+**Responsabilités** :
+
+1. **Définition des routes**
+   - Associe les chemins URL aux composants
+   - Gère la navigation de l'application
+
+2. **Layout global**
+   - Structure de base de toutes les pages
+   - Peut inclure Header, Footer, Sidebar persistants
+
+3. **Routes protégées**
+   - Peut wrapper des routes avec des guards d'authentification
+   - Redirections selon le rôle utilisateur
+
+**Structure typique évoluée** :
+
+[source,typescript]
+----
+function App() {
+  return (
+    <div className="app">
+      <Header />
+      <Routes>
+        {/* Routes publiques */}
+        <Route path="/" element={<Home />} />
+        <Route path="/login" element={<Login />} />
+
+        {/* Routes protégées */}
+        <Route element={<ProtectedRoute />}>
+          <Route path="/dashboard" element={<Dashboard />} />
+          <Route path="/profile" element={<Profile />} />
+        </Route>
+
+        {/* Routes admin */}
+        <Route element={<AdminRoute />}>
+          <Route path="/admin" element={<Admin />} />
+        </Route>
+
+        {/* 404 */}
+        <Route path="*" element={<NotFound />} />
+      </Routes>
+      <Footer />
+    </div>
+  )
+}
+----
+
+**Quand le modifier** :
+- Ajouter/modifier des routes
+- Ajouter un layout global (Header, Footer, Sidebar)
+- Implémenter la protection des routes
+
+**Ne PAS** :
+- Ajouter de la logique métier complexe
+- Faire des appels API directs
+- Gérer des états locaux complexes
+
+---
+
+=== api.ts - Configuration et instance Axios
+
+**Chemin** : `frontend/src/lib/api.ts`
+
+**Rôle** : Configuration centralisée des requêtes HTTP vers le backend
+
+[source,typescript]
+----
+import axios from 'axios'
+
+const api = axios.create({
+  baseURL: import.meta.env.VITE_API_URL || 'http://localhost:3000',
+  timeout: 10000,
+  headers: {
+    'Content-Type': 'application/json',
+  },
+  withCredentials: true, // Pour les cookies/sessions
+})
+
+// Intercepteur de requête (pour ajouter le token JWT par exemple)
+api.interceptors.request.use(
+  (config) => {
+    const token = localStorage.getItem('token')
+    if (token) {
+      config.headers.Authorization = `Bearer ${token}`
+    }
+    return config
+  },
+  (error) => Promise.reject(error)
+)
+
+// Intercepteur de réponse (pour gérer les erreurs globalement)
+api.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    if (error.response?.status === 401) {
+      // Token expiré ou invalide
+      localStorage.removeItem('token')
+      window.location.href = '/login'
+    }
+    return Promise.reject(error)
+  }
+)
+
+export default api
+----
+
+**Responsabilités** :
+
+1. **Configuration Axios**
+   - `baseURL` : URL de l'API (depuis variable d'environnement)
+   - `timeout` : Limite de temps pour les requêtes
+   - `headers` : Headers par défaut
+   - `withCredentials` : Active l'envoi des cookies (nécessaire pour CORS)
+
+2. **Intercepteur de requête**
+   - Ajoute automatiquement le token JWT à chaque requête
+   - Peut ajouter des headers custom globalement
+   - Peut logger les requêtes sortantes
+
+3. **Intercepteur de réponse**
+   - Gère les erreurs HTTP globalement
+   - Déconnexion automatique si 401 (non autorisé)
+   - Peut rafraîchir le token automatiquement
+   - Peut afficher des notifications d'erreur
+
+**Utilisation dans les composants** :
+
+[source,typescript]
+----
+import api from '../lib/api'
+
+// GET
+const response = await api.get('/users')
+const users = response.data
+
+// POST
+await api.post('/users', { name: 'John', email: 'john@example.com' })
+
+// PUT
+await api.put('/users/123', { name: 'Jane' })
+
+// DELETE
+await api.delete('/users/123')
+----
+
+**Quand le modifier** :
+- Changer l'URL de l'API
+- Ajouter/modifier des intercepteurs
+- Changer la stratégie d'authentification
+- Ajouter des headers globaux
+
+**Avantages** :
+- Une seule source de vérité pour la config API
+- Logique d'auth centralisée
+- Gestion d'erreurs unifiée
+- Facilite les tests (mock une seule instance)
+
+---
+
+=== index.js - Fichier vide (artéfact)
+
+**Chemin** : `frontend/index.js`
+
+**État** : Fichier vide
+
+**Raison** : Probablement un reste d'initialisation ou de configuration obsolète.
+
+**Action recommandée** : À supprimer si non utilisé
+
+---
+
+== Backend (Hono + Deno)
+
+=== index.ts - Point d'entrée du serveur
+
+**Chemin** : `backend/src/index.ts`
+
+**Rôle** : Point d'entrée et configuration du serveur Hono
+
+[source,typescript]
+----
+import "@std/dotenv/load";
+import { Hono } from "hono";
+import routes from "./routes/index.ts";
+import { securityMiddleware } from "./middlewares/security.ts";
+import { errorHandler } from "./middlewares/errorHandler.ts";
+
+const app: Hono = new Hono();
+
+// Middleware de sécurité global
+const allowedOrigins = Deno.env.get('ALLOWED_ORIGINS')?.split(',') || [
+    'http://localhost:3000',
+    'http://localhost:3001',
+    'http://localhost:5173',
+    'http://localhost:5174',
+    'https://blablabook-exo.fun'
+]
+
+app.use('*', securityMiddleware({
+    windowMs: 15 * 60 * 1000,
+    maxRequests: 100,
+    allowedOrigins: allowedOrigins
+}))
+
+app.use('*', errorHandler)
+
+// ROUTES
+app.get('/', (c) => {
+    return c.text('Hello world Hono!!')
+})
+
+app.get('/health', (c) => {
+    return c.json({
+        status: 'healthy',
+        service: 'blablabookv2-api'
+    })
+})
+
+app.route('/api', routes);
+
+// Port depuis .env
+const port = parseInt(Deno.env.get('API_PORT') || '3000')
+
+console.log(`BlaBlaBook API starting on port ${port}`)
+console.log(`CORS origins: ${allowedOrigins.join(', ')}`)
+
+// Export pour les tests
+export default app;
+
+// Ne démarrer le serveur que si ce fichier est exécuté directement
+if (import.meta.main) {
+    Deno.serve({ port }, app.fetch)
+}
+----
+
+**Responsabilités** :
+
+1. **Chargement de l'environnement**
+   - `@std/dotenv/load` charge automatiquement les variables `.env`
+
+2. **Initialisation de Hono**
+   - Création de l'application Hono
+   - Configuration des middlewares globaux
+
+3. **Middlewares globaux**
+   - **securityMiddleware** : CORS, Rate Limiting, Headers de sécurité
+   - **errorHandler** : Gestion centralisée des erreurs
+
+4. **Routes de base**
+   - `/` : Route de test simple
+   - `/health` : Health check pour monitoring
+   - `/api/*` : Toutes les routes métier
+
+5. **Démarrage du serveur**
+   - Lit le port depuis `.env`
+   - Démarre le serveur Deno
+   - Condition `import.meta.main` pour permettre l'import dans les tests
+
+**Ordre d'exécution** :
+
+[source,text]
+----
+1. Chargement .env
+2. Création app Hono
+3. Application middlewares globaux (ordre important !)
+4. Enregistrement des routes
+5. Démarrage du serveur (si exécution directe)
+----
+
+**Quand le modifier** :
+- Ajouter des middlewares globaux
+- Modifier la configuration CORS
+- Ajouter des routes racines
+- Changer la stratégie de rate limiting
+
+**Ne PAS** :
+- Définir des routes métier ici (utiliser `routes/`)
+- Ajouter de la logique métier
+
+---
+
+== Diagramme de flux
+
+=== Frontend
+
+[source,text]
+----
+index.html
+    ↓
+main.tsx (Point d'entrée)
+    ↓
+    ├─→ BrowserRouter (Contexte de routage)
+    ├─→ StrictMode (Mode strict React)
+    └─→ App.tsx (Composant racine)
+            ↓
+            └─→ Routes (Définition des routes)
+                    ↓
+                    └─→ Composants de page
+                            ↓
+                            └─→ api.ts (Requêtes HTTP)
+----
+
+=== Backend
+
+[source,text]
+----
+index.ts (Point d'entrée)
+    ↓
+    ├─→ Chargement .env
+    ├─→ Middlewares globaux
+    │       ├─→ securityMiddleware (CORS, Rate Limit, Headers)
+    │       └─→ errorHandler
+    ├─→ Routes racines (/, /health)
+    └─→ Routes métier (/api/*)
+            ↓
+            └─→ Controllers → Services → Database
+----
+
+== Résumé des responsabilités
+
+|===
+|Fichier |Rôle |Modifié fréquemment ?
+
+|**Frontend**
+|
+|
+
+|`main.tsx`
+|Point d'entrée, providers globaux
+|Rarement (uniquement ajout de providers)
+
+|`App.tsx`
+|Routage, layout global
+|Souvent (ajout de routes)
+
+|`api.ts`
+|Configuration HTTP, intercepteurs
+|Occasionnellement (changements d'auth)
+
+|`index.js`
+|Aucun (artéfact)
+|Non (à supprimer)
+
+|**Backend**
+|
+|
+
+|`index.ts`
+|Point d'entrée serveur, middlewares globaux
+|Occasionnellement (config globale)
+|===
+
+== Bonnes pratiques
+
+=== Frontend
+
+1. **main.tsx** : Minimaliste, uniquement la config de montage
+2. **App.tsx** : Définir les routes et le layout, pas de logique métier
+3. **api.ts** : Une seule instance Axios exportée, intercepteurs centralisés
+
+=== Backend
+
+1. **index.ts** : Configuration globale uniquement
+2. Ordre des middlewares important : sécurité → logging → routes → error handler
+3. Export de `app` pour permettre les tests sans démarrer le serveur
+
+== Questions fréquentes
+
+=== Pourquoi `withCredentials: true` dans api.ts ?
+
+Nécessaire pour :
+- Envoyer les cookies cross-origin
+- Gérer les sessions côté serveur
+- Utiliser JWT dans les cookies (plus sécurisé que localStorage)
+
+⚠️ Nécessite `Access-Control-Allow-Credentials: true` côté backend
+
+=== Pourquoi exporter `app` dans index.ts ?
+
+Permet d'importer l'app dans les tests sans démarrer le serveur :
+
+[source,typescript]
+----
+// test.ts
+import app from './index.ts'
+
+Deno.test("GET /health", async () => {
+    const req = new Request("http://localhost/health")
+    const res = await app.fetch(req)
+    assertEquals(res.status, 200)
+})
+----
+
+=== Que faire si j'ai besoin d'un state global ?
+
+**Options** :
+1. Context API (léger, natif React)
+2. Zustand (recommandé, simple)
+3. Redux (si app complexe)
+
+**Où le configurer** : Dans `main.tsx`, en wrapper de `<App />`
+
+=== Comment ajouter un nouveau provider ?
+
+Dans `main.tsx` :
+
+[source,typescript]
+----
+createRoot(document.getElementById('root')!).render(
+    <StrictMode>
+        <BrowserRouter>
+            <ThemeProvider>
+                <AuthProvider>
+                    <App />
+                </AuthProvider>
+            </ThemeProvider>
+        </BrowserRouter>
+    </StrictMode>,
+)
+----
+
+== Ressources
+
+- link:https://react.dev/[React Documentation]
+- link:https://reactrouter.com/[React Router]
+- link:https://axios-http.com/[Axios Documentation]
+- link:https://hono.dev/[Hono Documentation]
+- link:https://deno.land/[Deno Documentation]

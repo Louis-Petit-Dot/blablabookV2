@@ -1,0 +1,648 @@
+= Hooks Personnalisés - Guide Complet
+:toc: left
+:toclevels: 3
+:sectanchors:
+:icons: font
+:source-highlighter: highlight.js
+
+== 📚 C'est Quoi un Hook ?
+
+=== Définition Simple
+
+Un **hook** est une **fonction réutilisable** qui contient de la **logique métier** (appels API, gestion d'états, calculs...) pour éviter de dupliquer du code dans vos composants.
+
+**Analogie :**
+
+Imaginez que vous devez faire du café plusieurs fois par jour :
+
+* *Sans hook* : Chaque fois, vous sortez le café, le filtre, l'eau, vous préparez... (code dupliqué partout)
+* *Avec hook* : Vous avez une machine à café → vous appuyez sur un bouton (fonction simple) → le café se fait tout seul
+
+Le hook = la machine qui fait tout le travail complexe pour vous.
+
+---
+
+=== Règles des Hooks React
+
+[IMPORTANT]
+====
+1. Les hooks doivent **commencer par `use`** (convention React)
+2. Ils ne peuvent être appelés **qu'au niveau racine** d'un composant (pas dans des boucles, conditions, ou fonctions imbriquées)
+3. Ils ne peuvent être utilisés **que dans des composants React** ou d'autres hooks
+====
+
+**Exemple :**
+
+[source,tsx]
+----
+// ✅ BON
+function BookPage() {
+    const { ratings, submitRating } = useRating(bookId)  // OK : niveau racine
+
+    return <div>...</div>
+}
+
+// ❌ MAUVAIS
+function BookPage() {
+    if (someCondition) {
+        const { ratings } = useRating(bookId)  // ERREUR : dans une condition
+    }
+}
+----
+
+---
+
+=== Quand Utiliser un Hook ?
+
+Créez un hook personnalisé quand :
+
+* ✅ Vous **répétez la même logique** dans plusieurs composants
+* ✅ Vous avez une **logique complexe** (appels API, gestion d'état, calculs)
+* ✅ Vous voulez **séparer la logique métier** de l'affichage (UI)
+* ✅ Vous voulez **rendre votre code testable** facilement
+
+**Exemple concret :**
+
+Sans hook → Dupliquer ce code dans chaque page :
+
+[source,tsx]
+----
+function BookPage() {
+    const [ratings, setRatings] = useState([])
+    const [isLoading, setIsLoading] = useState(false)
+
+    useEffect(() => {
+        const fetchRatings = async () => {
+            setIsLoading(true)
+            try {
+                const { data } = await api.get(`/api/rates/book/${bookId}/rates`)
+                setRatings(data.rates)
+            } catch (error) {
+                console.error(error)
+            } finally {
+                setIsLoading(false)
+            }
+        }
+        fetchRatings()
+    }, [bookId])
+
+    // ... 50 lignes de code métier
+}
+----
+
+Avec hook → Code simple et réutilisable :
+
+[source,tsx]
+----
+function BookPage() {
+    const { ratings, isLoading, submitRating } = useRating(bookId)  // 1 ligne !
+
+    return <RatingDisplay ratings={ratings} />
+}
+----
+
+---
+
+== 🎯 Avantages des Hooks Personnalisés
+
+[cols="1,3"]
+|===
+|Avantage |Exemple
+
+|**Réutilisabilité**
+|`useRating` peut être utilisé dans BookPage, UserPage, AdminPage...
+
+|**Séparation des responsabilités**
+|Composant = affichage, Hook = logique métier
+
+|**Testabilité**
+|Tester un hook isolément est plus facile qu'un gros composant
+
+|**Lisibilité**
+|Code plus clair et organisé
+
+|**Maintenance**
+|Corriger un bug dans le hook = correction partout automatiquement
+|===
+
+---
+
+== 📂 Organisation de nos Hooks
+
+[source]
+----
+frontend/src/hooks/
+├── README.adoc           ← Ce fichier (documentation)
+├── useRating.ts          ← Gestion des notes (ratings)
+├── useReview.ts          ← Gestion des avis (reviews)
+├── useLibrary.ts         ← Gestion des bibliothèques
+├── useReadingLists.ts    ← Gestion des listes de lecture
+└── useAddToLibrary.ts    ← Ajout livre à bibliothèque (optionnel)
+----
+
+---
+
+== 🌟 Hook 1 : useRating
+
+=== Objectif
+
+Gérer **toutes les interactions** avec les notes (ratings) d'un livre :
+
+* Récupérer les notes (moyenne + liste)
+* Créer ou modifier la note de l'utilisateur
+* Supprimer la note de l'utilisateur
+* Gérer les états de chargement et erreurs
+
+=== Quand l'Utiliser ?
+
+Dans **tout composant** qui affiche ou permet de noter un livre :
+
+* `BookPage.tsx` - Afficher moyenne + permettre de noter
+* `SearchBookCard.tsx` - Afficher la note moyenne sur les cartes
+* `UserPage.tsx` - Afficher les livres que l'utilisateur a notés
+* `AdminDashboard.tsx` - Statistiques des notes
+
+=== API Backend Utilisée
+
+[source,typescript]
+----
+// Récupérer les notes d'un livre
+GET /api/rates/book/:id/rates
+
+Response: {
+  book: { id_book: string, title: string },
+  rates: Rate[],
+  average_rating: number | null  // Ex: 3.24
+}
+
+// Créer ou mettre à jour la note (upsert automatique)
+POST /api/rates
+Body: { id_book: string, rating: number }
+
+// Supprimer sa note
+DELETE /api/rates/:id
+----
+
+=== Types TypeScript
+
+[source,typescript]
+----
+interface Rate {
+    id_rate: string
+    rating: number  // 1-5 (entier)
+    created_at: string
+    updated_at: string
+    user_id: string
+    user_username: string
+    user_firstname: string
+    user_lastname: string
+}
+
+interface UseRatingReturn {
+    // 📊 Données
+    ratings: Rate[]              // Liste de toutes les notes
+    averageRating: number | null // Moyenne calculée (ex: 3.24)
+    totalRatings: number         // Nombre total de notes
+    userRating: Rate | null      // Note de l'utilisateur connecté (si existe)
+
+    // ⏳ États
+    isLoading: boolean           // Chargement en cours ?
+    error: string | null         // Message d'erreur (si échec)
+
+    // 🎬 Actions
+    fetchRatings: () => Promise<void>     // Recharger les notes
+    submitRating: (rating: number) => Promise<void>  // Noter (crée ou modifie)
+    deleteRating: () => Promise<void>     // Supprimer sa note
+}
+----
+
+=== Utilisation dans un Composant
+
+[source,tsx]
+----
+import { useRating } from '../hooks/useRating'
+import { RatingStars } from '../components/Rate/RatingStars'
+
+function BookPage({ bookId }: { bookId: string }) {
+    const {
+        averageRating,      // Moyenne des notes
+        totalRatings,       // Nombre de votes
+        userRating,         // Note de l'utilisateur (si existe)
+        isLoading,          // État de chargement
+        error,              // Erreur éventuelle
+        submitRating,       // Fonction pour noter
+        deleteRating        // Fonction pour supprimer
+    } = useRating(bookId)
+
+    // Affichage pendant le chargement
+    if (isLoading) {
+        return <Loader />
+    }
+
+    // Affichage en cas d'erreur
+    if (error) {
+        return <ErrorMessage message={error} />
+    }
+
+    return (
+        <div>
+            {/* Afficher la moyenne */}
+            <div>
+                <RatingStars value={averageRating || 0} readOnly size="L" />
+                <p>({averageRating?.toFixed(1)}/5 • {totalRatings} avis)</p>
+            </div>
+
+            {/* Permettre à l'utilisateur de noter */}
+            <div>
+                <h3>Votre note :</h3>
+                <RatingStars
+                    value={userRating?.rating || 0}
+                    onChange={(rating) => submitRating(rating)}
+                    size="M"
+                />
+
+                {/* Bouton supprimer si l'utilisateur a déjà noté */}
+                {userRating && (
+                    <button onClick={deleteRating}>
+                        Supprimer ma note
+                    </button>
+                )}
+            </div>
+        </div>
+    )
+}
+----
+
+=== Fonctionnement Interne
+
+==== 1. **Chargement Automatique**
+
+Le hook charge automatiquement les notes dès que le composant est monté :
+
+[source,typescript]
+----
+useEffect(() => {
+    fetchRatings()  // Appel API au montage
+}, [fetchRatings])
+----
+
+==== 2. **Détection Note Utilisateur**
+
+Le hook cherche automatiquement la note de l'utilisateur connecté :
+
+[source,typescript]
+----
+const userRating = ratings.find(rate => rate.user_id === user?.id_user) || null
+----
+
+Cela permet d'afficher la note existante dans les étoiles.
+
+==== 3. **Upsert Automatique (Create or Update)**
+
+Le backend gère automatiquement :
+
+* Si l'utilisateur n'a **jamais noté** → **Création** d'une nouvelle note
+* Si l'utilisateur a **déjà noté** → **Mise à jour** de sa note existante
+
+Vous n'avez qu'à appeler `submitRating(4)` et le backend fait le reste !
+
+==== 4. **Refresh Après Modification**
+
+Après avoir noté ou supprimé, le hook recharge automatiquement les données :
+
+[source,typescript]
+----
+const submitRating = async (rating: number) => {
+    await api.post('/api/rates', { id_book: bookId, rating })
+    await fetchRatings()  // ← Recharge pour avoir la nouvelle moyenne
+}
+----
+
+---
+
+=== Cas d'Usage Complets
+
+==== Cas 1 : Afficher la Note Moyenne (Readonly)
+
+[source,tsx]
+----
+function BookCard({ bookId }: { bookId: string }) {
+    const { averageRating, totalRatings, isLoading } = useRating(bookId)
+
+    if (isLoading) return <Skeleton />
+
+    return (
+        <div>
+            <RatingStars value={averageRating || 0} readOnly size="S" />
+            <span>{totalRatings} avis</span>
+        </div>
+    )
+}
+----
+
+==== Cas 2 : Permettre de Noter (Interactive)
+
+[source,tsx]
+----
+function RateBookSection({ bookId }: { bookId: string }) {
+    const { userRating, submitRating, isLoading } = useRating(bookId)
+
+    return (
+        <div>
+            <h3>Notez ce livre :</h3>
+            <RatingStars
+                value={userRating?.rating || 0}
+                onChange={submitRating}
+                size="L"
+            />
+            {isLoading && <Spinner />}
+        </div>
+    )
+}
+----
+
+==== Cas 3 : Liste des Notes avec Actions (Admin)
+
+[source,tsx]
+----
+function RatingsListAdmin({ bookId }: { bookId: string }) {
+    const { ratings, isLoading } = useRating(bookId)
+
+    if (isLoading) return <Loader />
+
+    return (
+        <table>
+            <thead>
+                <tr>
+                    <th>Utilisateur</th>
+                    <th>Note</th>
+                    <th>Date</th>
+                </tr>
+            </thead>
+            <tbody>
+                {ratings.map(rate => (
+                    <tr key={rate.id_rate}>
+                        <td>{rate.user_username}</td>
+                        <td>
+                            <RatingStars value={rate.rating} readOnly size="S" />
+                        </td>
+                        <td>{new Date(rate.created_at).toLocaleDateString()}</td>
+                    </tr>
+                ))}
+            </tbody>
+        </table>
+    )
+}
+----
+
+---
+
+=== Gestion des Erreurs
+
+Le hook gère automatiquement les erreurs :
+
+[cols="1,2,2"]
+|===
+|Erreur |Quand ? |Message
+
+|Non authentifié
+|Tentative de noter sans être connecté
+|"Vous devez être connecté pour noter"
+
+|Note invalide
+|`rating < 1` ou `rating > 5`
+|"La note doit être entre 1 et 5"
+
+|Erreur API
+|Problème réseau, backend down
+|Message d'erreur du backend
+
+|Aucune note à supprimer
+|`deleteRating()` sans note existante
+|"Aucune note à supprimer"
+|===
+
+**Exemple d'affichage :**
+
+[source,tsx]
+----
+function BookPage({ bookId }: { bookId: string }) {
+    const { error } = useRating(bookId)
+
+    return (
+        <div>
+            {error && (
+                <div className="error-banner">
+                    ⚠️ {error}
+                </div>
+            )}
+            {/* ... reste du composant */}
+        </div>
+    )
+}
+----
+
+---
+
+=== Performance et Optimisation
+
+==== useCallback
+
+Les fonctions sont wrappées avec `useCallback` pour éviter des re-renders inutiles :
+
+[source,typescript]
+----
+const fetchRatings = useCallback(async () => {
+    // ...
+}, [bookId])  // Ne se recréé que si bookId change
+----
+
+==== Auto-refresh
+
+Le hook se recharge automatiquement si `bookId` change :
+
+[source,tsx]
+----
+// Passer de livre A à livre B → fetchRatings() est rappelé
+<BookPage bookId="uuid-livre-A" />  // Charge les notes du livre A
+<BookPage bookId="uuid-livre-B" />  // Charge les notes du livre B
+----
+
+---
+
+=== Tests (Futur)
+
+Le hook peut être testé isolément avec `@testing-library/react-hooks` :
+
+[source,typescript]
+----
+import { renderHook, waitFor } from '@testing-library/react'
+import { useRating } from './useRating'
+
+test('should load ratings on mount', async () => {
+    const { result } = renderHook(() => useRating('book-123'))
+
+    expect(result.current.isLoading).toBe(true)
+
+    await waitFor(() => {
+        expect(result.current.isLoading).toBe(false)
+        expect(result.current.ratings.length).toBeGreaterThan(0)
+    })
+})
+----
+
+---
+
+== 📝 Bonnes Pratiques Hooks
+
+=== 1. Nommage
+
+* ✅ `useRating`, `useReview`, `useLibrary` (préfixe `use`)
+* ❌ `getRating`, `ratingHook`, `handleRating`
+
+=== 2. Responsabilité Unique
+
+Chaque hook doit avoir **une seule responsabilité** :
+
+* ✅ `useRating` → Gère UNIQUEMENT les notes
+* ✅ `useReview` → Gère UNIQUEMENT les avis
+* ❌ `useBookData` → Trop large (notes + avis + infos livre)
+
+=== 3. Return Explicite
+
+Retournez toujours un **objet** avec des noms clairs :
+
+[source,typescript]
+----
+// ✅ BON - Noms explicites
+return {
+    ratings,
+    averageRating,
+    isLoading,
+    submitRating
+}
+
+// ❌ MAUVAIS - Tableau sans noms
+return [ratings, averageRating, submitRating]
+----
+
+=== 4. Gestion des Erreurs
+
+Toujours capturer et exposer les erreurs :
+
+[source,typescript]
+----
+try {
+    // Appel API
+} catch (err: any) {
+    const errorMessage = err.response?.data?.error || 'Erreur inconnue'
+    setError(errorMessage)  // ← Exposé au composant
+}
+----
+
+=== 5. Loading States
+
+Toujours gérer l'état de chargement :
+
+[source,typescript]
+----
+const [isLoading, setIsLoading] = useState(false)
+
+setIsLoading(true)
+try {
+    await api.get(...)
+} finally {
+    setIsLoading(false)  // ← Même en cas d'erreur
+}
+----
+
+---
+
+== 🔗 Ressources
+
+* https://react.dev/learn/reusing-logic-with-custom-hooks[Documentation officielle React - Custom Hooks]
+* https://usehooks.com/[useHooks.com - Exemples de hooks]
+* https://github.com/streamich/react-use[react-use - Bibliothèque de hooks utilitaires]
+
+---
+
+== 🚀 Prochains Hooks à Documenter
+
+* `useReview.ts` - Gestion des avis (reviews)
+* `useLibrary.ts` - Gestion des bibliothèques
+* `useReadingLists.ts` - Gestion des listes de lecture
+
+---
+
+== 📱 Hook Responsive - useMediaQuery
+
+=== Description
+
+Hook personnalisé pour détecter les breakpoints responsive et adapter l'interface selon la taille d'écran.
+
+=== Utilisation de Base
+
+[source,typescript]
+----
+import { useMediaQuery, useBreakpoints } from '../hooks/useMediaQuery'
+
+function MyComponent() {
+    // Approche 1 : Media query personnalisée
+    const isDesktop = useMediaQuery('(min-width: 768px)')
+    
+    // Approche 2 : Breakpoints prédéfinis
+    const { isMobile, isTablet, isDesktop, isDesktopOrLarger } = useBreakpoints()
+    
+    return (
+        <div>
+            {isMobile && <MobileMenu />}
+            {isDesktop && <DesktopTabs />}
+        </div>
+    )
+}
+----
+
+=== Breakpoints BlaBlaBook
+
+[cols="1,2,2"]
+|===
+|Nom |Taille |Media Query
+
+|Mobile
+|320px - 767px
+|`(max-width: 767px)`
+
+|Tablet
+|768px - 1023px
+|`(min-width: 768px) and (max-width: 1023px)`
+
+|Desktop
+|1024px - 1279px
+|`(min-width: 1024px)`
+
+|Wide
+|1280px+
+|`(min-width: 1280px)`
+|===
+
+=== Exemple Avancé : Navigation Responsive
+
+[source,typescript]
+----
+import { useBreakpoints } from '../hooks/useMediaQuery'
+
+function Navigation() {
+    const { isMobile, isDesktopOrLarger } = useBreakpoints()
+    
+    return (
+        <nav>
+            {isMobile && <BurgerMenu />}
+            {isDesktopOrLarger && <Tabs items={navItems} />}
+        </nav>
+    )
+}
+----
+
+**Document généré le 2025-10-11**
+
+**Status:** ✅ useRating documenté | ✅ useMediaQuery documenté | ⏳ Autres hooks à venir

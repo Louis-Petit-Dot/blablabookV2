@@ -1,0 +1,912 @@
+= Entity Relationship Diagram (ERD) - BlaBlaBook / Diagramme ERD - BlaBlaBook
+:toc: left
+:toclevels: 3
+:sectanchors:
+:icons: font
+:version: 2.0
+:date: {docdate}
+
+// Navigation inter-documents
+link:../../README.adoc[📚 Documentation Hub] |
+link:../../project/CONCEPTION-BLABLABOOKV2.adoc[🏗️ Architecture] |
+link:../Merise/MCD/cardinalites.adoc[📋 Cardinalités] |
+link:../../diagrams/sequence/diag-sequence.adoc[📊 Sequence Diagrams]
+
+// Navigation langues
+<<section-fr,🇫🇷 Version Française>> | <<section-en,🇬🇧🇺🇸 English Version>>
+
+---
+
+[[section-fr]]
+== 🇫🇷 Diagramme ERD - BlaBlaBook
+
+<<section-en,🇬🇧🇺🇸 Switch to English>> | 🇫🇷 *Français*
+
+Ce document présente le diagramme ERD de l'application BlaBlaBook basé sur les schémas Drizzle avec système RBAC complet.
+
+NOTE: Ce diagramme est généré à partir des schémas Drizzle ORM réels (`backend/src/models/`) et reflète l'état actuel de la base de données PostgreSQL.
+
+=== Diagramme ERD
+
+[source,mermaid]
+----
+erDiagram
+    USER ||--o{ LIBRARY : owns
+    USER ||--o{ READING_LIST : creates
+    USER ||--o{ REVIEW : writes
+    USER ||--o{ RATE : gives
+    USER ||--o{ USER_ROLE : has
+    USER ||--o{ USER_ROLE : "assigned_by"
+
+    ROLE ||--o{ USER_ROLE : granted_to
+    ROLE ||--o{ ROLE_PERMISSION : has
+
+    PERMISSION ||--o{ ROLE_PERMISSION : belongs_to
+
+    LIBRARY ||--o{ READING_LIST : contains
+    LIBRARY ||--o{ BOOK_LIBRARY : stores
+
+    READING_LIST ||--o{ READING_LIST_BOOK : includes
+
+    BOOK ||--o{ BOOK_LIBRARY : stored_in
+    BOOK ||--o{ READING_LIST_BOOK : appears_in
+    BOOK ||--o{ BOOK_AUTHOR : written_by
+    BOOK ||--o{ BOOK_GENRE : categorized_as
+    BOOK ||--o{ REVIEW : reviewed_in
+    BOOK ||--o{ RATE : rated_in
+
+    AUTHOR ||--o{ BOOK_AUTHOR : writes
+
+    GENRE ||--o{ BOOK_GENRE : classifies
+
+    USER {
+        uuid id_user PK
+        varchar firstname
+        varchar lastname
+        varchar username UK
+        varchar email UK
+        varchar password
+        varchar avatar_url
+        jsonb preferences
+        timestamp last_login
+        timestamp created_at
+        timestamp updated_at
+        timestamp deleted_at "soft delete"
+    }
+
+    ROLE {
+        uuid id_role PK
+        varchar role_name UK
+        text description
+        timestamp created_at
+    }
+
+    PERMISSION {
+        uuid id_permission PK
+        varchar label UK
+        varchar action
+        varchar resource
+        timestamp created_at
+    }
+
+    USER_ROLE {
+        uuid id_user_role PK
+        uuid id_user FK
+        uuid id_role FK
+        timestamp assigned_at
+        uuid assigned_by FK "self-ref to USER"
+    }
+
+    ROLE_PERMISSION {
+        uuid id_role_permission PK
+        uuid id_role FK
+        uuid id_permission FK
+        timestamp created_at
+    }
+
+    BOOK {
+        uuid id_book PK
+        varchar isbn UK
+        varchar openlibrary_key UK
+        varchar title
+        text summary
+        integer nb_pages
+        integer publication_year
+        varchar language "default fr"
+        varchar image
+        jsonb metadata
+        timestamp created_at
+    }
+
+    AUTHOR {
+        uuid id_author PK
+        varchar author_name
+        text bio
+        varchar wikipedia_url
+        timestamp created_at
+    }
+
+    GENRE {
+        uuid id_genre PK
+        varchar genre_name UK
+        text description
+        timestamp created_at
+    }
+
+    BOOK_AUTHOR {
+        uuid id_book_author PK
+        uuid id_book FK
+        uuid id_author FK
+    }
+
+    BOOK_GENRE {
+        uuid id_book_genre PK
+        uuid id_book FK
+        uuid id_genre FK
+        timestamp created_at
+    }
+
+    LIBRARY {
+        uuid id_library PK
+        uuid id_user FK "cascade delete"
+        varchar lib_name
+        text description
+        boolean is_public "default false"
+        timestamp created_at
+        timestamp updated_at
+        timestamp deleted_at "soft delete"
+    }
+
+    BOOK_LIBRARY {
+        uuid id_book_library PK
+        uuid id_book FK
+        uuid id_library FK
+        timestamp created_at
+    }
+
+    READING_LIST {
+        uuid id_list PK
+        uuid id_user FK "cascade delete"
+        uuid id_library FK "cascade delete"
+        varchar list_name
+        text description
+        boolean is_public "default false"
+        timestamp created_at
+        timestamp updated_at
+        timestamp deleted_at "soft delete"
+    }
+
+    READING_LIST_BOOK {
+        uuid id_reading_list_book PK
+        uuid id_list FK
+        uuid id_book FK
+        timestamp created_at
+    }
+
+    REVIEW {
+        uuid id_review PK
+        uuid id_user FK "cascade delete"
+        uuid id_book FK "restrict delete"
+        varchar title
+        text comment
+        boolean is_public "default false"
+        boolean is_spoiler "default false"
+        timestamp created_at
+        timestamp updated_at
+        timestamp published_at
+    }
+
+    RATE {
+        uuid id_rate PK
+        uuid id_user FK "cascade delete"
+        uuid id_book FK "restrict delete"
+        integer rating
+        timestamp created_at
+        timestamp updated_at
+    }
+----
+
+=== Description des entités
+
+==== Entités principales
+
+[cols="2,3,2"]
+|===
+|**Entité** |**Description** |**Clé primaire**
+
+|**USER**
+|Utilisateurs de l'application avec soft delete
+|id_user
+
+|**ROLE**
+|Rôles du système RBAC (USER, ADMIN)
+|id_role
+
+|**PERMISSION**
+|Permissions du système (action + resource)
+|id_permission
+
+|**LIBRARY**
+|Bibliothèques personnelles des utilisateurs
+|id_library
+
+|**READING_LIST**
+|Listes de lecture thématiques dans les bibliothèques
+|id_list
+
+|**BOOK**
+|Informations sur les livres (depuis OpenLibrary)
+|id_book
+
+|**AUTHOR**
+|Auteurs des livres
+|id_author
+
+|**GENRE**
+|Genres littéraires mappés depuis OpenLibrary
+|id_genre
+
+|**REVIEW**
+|Avis/critiques avec gestion RGPD et spoiler
+|id_review
+
+|**RATE**
+|Notes numériques (entier libre)
+|id_rate
+|===
+
+==== Tables de liaison (Many-to-Many)
+
+[cols="2,3,2"]
+|===
+|**Table** |**Description** |**Entités liées**
+
+|**USER_ROLE**
+|Attribution des rôles aux utilisateurs (RBAC)
+|USER ↔ ROLE
+
+|**ROLE_PERMISSION**
+|Attribution des permissions aux rôles (RBAC)
+|ROLE ↔ PERMISSION
+
+|**BOOK_LIBRARY**
+|Livres dans les bibliothèques
+|BOOK ↔ LIBRARY
+
+|**READING_LIST_BOOK**
+|Livres dans les listes de lecture
+|BOOK ↔ READING_LIST
+
+|**BOOK_AUTHOR**
+|Auteurs des livres (multi-auteurs)
+|BOOK ↔ AUTHOR
+
+|**BOOK_GENRE**
+|Genres des livres (multi-genres)
+|BOOK ↔ GENRE
+|===
+
+=== Cardinalités et règles métier
+
+==== Système RBAC
+
+* **USER ↔ ROLE** (via USER_ROLE) : Un utilisateur peut avoir plusieurs rôles, un rôle peut être attribué à plusieurs utilisateurs
+* **ROLE ↔ PERMISSION** (via ROLE_PERMISSION) : Un rôle peut avoir plusieurs permissions, une permission peut être attribuée à plusieurs rôles
+* **USER_ROLE.assigned_by** : Traçabilité de qui a assigné le rôle (référence vers USER, nullable)
+
+==== Gestion des contenus
+
+* **USER → LIBRARY** (1-N) : Un utilisateur peut créer plusieurs bibliothèques
+* **USER → READING_LIST** (1-N) : Un utilisateur peut créer plusieurs listes
+* **LIBRARY → READING_LIST** (1-N) : Une bibliothèque peut contenir plusieurs listes
+* **READING_LIST** : Contrainte unique sur (id_user, id_library, list_name)
+* **LIBRARY ↔ BOOK** (N-N via BOOK_LIBRARY) : Relation many-to-many permettant le partage de livres entre bibliothèques
+* **READING_LIST ↔ BOOK** (N-N via READING_LIST_BOOK) : Relation many-to-many permettant aux livres d'être dans plusieurs listes
+
+==== Métadonnées des livres
+
+* **BOOK ↔ AUTHOR** (N-N via BOOK_AUTHOR) : Un livre peut avoir plusieurs auteurs, un auteur peut écrire plusieurs livres
+* **BOOK ↔ GENRE** (N-N via BOOK_GENRE) : Un livre peut appartenir à plusieurs genres, un genre peut contenir plusieurs livres
+* **BOOK.openlibrary_key** : Clé unique provenant d'OpenLibrary pour éviter les doublons d'import
+* **BOOK.isbn** : ISBN unique si disponible
+
+==== Évaluations et Avis
+
+* **USER → REVIEW** (1-N) : Un utilisateur peut rédiger plusieurs avis, chaque avis a un seul auteur
+* **BOOK ← REVIEW** (1-N) : Un livre peut avoir plusieurs avis, chaque avis concerne un seul livre
+* **REVIEW** : Contrainte unique sur (id_user, id_book) - un utilisateur ne peut écrire qu'un seul avis par livre
+* **USER → RATE** (1-N) : Un utilisateur peut donner plusieurs notes
+* **BOOK ← RATE** (1-N) : Un livre peut recevoir plusieurs notes de différents utilisateurs
+* **RATE** : Contrainte unique sur (id_user, id_book) - un utilisateur ne peut noter qu'une fois par livre
+
+==== Gestion des avis (REVIEW)
+
+* **is_public** : FALSE par défaut (avis privé, opt-in publication)
+* **is_spoiler** : FALSE par défaut (utilisateur doit cocher consciemment)
+* **published_at** : Timestamp de publication si avis rendu public
+* **title** : Titre obligatoire de l'avis (50 caractères max)
+* **comment** : Contenu textuel de l'avis (optionnel)
+
+=== Contraintes d'intégrité
+
+==== Clés étrangères avec CASCADE DELETE
+
+* `LIBRARY.id_user → USER.id_user` : Suppression des bibliothèques si utilisateur supprimé
+* `READING_LIST.id_user → USER.id_user` : Suppression des listes si utilisateur supprimé
+* `READING_LIST.id_library → LIBRARY.id_library` : Suppression des listes si bibliothèque supprimée
+* `REVIEW.id_user → USER.id_user` : Suppression des avis si utilisateur supprimé
+* `RATE.id_user → USER.id_user` : Suppression des notes si utilisateur supprimé
+* `USER_ROLE.id_user → USER.id_user` : Suppression des rôles si utilisateur supprimé
+* `USER_ROLE.id_role → ROLE.id_role` : Suppression des attributions si rôle supprimé
+* `ROLE_PERMISSION.id_role → ROLE.id_role` : Suppression des permissions si rôle supprimé
+* `ROLE_PERMISSION.id_permission → PERMISSION.id_permission` : Suppression des attributions si permission supprimée
+* `BOOK_LIBRARY.id_book → BOOK.id_book` : Retrait du livre de toutes les bibliothèques si livre supprimé
+* `BOOK_LIBRARY.id_library → LIBRARY.id_library` : Retrait de tous les livres si bibliothèque supprimée
+* `READING_LIST_BOOK.id_list → READING_LIST.id_list` : Retrait de tous les livres si liste supprimée
+* `READING_LIST_BOOK.id_book → BOOK.id_book` : Retrait du livre de toutes les listes si livre supprimé
+* `BOOK_AUTHOR.id_book → BOOK.id_book` : Retrait des associations auteurs si livre supprimé
+* `BOOK_AUTHOR.id_author → AUTHOR.id_author` : Retrait des associations livres si auteur supprimé
+* `BOOK_GENRE.id_book → BOOK.id_book` : Retrait des associations genres si livre supprimé
+* `BOOK_GENRE.id_genre → GENRE.id_genre` : Retrait des associations livres si genre supprimé
+
+==== Clés étrangères avec RESTRICT DELETE
+
+* `REVIEW.id_book → BOOK.id_book` : Impossible de supprimer un livre avec des avis
+* `RATE.id_book → BOOK.id_book` : Impossible de supprimer un livre avec des notes
+
+==== Clés étrangères avec SET NULL
+
+* `USER_ROLE.assigned_by → USER.id_user` : Si l'assigneur est supprimé, le champ devient NULL (traçabilité préservée)
+
+==== Contraintes d'unicité
+
+* `USER.username` et `USER.email` : Unicité globale
+* `ROLE.role_name` : Unicité des noms de rôles
+* `PERMISSION.label` : Unicité des labels de permissions
+* `BOOK.isbn` : Unicité des ISBN (si fourni)
+* `BOOK.openlibrary_key` : Unicité des clés OpenLibrary (évite doublons d'import)
+* `GENRE.genre_name` : Unicité des noms de genres
+* `REVIEW` : Unique (id_user, id_book) - un seul avis par utilisateur par livre
+* `RATE` : Unique (id_user, id_book) - une seule note par utilisateur par livre
+* `READING_LIST` : Unique (id_user, id_library, list_name) - pas de doublons de noms de listes dans une même bibliothèque pour un utilisateur
+
+=== Notes techniques
+
+==== Soft Delete
+
+Les entités suivantes supportent la suppression logique via `deleted_at` :
+
+* **USER** : Permet de désactiver un compte sans perdre l'historique
+* **LIBRARY** : Permet d'archiver une bibliothèque
+* **READING_LIST** : Permet d'archiver une liste de lecture
+
+NOTE: Les livres (BOOK) ne sont **pas** supprimés logiquement car ils sont partagés entre utilisateurs.
+
+==== Timestamps automatiques
+
+Toutes les entités principales incluent :
+
+* `created_at` : Date de création (NOT NULL, defaultNow())
+* `updated_at` : Date de dernière modification (si applicable, NOT NULL, defaultNow())
+
+==== Types PostgreSQL utilisés
+
+* **UUID** : Clés primaires générées avec `defaultRandom()` (UUIDv4)
+* **VARCHAR** : Chaînes de caractères avec longueurs spécifiques
+* **TEXT** : Texte sans limite de longueur (summary, bio, description, comment)
+* **INTEGER** : Entiers (rating, nb_pages, publication_year)
+* **BOOLEAN** : Booléens (is_public, is_spoiler)
+* **JSONB** : Données JSON indexables (preferences, metadata)
+* **TIMESTAMP** : Dates avec timezone
+
+==== Intégration OpenLibrary
+
+* **BOOK.openlibrary_key** : Clé unique provenant d'OpenLibrary (ex: `/works/OL82563W`)
+* **BOOK.metadata** : Champ JSONB pour stocker des données supplémentaires d'OpenLibrary
+* **BOOK.image** : URL Cloudinary de la couverture (uploadée depuis OpenLibrary)
+
+==== Système de notation
+
+* **RATE.rating** : Entier libre (pas de contrainte CHECK dans le modèle actuel)
+* Contrainte unique sur (id_user, id_book) pour éviter les notes multiples
+
+==== Indexation recommandée
+
+Pour optimiser les performances :
+
+[source,sql]
+----
+-- Index sur les clés étrangères fréquemment utilisées
+CREATE INDEX idx_review_user ON REVIEW(id_user);
+CREATE INDEX idx_review_book ON REVIEW(id_book);
+CREATE INDEX idx_rate_user ON RATE(id_user);
+CREATE INDEX idx_rate_book ON RATE(id_book);
+CREATE INDEX idx_library_user ON LIBRARY(id_user);
+CREATE INDEX idx_reading_list_user ON READING_LIST(id_user);
+CREATE INDEX idx_reading_list_library ON READING_LIST(id_library);
+CREATE INDEX idx_book_library_book ON BOOK_LIBRARY(id_book);
+CREATE INDEX idx_book_library_library ON BOOK_LIBRARY(id_library);
+
+-- Index sur les champs de recherche
+CREATE INDEX idx_book_isbn ON BOOK(isbn);
+CREATE INDEX idx_book_openlibrary_key ON BOOK(openlibrary_key);
+CREATE INDEX idx_user_email ON USER(email);
+CREATE INDEX idx_user_username ON USER(username);
+
+-- Index sur les soft deletes
+CREATE INDEX idx_user_deleted_at ON USER(deleted_at) WHERE deleted_at IS NULL;
+CREATE INDEX idx_library_deleted_at ON LIBRARY(deleted_at) WHERE deleted_at IS NULL;
+CREATE INDEX idx_reading_list_deleted_at ON READING_LIST(deleted_at) WHERE deleted_at IS NULL;
+----
+
+==== Légende
+
+[cols="1,2"]
+|===
+|**Symbole** |**Signification**
+
+|`PK`
+|Clé primaire (Primary Key)
+
+|`FK`
+|Clé étrangère (Foreign Key)
+
+|`UK`
+|Clé unique (Unique Key)
+
+|`\|\|--o{`
+|Relation un-à-plusieurs
+
+|`}o--o{`
+|Relation plusieurs-à-plusieurs (via table de liaison)
+|===
+
+[[section-en]]
+== 🇬🇧🇺🇸 ERD Diagram - BlaBlaBook
+
+<<section-fr,🇫🇷 Passer en Français>> | 🇬🇧🇺🇸 *English*
+
+This document presents the ERD diagram of the BlaBlaBook application based on Drizzle schemas with complete RBAC system.
+
+NOTE: This diagram is generated from actual Drizzle ORM schemas (`backend/src/models/`) and reflects the current state of the PostgreSQL database.
+
+=== ERD Diagram
+
+[source,mermaid]
+----
+erDiagram
+    USER ||--o{ LIBRARY : owns
+    USER ||--o{ READING_LIST : creates
+    USER ||--o{ REVIEW : writes
+    USER ||--o{ RATE : gives
+    USER ||--o{ USER_ROLE : has
+    USER ||--o{ USER_ROLE : "assigned_by"
+
+    ROLE ||--o{ USER_ROLE : granted_to
+    ROLE ||--o{ ROLE_PERMISSION : has
+
+    PERMISSION ||--o{ ROLE_PERMISSION : belongs_to
+
+    LIBRARY ||--o{ READING_LIST : contains
+    LIBRARY ||--o{ BOOK_LIBRARY : stores
+
+    READING_LIST ||--o{ READING_LIST_BOOK : includes
+
+    BOOK ||--o{ BOOK_LIBRARY : stored_in
+    BOOK ||--o{ READING_LIST_BOOK : appears_in
+    BOOK ||--o{ BOOK_AUTHOR : written_by
+    BOOK ||--o{ BOOK_GENRE : categorized_as
+    BOOK ||--o{ REVIEW : reviewed_in
+    BOOK ||--o{ RATE : rated_in
+
+    AUTHOR ||--o{ BOOK_AUTHOR : writes
+
+    GENRE ||--o{ BOOK_GENRE : classifies
+
+    USER {
+        uuid id_user PK
+        varchar firstname
+        varchar lastname
+        varchar username UK
+        varchar email UK
+        varchar password
+        varchar avatar_url
+        jsonb preferences
+        timestamp last_login
+        timestamp created_at
+        timestamp updated_at
+        timestamp deleted_at "soft delete"
+    }
+
+    ROLE {
+        uuid id_role PK
+        varchar role_name UK
+        text description
+        timestamp created_at
+    }
+
+    PERMISSION {
+        uuid id_permission PK
+        varchar label UK
+        varchar action
+        varchar resource
+        timestamp created_at
+    }
+
+    USER_ROLE {
+        uuid id_user_role PK
+        uuid id_user FK
+        uuid id_role FK
+        timestamp assigned_at
+        uuid assigned_by FK "self-ref to USER"
+    }
+
+    ROLE_PERMISSION {
+        uuid id_role_permission PK
+        uuid id_role FK
+        uuid id_permission FK
+        timestamp created_at
+    }
+
+    BOOK {
+        uuid id_book PK
+        varchar isbn UK
+        varchar openlibrary_key UK
+        varchar title
+        text summary
+        integer nb_pages
+        integer publication_year
+        varchar language "default fr"
+        varchar image
+        jsonb metadata
+        timestamp created_at
+    }
+
+    AUTHOR {
+        uuid id_author PK
+        varchar author_name
+        text bio
+        varchar wikipedia_url
+        timestamp created_at
+    }
+
+    GENRE {
+        uuid id_genre PK
+        varchar genre_name UK
+        text description
+        timestamp created_at
+    }
+
+    BOOK_AUTHOR {
+        uuid id_book_author PK
+        uuid id_book FK
+        uuid id_author FK
+    }
+
+    BOOK_GENRE {
+        uuid id_book_genre PK
+        uuid id_book FK
+        uuid id_genre FK
+        timestamp created_at
+    }
+
+    LIBRARY {
+        uuid id_library PK
+        uuid id_user FK "cascade delete"
+        varchar lib_name
+        text description
+        boolean is_public "default false"
+        timestamp created_at
+        timestamp updated_at
+        timestamp deleted_at "soft delete"
+    }
+
+    BOOK_LIBRARY {
+        uuid id_book_library PK
+        uuid id_book FK
+        uuid id_library FK
+        timestamp created_at
+    }
+
+    READING_LIST {
+        uuid id_list PK
+        uuid id_user FK "cascade delete"
+        uuid id_library FK "cascade delete"
+        varchar list_name
+        text description
+        boolean is_public "default false"
+        timestamp created_at
+        timestamp updated_at
+        timestamp deleted_at "soft delete"
+    }
+
+    READING_LIST_BOOK {
+        uuid id_reading_list_book PK
+        uuid id_list FK
+        uuid id_book FK
+        timestamp created_at
+    }
+
+    REVIEW {
+        uuid id_review PK
+        uuid id_user FK "cascade delete"
+        uuid id_book FK "restrict delete"
+        varchar title
+        text comment
+        boolean is_public "default false"
+        boolean is_spoiler "default false"
+        timestamp created_at
+        timestamp updated_at
+        timestamp published_at
+    }
+
+    RATE {
+        uuid id_rate PK
+        uuid id_user FK "cascade delete"
+        uuid id_book FK "restrict delete"
+        integer rating
+        timestamp created_at
+        timestamp updated_at
+    }
+----
+
+=== Entity Descriptions
+
+==== Main Entities
+
+[cols="2,3,2"]
+|===
+|**Entity** |**Description** |**Primary Key**
+
+|**USER**
+|Application users with soft delete
+|id_user
+
+|**ROLE**
+|RBAC system roles (USER, ADMIN)
+|id_role
+
+|**PERMISSION**
+|System permissions (action + resource)
+|id_permission
+
+|**LIBRARY**
+|User personal libraries
+|id_library
+
+|**READING_LIST**
+|Thematic reading lists within libraries
+|id_list
+
+|**BOOK**
+|Book information (from OpenLibrary)
+|id_book
+
+|**AUTHOR**
+|Book authors
+|id_author
+
+|**GENRE**
+|Literary genres mapped from OpenLibrary
+|id_genre
+
+|**REVIEW**
+|Reviews/critiques with GDPR and spoiler management
+|id_review
+
+|**RATE**
+|Numeric ratings (free integer)
+|id_rate
+|===
+
+==== Junction Tables (Many-to-Many)
+
+[cols="2,3,2"]
+|===
+|**Table** |**Description** |**Linked Entities**
+
+|**USER_ROLE**
+|Role assignment to users (RBAC)
+|USER ↔ ROLE
+
+|**ROLE_PERMISSION**
+|Permission assignment to roles (RBAC)
+|ROLE ↔ PERMISSION
+
+|**BOOK_LIBRARY**
+|Books in libraries
+|BOOK ↔ LIBRARY
+
+|**READING_LIST_BOOK**
+|Books in reading lists
+|BOOK ↔ READING_LIST
+
+|**BOOK_AUTHOR**
+|Book authors (multi-author support)
+|BOOK ↔ AUTHOR
+
+|**BOOK_GENRE**
+|Book genres (multi-genre support)
+|BOOK ↔ GENRE
+|===
+
+=== Cardinalities and Business Rules
+
+==== RBAC System
+
+* **USER ↔ ROLE** (via USER_ROLE): A user can have multiple roles, a role can be assigned to multiple users
+* **ROLE ↔ PERMISSION** (via ROLE_PERMISSION): A role can have multiple permissions, a permission can be assigned to multiple roles
+* **USER_ROLE.assigned_by**: Traceability of who assigned the role (reference to USER, nullable)
+
+==== Content Management
+
+* **USER → LIBRARY** (1-N): A user can create multiple libraries
+* **USER → READING_LIST** (1-N): A user can create multiple lists
+* **LIBRARY → READING_LIST** (1-N): A library can contain multiple lists
+* **READING_LIST**: Unique constraint on (id_user, id_library, list_name)
+* **LIBRARY ↔ BOOK** (N-N via BOOK_LIBRARY): Many-to-many relationship allowing book sharing between libraries
+* **READING_LIST ↔ BOOK** (N-N via READING_LIST_BOOK): Many-to-many relationship allowing books to be in multiple lists
+
+==== Book Metadata
+
+* **BOOK ↔ AUTHOR** (N-N via BOOK_AUTHOR): A book can have multiple authors, an author can write multiple books
+* **BOOK ↔ GENRE** (N-N via BOOK_GENRE): A book can belong to multiple genres, a genre can contain multiple books
+* **BOOK.openlibrary_key**: Unique key from OpenLibrary to avoid duplicate imports
+* **BOOK.isbn**: Unique ISBN if available
+
+==== Reviews and Ratings
+
+* **USER → REVIEW** (1-N): A user can write multiple reviews, each review has a single author
+* **BOOK ← REVIEW** (1-N): A book can have multiple reviews, each review concerns a single book
+* **REVIEW**: Unique constraint on (id_user, id_book) - a user can only write one review per book
+* **USER → RATE** (1-N): A user can give multiple ratings
+* **BOOK ← RATE** (1-N): A book can receive multiple ratings from different users
+* **RATE**: Unique constraint on (id_user, id_book) - a user can only rate once per book
+
+==== Review Management (REVIEW)
+
+* **is_public**: FALSE by default (private review, opt-in publication)
+* **is_spoiler**: FALSE by default (user must consciously check)
+* **published_at**: Publication timestamp if review made public
+* **title**: Required review title (50 characters max)
+* **comment**: Textual content of review (optional)
+
+=== Integrity Constraints
+
+==== Foreign Keys with CASCADE DELETE
+
+* `LIBRARY.id_user → USER.id_user`: Delete libraries if user deleted
+* `READING_LIST.id_user → USER.id_user`: Delete lists if user deleted
+* `READING_LIST.id_library → LIBRARY.id_library`: Delete lists if library deleted
+* `REVIEW.id_user → USER.id_user`: Delete reviews if user deleted
+* `RATE.id_user → USER.id_user`: Delete ratings if user deleted
+* `USER_ROLE.id_user → USER.id_user`: Delete roles if user deleted
+* `USER_ROLE.id_role → ROLE.id_role`: Delete assignments if role deleted
+* `ROLE_PERMISSION.id_role → ROLE.id_role`: Delete permissions if role deleted
+* `ROLE_PERMISSION.id_permission → PERMISSION.id_permission`: Delete assignments if permission deleted
+* `BOOK_LIBRARY.id_book → BOOK.id_book`: Remove book from all libraries if book deleted
+* `BOOK_LIBRARY.id_library → LIBRARY.id_library`: Remove all books if library deleted
+* `READING_LIST_BOOK.id_list → READING_LIST.id_list`: Remove all books if list deleted
+* `READING_LIST_BOOK.id_book → BOOK.id_book`: Remove book from all lists if book deleted
+* `BOOK_AUTHOR.id_book → BOOK.id_book`: Remove author associations if book deleted
+* `BOOK_AUTHOR.id_author → AUTHOR.id_author`: Remove book associations if author deleted
+* `BOOK_GENRE.id_book → BOOK.id_book`: Remove genre associations if book deleted
+* `BOOK_GENRE.id_genre → GENRE.id_genre`: Remove book associations if genre deleted
+
+==== Foreign Keys with RESTRICT DELETE
+
+* `REVIEW.id_book → BOOK.id_book`: Cannot delete a book with reviews
+* `RATE.id_book → BOOK.id_book`: Cannot delete a book with ratings
+
+==== Foreign Keys with SET NULL
+
+* `USER_ROLE.assigned_by → USER.id_user`: If assigner is deleted, field becomes NULL (traceability preserved)
+
+==== Uniqueness Constraints
+
+* `USER.username` and `USER.email`: Global uniqueness
+* `ROLE.role_name`: Unique role names
+* `PERMISSION.label`: Unique permission labels
+* `BOOK.isbn`: Unique ISBN (if provided)
+* `BOOK.openlibrary_key`: Unique OpenLibrary keys (avoid duplicate imports)
+* `GENRE.genre_name`: Unique genre names
+* `REVIEW`: Unique (id_user, id_book) - one review per user per book
+* `RATE`: Unique (id_user, id_book) - one rating per user per book
+* `READING_LIST`: Unique (id_user, id_library, list_name) - no duplicate list names in same library for a user
+
+=== Technical Notes
+
+==== Soft Delete
+
+The following entities support logical deletion via `deleted_at`:
+
+* **USER**: Allows account deactivation without losing history
+* **LIBRARY**: Allows archiving a library
+* **READING_LIST**: Allows archiving a reading list
+
+NOTE: Books (BOOK) are **not** soft deleted as they are shared between users.
+
+==== Automatic Timestamps
+
+All main entities include:
+
+* `created_at`: Creation date (NOT NULL, defaultNow())
+* `updated_at`: Last modification date (if applicable, NOT NULL, defaultNow())
+
+==== PostgreSQL Types Used
+
+* **UUID**: Primary keys generated with `defaultRandom()` (UUIDv4)
+* **VARCHAR**: Character strings with specific lengths
+* **TEXT**: Unlimited text (summary, bio, description, comment)
+* **INTEGER**: Integers (rating, nb_pages, publication_year)
+* **BOOLEAN**: Booleans (is_public, is_spoiler)
+* **JSONB**: Indexable JSON data (preferences, metadata)
+* **TIMESTAMP**: Dates with timezone
+
+==== OpenLibrary Integration
+
+* **BOOK.openlibrary_key**: Unique key from OpenLibrary (e.g., `/works/OL82563W`)
+* **BOOK.metadata**: JSONB field to store additional OpenLibrary data
+* **BOOK.image**: Cloudinary URL of cover (uploaded from OpenLibrary)
+
+==== Rating System
+
+* **RATE.rating**: Free integer (no CHECK constraint in current model)
+* Unique constraint on (id_user, id_book) to prevent multiple ratings
+
+==== Recommended Indexing
+
+For performance optimization:
+
+[source,sql]
+----
+-- Index on frequently used foreign keys
+CREATE INDEX idx_review_user ON REVIEW(id_user);
+CREATE INDEX idx_review_book ON REVIEW(id_book);
+CREATE INDEX idx_rate_user ON RATE(id_user);
+CREATE INDEX idx_rate_book ON RATE(id_book);
+CREATE INDEX idx_library_user ON LIBRARY(id_user);
+CREATE INDEX idx_reading_list_user ON READING_LIST(id_user);
+CREATE INDEX idx_reading_list_library ON READING_LIST(id_library);
+CREATE INDEX idx_book_library_book ON BOOK_LIBRARY(id_book);
+CREATE INDEX idx_book_library_library ON BOOK_LIBRARY(id_library);
+
+-- Index on search fields
+CREATE INDEX idx_book_isbn ON BOOK(isbn);
+CREATE INDEX idx_book_openlibrary_key ON BOOK(openlibrary_key);
+CREATE INDEX idx_user_email ON USER(email);
+CREATE INDEX idx_user_username ON USER(username);
+
+-- Index on soft deletes
+CREATE INDEX idx_user_deleted_at ON USER(deleted_at) WHERE deleted_at IS NULL;
+CREATE INDEX idx_library_deleted_at ON LIBRARY(deleted_at) WHERE deleted_at IS NULL;
+CREATE INDEX idx_reading_list_deleted_at ON READING_LIST(deleted_at) WHERE deleted_at IS NULL;
+----
+
+==== Legend
+
+[cols="1,2"]
+|===
+|**Symbol** |**Meaning**
+
+|`PK`
+|Primary Key
+
+|`FK`
+|Foreign Key
+
+|`UK`
+|Unique Key
+
+|`\|\|--o{`
+|One-to-many relationship
+
+|`}o--o{`
+|Many-to-many relationship (via junction table)
+|===
+
+---
+
+*Document generated from Drizzle ORM schemas on {date}*
+
+*BlaBlaBook V2 - Stack Deno/Hono/Drizzle/PostgreSQL*

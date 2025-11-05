@@ -1,0 +1,320 @@
+= Diagramme d'Activité - Flux d'Authentification
+:toc:
+:toc-title: Sommaire
+:sectnums:
+:icons: font
+
+== Vue d'ensemble
+
+Diagramme d'activité focalisé sur les **flux utilisateur** d'authentification BlaBlaBook V2.
+Les aspects techniques (JWT, Zero Trust) sont documentés séparément dans link:../../architecture/security-architecture.adoc[Architecture Sécurité].
+
+**NOTE:** Ce diagramme est synchronisé avec le code backend actuel (userController, userService, authLockout middleware).
+
+== Flux d'Authentification Utilisateur
+
+[plantuml, auth-clean-final, png]
+----
+@startuml
+start
+
+:Visiteur arrive sur le site;
+
+if (A déjà un compte ?) then (oui)
+
+  :Clic "Se connecter";
+  :Saisir email et mot de passe;
+
+  if (Identifiants corrects ?) then (oui)
+    :Connexion réussie;
+    :Rôle USER assigné automatiquement;
+    :Token JWT généré + httpOnly cookie;
+    :Accès aux fonctionnalités utilisateur;
+
+  else (non)
+    :Erreur "Invalid email or password";
+    note right: Message volontairement flou (sécurité)
+
+    if (Trop de tentatives ?) then (oui)
+      :Blocage temporaire 15 minutes;
+      :Code HTTP 429;
+      note right: Lockout persiste via Deno KV
+      stop
+    else (non)
+      :Retour formulaire connexion;
+    endif
+  endif
+
+else (non - nouveau utilisateur)
+
+  :Clic "S'inscrire";
+  :Formulaire inscription;
+  :Saisir: firstname, lastname, username, email, password;
+
+  if (Email déjà utilisé ?) then (oui)
+    :Erreur "A user with this email already exists";
+    :Code HTTP 409;
+    :Proposition "Se connecter";
+
+  else (non)
+    if (Username déjà pris ?) then (oui)
+      :Erreur "A user with this username already exists";
+      :Code HTTP 409;
+      :Suggestions alternatives;
+
+    else (non)
+      if (Mot de passe trop faible ?) then (oui)
+        :Erreur validation Zod;
+        :Critères de sécurité affichés;
+        note right: 8 caractères minimum\n1 majuscule, 1 minuscule\n1 chiffre, 1 caractère spécial (@$!%*?&)
+
+      else (oui - tout OK)
+        :Création du compte;
+        :Hash du mot de passe (bcrypt);
+        :Rôle USER assigné automatiquement;
+        :Connexion automatique;
+        :Token JWT + httpOnly cookie;
+      endif
+    endif
+  endif
+endif
+
+:Utilisateur connecté;
+:Navigation dans l'application;
+
+stop
+@enduml
+----
+
+== Scénarios Utilisateur
+
+=== Scénario nominal - Connexion existante
+
+**Acteur :** Utilisateur avec compte existant
+**Objectif :** Se connecter à son compte
+
+[cols="1,3"]
+|===
+|Étape |Action
+
+|1 |Utilisateur clique "Se connecter"
+|2 |Saisit email et mot de passe corrects
+|3 |Système valide les identifiants (userService.login)
+|4 |Middleware authLockout vérifie l'absence de blocage
+|5 |Token JWT généré + envoyé en httpOnly cookie
+|6 |Rôles et permissions récupérés (avec cache)
+|7 |last_login mis à jour
+|8 |Tentatives d'échec réinitialisées
+|9 |Utilisateur accède à ses fonctionnalités
+|===
+
+**Résultat :** Utilisateur connecté, accès complet aux fonctionnalités.
+
+=== Scénario alternatif - Échec de connexion
+
+**Déclencheur :** Mot de passe incorrect
+
+[cols="1,3"]
+|===
+|Étape |Action
+
+|1-2 |Saisie identifiants incorrects
+|3 |Système rejette (userService.login retourne null)
+|4 |recordFailedLogin() incrémente le compteur
+|5 |Message "Invalid email or password" (code 401)
+|6 |Utilisateur peut réessayer
+|===
+
+**Résultat :** Échec de connexion, compteur incrémenté.
+
+=== Scénario d'exception - Tentatives multiples
+
+**Déclencheur :** 5 tentatives de connexion échouées
+
+[cols="1,3"]
+|===
+|Étape |Action
+
+|1-2 |Saisie identifiants incorrects (5x)
+|3 |Middleware authLockout détecte tentatives répétées
+|4 |Compte temporairement bloqué 15 minutes
+|5 |lockedUntil timestamp enregistré dans Deno KV
+|6 |Message explicatif affiché (code HTTP 429)
+|7 |Temps restant affiché en minutes
+|===
+
+**Résultat :** Protection contre force brute, compte sécurisé.
+
+**Message d'erreur réel :**
+```json
+{
+  "error": "Account temporarily locked. Try again in X minutes.",
+  "lockedUntil": "2025-10-20T15:30:00.000Z"
+}
+```
+
+=== Scénario nominal - Inscription
+
+**Acteur :** Visiteur souhaitant créer un compte
+
+[cols="1,3"]
+|===
+|Étape |Action
+
+|1 |Visiteur clique "S'inscrire"
+|2 |Remplit formulaire (firstname, lastname, username, email, password, passwordConfirm)
+|3 |Middleware Zod valide les données
+|4 |Système valide unicité email/username
+|5 |Système valide force du mot de passe (regex Zod)
+|6 |Mot de passe hashé via bcrypt
+|7 |Compte créé avec succès
+|8 |Rôle USER assigné automatiquement
+|9 |Token JWT généré + httpOnly cookie
+|10 |Connexion automatique
+|===
+
+**Résultat :** Nouvel utilisateur opérationnel avec rôle USER.
+
+== États utilisateur
+
+=== Visiteur (non-connecté)
+- Accès page d'accueil uniquement
+- Peut s'inscrire ou se connecter
+- **Pas d'accès** aux livres/recherche/avis
+
+=== Utilisateur connecté
+- Accès complet aux fonctionnalités
+- Peut gérer ses bibliothèques et listes
+- Peut voir/masquer spoilers des avis
+- Session valide via JWT (durée configurable)
+- Rôle USER avec permissions associées
+
+=== Utilisateur bloqué temporaire
+- Connexion impossible 15 minutes
+- Lockout persisté dans Deno KV
+- Accès visiteur maintenu
+- Peut utiliser "Mot de passe oublié" (si implémenté)
+
+== Règles métier
+
+=== Validation données
+
+**Email :**
+- Format email valide requis (Zod .email())
+- Maximum 100 caractères
+- Unicité garantie en base (contrainte unique)
+- toLowerCase() automatique
+- Trim des espaces
+
+**Username :**
+- 3-50 caractères alphanumériques + underscore + tirets
+- Regex : `^[a-zA-Z0-9_-]+$`
+- Unicité garantie en base (contrainte unique)
+- Trim des espaces
+
+**Password (création) :**
+- 8-128 caractères
+- Au moins 1 majuscule **REQUIS**
+- Au moins 1 minuscule **REQUIS**
+- Au moins 1 chiffre **REQUIS**
+- Au moins 1 caractère spécial **REQUIS** : `@$!%*?&`
+- Regex Zod pour chaque règle
+- Hash bcrypt avant stockage (jamais en clair)
+
+**Firstname / Lastname :**
+- 1-50 caractères
+- Requis
+- Trim des espaces
+
+=== Sécurité
+
+**Protection force brute :**
+- 5 tentatives maximum par email
+- Blocage 15 minutes après 5 échecs (lockout)
+- Stockage dans Deno KV (persistence)
+- Fallback mémoire si Deno KV indisponible
+- Reset compteur après connexion réussie
+- Expiration automatique des tentatives après 15 minutes
+
+**Architecture Zero Trust :**
+- Validation permissions à chaque requête
+- Token JWT avec durée configurable
+- httpOnly cookie (protection XSS)
+- Rate limiting via middleware authLockout
+- Logs sécurité (console.warn pour lockouts)
+
+**Gestion des erreurs :**
+- Code 401 : "Invalid email or password"
+- Code 409 : Duplicate email/username
+- Code 429 : Account locked
+- Messages volontairement flous pour sécurité
+
+== Messages utilisateur
+
+=== Succès
+- "Login successful" (avec token + user)
+- "User created successfully" (inscription)
+- Connexion automatique après inscription
+
+=== Erreurs claires
+- "Invalid email or password" (login)
+- "A user with this email already exists" (409)
+- "A user with this username already exists" (409)
+- Erreurs Zod descriptives pour validation formulaire :
+  - "Le mot de passe doit faire au moins 8 caracteres"
+  - "Le mot de passe doit contenir au moins une minuscule"
+  - "Le mot de passe doit contenir au moins une majuscule"
+  - "Le mot de passe doit contenir au moins un chiffre"
+  - "Le mot de passe doit contenir au moins un caractere special (@$!%*?&)"
+  - "Le nom d'utilisateur doit faire au moins 3 caracteres"
+  - "Le nom d'utilisateur ne peut contenir que des lettres, chiffres, _ et -"
+
+=== Sécurité
+- "Account temporarily locked. Try again in X minutes." (429)
+- Timestamp `lockedUntil` fourni en ISO 8601
+
+== Points d'attention UX
+
+**Inscription simple :**
+- Formulaire en une étape
+- Validation Zod en temps réel côté backend
+- Messages d'aide contextuel (erreurs Zod descriptives)
+- Confirmation mot de passe requise
+
+**Connexion fluide :**
+- Email + mot de passe uniquement
+- Token JWT en httpOnly cookie (sécurité)
+- Connexion automatique après inscription
+- Récupération mot de passe (à implémenter)
+
+**Sécurité transparente :**
+- Lockout temporaire avec durée affichée
+- Messages d'erreur clairs mais sécurisés
+- Pas de distinction entre "email inexistant" et "mot de passe incorrect"
+- Persistance lockout via Deno KV (survit aux redémarrages)
+
+**Rôles automatiques :**
+- Rôle USER assigné automatiquement lors de l'inscription
+- Permissions récupérées et cachées (cacheService)
+- Rôles inclus dans la réponse JWT
+
+== Différences avec le design initial
+
+**Fonctionnalités RETIRÉES :**
+- ❌ Création automatique de bibliothèque lors de l'inscription (non implémenté)
+- ❌ Tour guidé première utilisation (non implémenté backend)
+- ❌ Détection "Première fois sur l'app" (non implémenté)
+
+**Fonctionnalités AJOUTÉES :**
+- ✅ Rôle USER assigné automatiquement
+- ✅ httpOnly cookie en plus du token JSON
+- ✅ Cache des rôles et permissions (cacheService)
+- ✅ Persistance lockout via Deno KV avec fallback mémoire
+- ✅ Code HTTP 429 pour lockout
+- ✅ Timestamp `lockedUntil` dans la réponse d'erreur
+
+**Modifications :**
+- Caractère spécial **REQUIS** (pas juste recommandé)
+- Username accepte tirets `-` en plus de underscore
+- Email max 100 caractères (pas 255)
+- Messages d'erreur anglais dans le backend (français dans schemas Zod)

@@ -1,0 +1,430 @@
+= Module OpenLibrary - Analyse Complète
+:toc:
+:toclevels: 3
+
+== Vue d'ensemble
+
+Le module OpenLibrary est un client API complet pour l'intégration avec l'API publique d'OpenLibrary.org dans l'API BlaBlaBook V2. Il fournit une interface TypeScript sécurisée et optimisée pour la recherche de livres, la consultation d'auteurs et l'enrichissement des données bibliographiques externes.
+
+== Architecture du module
+
+=== Structure modulaire
+Le module est organisé en 5 fichiers spécialisés :
+
+* **index.ts** : Point d'entrée et exports centralisés
+* **client.ts** : Configuration Axios et gestion des erreurs
+* **types.ts** : Définitions TypeScript et utilitaires
+* **books.ts** : Fonctions de recherche et consultation de livres
+* **authors.ts** : Fonctions de gestion des auteurs et leurs œuvres
+
+=== Principe de sécurité
+Le module implémente une whitelist stricte des domaines autorisés :
+```javascript
+const ALLOWED_HOSTS = [
+    'openlibrary.org',
+    'covers.openlibrary.org'
+];
+```
+
+== Composants principaux
+
+=== Client HTTP (client.ts)
+
+**Fonctionnalités :**
+- Configuration Axios sécurisée avec timeout 10s
+- User-Agent personnalisé : "BlaBlaBook/2.0 (Educational Project)"
+- Validation stricte des URLs par whitelist de domaines
+- Gestion d'erreurs centralisée avec typage
+
+**Configuration de sécurité :**
+```javascript
+export const openLibraryClient = axios.create({
+    baseURL: OPENLIBRARY_BASE_URL,
+    timeout: 10000,
+    headers: {
+        'Accept': 'application/json',
+        'User-Agent': 'BlaBlaBook/2.0 (Educational Project)',
+    },
+});
+```
+
+=== Système de types (types.ts)
+
+**Types principaux :**
+- **BookSearchResult** : Résultats de recherche avec pagination
+- **BookSearchDoc** : Document livre individuel avec métadonnées
+- **WorkDetails** : Détails complets d'une œuvre
+- **AuthorDetails** : Informations détaillées d'un auteur
+- **AuthorWorksResult** : Collection d'œuvres d'un auteur
+
+**Utilitaires inclus :**
+- **getCoverUrl()** : Construction d'URLs de couvertures
+- **getAuthorUrl()** : URLs d'API pour les auteurs
+- **getWorkUrl()** : URLs d'API pour les œuvres
+
+== Fonctions de recherche de livres (books.ts)
+
+=== searchBooks(params: BookSearchParams)
+**Objectif:** Recherche générique de livres avec paramètres flexibles
+**Paramètres acceptés:**
+- `q` : Recherche générale full-text
+- `title` : Titre spécifique
+- `author` : Nom d'auteur
+- `isbn` : Code ISBN
+- `limit` : Nombre de résultats (défaut: 20, max: 100)
+- `offset` : Décalage pour pagination
+
+**Optimisations appliquées :**
+- Limitation des champs retournés via `fields` parameter
+- Logging des requêtes pour debugging
+- Gestion d'erreurs avec typage strict
+
+=== searchByISBN(isbn: string)
+**Objectif:** Recherche précise par code ISBN avec validation
+**Validations :**
+- Nettoyage automatique (suppression tirets/espaces)
+- Validation longueur (10 ou 13 chiffres)
+- Limite réduite à 5 résultats (ISBN unique)
+
+**Processus de nettoyage :**
+```javascript
+const cleanISBN = isbn.replace(/[-\s]/g, '');
+if (cleanISBN.length !== 10 && cleanISBN.length !== 13) {
+    throw new Error('ISBN must be 10 or 13 digits');
+}
+```
+
+=== searchByTitleAndAuthor(title: string, author: string)
+**Objectif:** Recherche combinée titre+auteur pour précision maximale
+**Validations :**
+- Vérification que titre et auteur sont fournis
+- Trim automatique des espaces
+- Limite à 10 résultats pour pertinence
+
+=== searchGeneral(query: string, limit = 20)
+**Objectif:** Recherche fallback pour requêtes générales
+**Usage :** Recherche full-text quand les critères spécifiques ne suffisent pas
+
+=== getWorkDetails(workKey: string)
+**Objectif:** Récupération des détails complets d'une œuvre
+**Données retournées :**
+- Titre et description
+- Auteurs associés
+- Couvertures disponibles
+- Sujets/genres
+- Date de première publication
+
+== Fonctions de gestion des auteurs (authors.ts)
+
+=== getAuthorDetails(authorKey: string)
+**Objectif:** Récupération des informations détaillées d'un auteur
+**Données retournées :**
+- Nom et biographie
+- Photos disponibles
+- IDs externes (Wikidata pour Wikipedia)
+- Clé OpenLibrary
+
+=== getAuthorWorks(authorKey: string, params: AuthorWorksParams)
+**Objectif:** Récupération des œuvres d'un auteur avec pagination
+**Paramètres :**
+- `limit` : Nombre d'œuvres (défaut: 20, max: 100)
+- `offset` : Décalage pour pagination
+
+**Données retournées :**
+- Nombre total d'œuvres (`size`)
+- Liste paginée des œuvres (`entries`)
+- Clés et titres des œuvres
+
+=== getAuthorWithWorks(authorKey: string, worksParams: AuthorWorksParams)
+**Objectif:** Fonction combinée optimisée auteur + œuvres
+**Optimisation :** Exécution parallèle avec `Promise.all`
+```javascript
+const [authorDetails, authorWorks] = await Promise.all([
+    getAuthorDetails(authorKey),
+    getAuthorWorks(authorKey, worksParams)
+]);
+```
+
+=== buildWikipediaUrl(authorName: string, lang = 'fr')
+**Objectif:** Construction d'URLs Wikipedia à partir du nom d'auteur
+**Processus :**
+1. Nettoyage et trim du nom
+2. Remplacement espaces par underscores
+3. Capitalisation du premier caractère
+4. Encodage URL pour caractères spéciaux
+
+**Exemple :**
+```javascript
+buildWikipediaUrl("Victor Hugo")
+// → "https://fr.wikipedia.org/wiki/Victor_Hugo"
+```
+
+== Interface unifiée (index.ts)
+
+=== Export principal : OpenLibrary
+Le module expose une API simplifiée via l'objet `OpenLibrary` :
+```javascript
+export const OpenLibrary = {
+    // Recherche de livres
+    searchBooks,
+    searchByISBN,
+    searchByTitleAndAuthor,
+    searchGeneral,
+    getWorkDetails,
+
+    // Auteurs
+    getAuthorDetails,
+    getAuthorWorks,
+    getAuthorWithWorks,
+
+    // Utils
+    buildWikipediaUrl,
+} as const;
+```
+
+=== Exports modulaires
+Le module permet aussi l'import sélectif :
+```javascript
+import { Books, Authors } from "./openlibrary/index.ts";
+// ou
+import { searchBooks, getAuthorDetails } from "./openlibrary/index.ts";
+```
+
+== Gestion des erreurs et sécurité
+
+=== Validation des URLs
+Fonction de sécurité contre les attaques SSRF :
+```javascript
+function validateUrl(url: string): boolean {
+    try {
+        const parsedUrl = new URL(url);
+        return ALLOWED_HOSTS.includes(parsedUrl.hostname);
+    } catch {
+        return false;
+    }
+}
+```
+
+=== Gestion d'erreurs typée
+Handler centralisé pour erreurs OpenLibrary :
+```javascript
+export const handleOpenLibraryError = (error: unknown): OpenLibraryError => {
+    if (error && typeof error === 'object' && 'error' in error) {
+        return error as OpenLibraryError;
+    }
+    return {
+        error: 'Unknown OpenLibrary error',
+        details: String(error)
+    };
+};
+```
+
+=== Logging et debugging
+- Logging systématique des URLs appelées
+- Messages d'erreur détaillés avec contexte
+- User-Agent identifiable pour support API
+
+== Optimisations de performance
+
+=== Limitation des données
+- Sélection de champs spécifiques via `fields` parameter
+- Limites par défaut adaptées au contexte d'usage
+- Pagination native pour grandes collections
+
+=== Requêtes parallèles
+Utilisation de `Promise.all` pour combinaisons :
+```javascript
+// getAuthorWithWorks exécute en parallèle
+const [authorDetails, authorWorks] = await Promise.all([...]);
+```
+
+=== Timeout et retry
+- Timeout configuré à 10 secondes
+- Pas de retry automatique (gestion par l'appelant)
+- Échec rapide pour éviter les blocages
+
+== Types de données détaillés
+
+=== BookSearchDoc
+```typescript
+interface BookSearchDoc {
+    key: string;           // "/works/OL82563W"
+    title: string;
+    author_name?: string[];
+    cover_i?: number;      // ID couverture
+    first_publish_year?: number;
+    isbn?: string[];
+    subject?: string[];    // Genres pour mapping
+}
+```
+
+=== WorkDetails
+```typescript
+interface WorkDetails {
+    key: string;
+    title: string;
+    description?: string | { type: string; value: string };
+    authors?: WorkAuthor[];
+    covers?: number[];
+    subjects?: string[];
+    first_publish_date?: string;
+}
+```
+
+=== AuthorDetails
+```typescript
+interface AuthorDetails {
+    key: string;           // "/authors/OL23919A"
+    name: string;
+    bio?: string | { type: string; value: string };
+    photos?: number[];
+    remote_ids?: {
+        wikidata?: string; // Pour Wikipedia
+    };
+}
+```
+
+== Intégration avec BlaBlaBook
+
+=== Usage dans authorService
+```javascript
+// Recherche d'œuvres d'un auteur
+const books = await OpenLibrary.searchBooks({
+    q: `subject:"${genreName}"`,
+    limit: 50
+});
+```
+
+=== Usage dans genreService
+```javascript
+// Recherche par genre
+const books = await OpenLibrary.searchBooks({
+    q: `subject:"${genreName}"`,
+    limit: 50
+});
+```
+
+=== Enrichissement des données
+Le module permet l'enrichissement des données locales :
+- Découverte de nouvelles œuvres
+- Métadonnées supplémentaires (couvertures, genres)
+- Liens Wikipedia automatiques
+- Données biographiques des auteurs
+
+== Limitations et considérations
+
+=== Limitations API OpenLibrary
+- Rate limiting côté OpenLibrary (non géré par le module)
+- Qualité variable des données (champs optionnels)
+- Disponibilité des couvertures non garantie
+- Langue principalement anglaise
+
+=== Considérations de performance
+- Timeout fixe de 10 secondes
+- Pas de cache intégré (recommandé côté application)
+- Données volumineuses pour certaines requêtes
+- Dépendance réseau obligatoire
+
+=== Sécurité
+- Whitelist stricte des domaines
+- Pas de validation du contenu des réponses
+- User-Agent identifiable pour support
+- Pas de gestion d'authentification (API publique)
+
+== Exemple d'usage complet
+
+=== Recherche et enrichissement d'un livre
+```javascript
+// 1. Recherche par ISBN
+const searchResult = await OpenLibrary.searchByISBN("9782070360017");
+if (searchResult.docs.length > 0) {
+    const book = searchResult.docs[0];
+
+    // 2. Récupération des détails de l'œuvre
+    const workDetails = await OpenLibrary.getWorkDetails(book.key);
+
+    // 3. Si auteur présent, récupération de ses autres œuvres
+    if (workDetails.authors && workDetails.authors.length > 0) {
+        const authorKey = workDetails.authors[0].author.key;
+        const authorWithWorks = await OpenLibrary.getAuthorWithWorks(authorKey, {
+            limit: 10
+        });
+
+        // 4. Construction du lien Wikipedia
+        const wikipediaUrl = OpenLibrary.buildWikipediaUrl(
+            authorWithWorks.author.name
+        );
+    }
+}
+```
+
+=== Recherche par genre
+```javascript
+// Recherche de livres de science-fiction
+const sciFiBooks = await OpenLibrary.searchBooks({
+    q: 'subject:"Science Fiction"',
+    limit: 20
+});
+
+// Parcours des résultats avec couvertures
+sciFiBooks.docs.forEach(book => {
+    if (book.cover_i) {
+        const coverUrl = getCoverUrl(book.cover_i);
+        console.log(`${book.title}: ${coverUrl}`);
+    }
+});
+```
+
+== Diagramme de flux - Recherche enrichie
+
+[mermaid]
+----
+flowchart TD
+    A[Requête utilisateur] --> B{Type de recherche}
+
+    B -->|ISBN| C[searchByISBN]
+    B -->|Titre+Auteur| D[searchByTitleAndAuthor]
+    B -->|Générale| E[searchGeneral]
+
+    C --> F[Validation ISBN]
+    F --> G[Nettoyage format]
+    G --> H[searchBooks]
+
+    D --> I[Validation titre/auteur]
+    I --> H
+
+    E --> J[Validation query]
+    J --> H
+
+    H --> K[openLibraryClient.get]
+    K --> L[Gestion erreurs]
+    L --> M[Retour BookSearchResult]
+
+    M --> N{Besoin détails œuvre ?}
+    N -->|Oui| O[getWorkDetails]
+    N -->|Non| P[Fin]
+
+    O --> Q{Besoin infos auteur ?}
+    Q -->|Oui| R[getAuthorWithWorks]
+    Q -->|Non| P
+
+    R --> S[Promise.all]
+    S --> T[getAuthorDetails + getAuthorWorks]
+    T --> U[buildWikipediaUrl]
+    U --> P
+----
+
+== Résumé
+
+Le module OpenLibrary est l'**interface d'enrichissement externe** de l'API BlaBlaBook V2. Il fournit **12 fonctions principales** avec :
+
+- **Client HTTP sécurisé** : Configuration Axios avec whitelist de domaines et timeout
+- **Types TypeScript complets** : Interfaces pour toutes les structures de données OpenLibrary
+- **Recherche multi-critères** : ISBN, titre+auteur, recherche générale avec optimisations
+- **Gestion des auteurs** : Détails biographiques et œuvres avec pagination
+- **Utilitaires d'enrichissement** : URLs de couvertures et liens Wikipedia
+- **Gestion d'erreurs robuste** : Typage strict et handling centralisé
+- **Optimisations de performance** : Requêtes parallèles et limitation de données
+- **Interface unifiée** : API simplifiée via objet OpenLibrary centralisé
+
+**Il assure l'enrichissement externe et la découverte de contenu pour étendre le catalogue local.**

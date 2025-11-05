@@ -1,0 +1,476 @@
+= Guide Terminologie MERISE - BlaBlaBook V2
+:toc:
+:toc-title: Sommaire
+:sectnums:
+:icons: font
+:version: 2.0
+:date: {docdate}
+
+== Introduction
+
+Ce guide etablit la terminologie officielle MERISE utilisee dans tous les documents du projet BlaBlaBook V2. Il garantit la coherence terminologique entre tous les artefacts de conception et de documentation.
+
+**Objectifs :**
+- Standardiser le vocabulaire MERISE dans le projet
+- Eviter les confusions terminologiques
+- Faciliter la communication entre equipes
+- Assurer la coherence documentaire
+
+---
+
+== 1. Terminologie MERISE de base
+
+=== 1.1 Concepts fondamentaux
+
+[cols="2,3,3"]
+|===
+|Terme MERISE |Definition |Utilisation dans BBBV2
+
+|**Entite**
+|Objet concret ou abstrait ayant une existence propre et identifiable de maniere unique
+|USER, BOOK, LIBRARY, AUTHOR, etc.
+
+|**Association**
+|Lien semantique entre deux ou plusieurs entites
+|POSSEDER (USER-LIBRARY), ECRIRE (AUTHOR-BOOK)
+
+|**Attribut**
+|Propriete caracterisant une entite ou une association
+|firstname (USER), title (BOOK), rating (REVIEW)
+
+|**Identifiant**
+|Attribut ou groupe d'attributs permettant d'identifier de maniere unique une occurrence d'entite
+|id_user, id_book, (id_user, id_book) pour REVIEW
+
+|**Cardinalite**
+|Nombre minimum et maximum de participations d'une entite dans une association
+|0-N, 1-1, 1-N dans les associations
+
+|**Domaine**
+|Ensemble des valeurs possibles pour un attribut
+|rating ∈ {1,2,3,4,5}, status ∈ {to_read, reading, read}
+|===
+
+=== 1.2 Types d'entites
+
+**Entite forte :**
+- Existe independamment d'autres entites
+- Possede un identifiant propre
+- Exemples : USER, BOOK, AUTHOR
+
+**Entite faible :**
+- Depend d'une entite forte pour exister
+- Identifiant compose incluant l'identifiant de l'entite forte
+- Exemples : READING_LIST (depend de USER)
+
+**Entite d'association :**
+- Resulte de la transformation d'une association porteuse d'attributs
+- Possede un identifiant propre en plus des references
+- Exemples : REVIEW (association USER-BOOK avec attributs rating, comment)
+
+=== 1.3 Types d'associations
+
+[cols="2,3,2"]
+|===
+|Type |Definition |Exemple BBBV2
+
+|**Association binaire**
+|Lie exactement 2 entites
+|USER POSSEDER LIBRARY
+
+|**Association ternaire**
+|Lie exactement 3 entites
+|Rare dans BBBV2
+
+|**Association reflexive**
+|Une entite associee a elle-meme
+|USER RECOMMANDER USER
+
+|**Association avec attributs**
+|Association porteuse de proprietes
+|USER NOTER BOOK (avec attribut rating)
+|===
+
+---
+
+== 2. Niveaux d'abstraction MERISE
+
+=== 2.1 Modele Conceptuel de Donnees (MCD)
+
+**Definition :** Representation conceptuelle des donnees independante de toute consideration informatique.
+
+**Elements :**
+- Entites avec leurs attributs
+- Associations avec leurs cardinalites
+- Contraintes d'integrite fonctionnelles
+
+**Terminologie specifique :**
+- ✅ **Entite** (pas "table")
+- ✅ **Association** (pas "relation" ni "jointure")
+- ✅ **Attribut** (pas "colonne" ni "champ")
+- ✅ **Cardinalite** (pas "multiplicite")
+
+**Exemple notation :**
+```
+USER (id_user, firstname, lastname, email)
+LIBRARY (id_library, name, is_public)
+USER --[1,N]-- POSSEDER --[1,1]-- LIBRARY
+```
+
+=== 2.2 Modele Logique de Donnees (MLD)
+
+**Definition :** Traduction du MCD vers un modele relationnel, independant du SGBD.
+
+**Elements :**
+- Relations (tables) derivees des entites
+- Attributs devenus colonnes
+- Cles primaires et etrangeres
+- Contraintes d'integrite referentielle
+
+**Terminologie specifique :**
+- ✅ **Relation** (table logique)
+- ✅ **Attribut** (encore utilise)
+- ✅ **Cle primaire/etrangere**
+- ✅ **Contrainte d'integrite referentielle**
+
+=== 2.3 Modele Physique de Donnees (MPD)
+
+**Definition :** Implementation concrete du MLD dans un SGBD specifique.
+
+**Elements :**
+- Tables avec types de donnees specifiques au SGBD
+- Index, triggers, procedures
+- Optimisations physiques
+
+**Terminologie specifique :**
+- ✅ **Table** (structure physique)
+- ✅ **Colonne** (attribut physique)
+- ✅ **Type de donnees** (VARCHAR, UUID, etc.)
+- ✅ **Index**, **Trigger**, **Vue**
+
+---
+
+== 3. Regles terminologiques du projet
+
+=== 3.1 Conventions de nommage
+
+**Entites (MCD) :**
+- Noms au singulier
+- En majuscules dans les schemas
+- En anglais pour coherence technique
+- Exemples : USER, BOOK, LIBRARY, AUTHOR
+
+**Associations (MCD) :**
+- Verbes a l'infinitif
+- En majuscules
+- Semantiquement explicites
+- Exemples : POSSEDER, ECRIRE, NOTER, CONTENIR
+
+**Attributs :**
+- En minuscules avec underscores
+- Prefixes par id_ pour les identifiants
+- Suffixes explicites (_at pour dates, _url pour URLs)
+- Exemples : id_user, firstname, created_at, avatar_url
+
+**Tables d'associations :**
+- Format : ENTITE1_ENTITE2
+- Ou nom semantique si association avec attributs
+- Exemples : USER_ROLE, BOOK_AUTHOR, REVIEW
+
+=== 3.2 Documentation des cardinalites
+
+**Format standard :**
+```
+ENTITE1 --[card1_min,card1_max]-- ASSOCIATION --[card2_min,card2_max]-- ENTITE2
+```
+
+**Interpretations :**
+- `0,N` : Zero a plusieurs
+- `1,N` : Un a plusieurs
+- `1,1` : Exactement un
+- `0,1` : Zero ou un
+
+**Exemples BBBV2 :**
+```
+USER --[1,N]-- POSSEDER --[1,1]-- LIBRARY
+"Un utilisateur possede une a plusieurs bibliotheques"
+"Une bibliotheque appartient a exactement un utilisateur"
+
+BOOK --[0,N]-- NOTER --[1,1]-- USER
+"Un livre peut etre note par zero a plusieurs utilisateurs"
+"Un utilisateur note exactement un livre (par association)"
+```
+
+=== 3.3 Gestion des entites d'association
+
+**Criteres de transformation :**
+Une association devient entite d'association si :
+1. Elle porte des attributs propres
+2. Elle participe a d'autres associations
+3. Elle necessite un identifiant propre
+
+**Exemples dans BBBV2 :**
+
+**REVIEW (entite d'association) :**
+- Issue de : USER REDIGER BOOK
+- Attributs : rating, comment, contains_spoiler, is_anonymous
+- Identifiant : id_review (propre)
+- Cles etrangeres : id_user, id_book
+
+**READING_LIST_BOOK (table d'association simple) :**
+- Issue de : READING_LIST CONTENIR BOOK
+- Attributs : reading_status, priority, personal_notes
+- Identifiant : (id_list, id_book) compose
+- Pas d'identifiant propre necessaire
+
+---
+
+== 4. Anti-patterns a eviter
+
+=== 4.1 Confusions terminologiques
+
+❌ **Mauvais :**
+```
+"La relation USER stocke les utilisateurs"
+"Les relations entre tables"
+"L'entite user_role associe..."
+```
+
+✅ **Correct :**
+```
+"L'entite USER modelise les utilisateurs"
+"Les associations entre entites"
+"La table user_role implemente l'association USER_ROLE"
+```
+
+=== 4.2 Melange des niveaux
+
+❌ **Mauvais :**
+```
+MCD avec types SQL : "USER (id INT, name VARCHAR(50))"
+MLD avec concepts metier : "Association POSSEDER"
+```
+
+✅ **Correct :**
+```
+MCD : "USER (id_user, firstname, lastname)"
+MLD : "USER (id_user, firstname, lastname)"
+MPD : "CREATE TABLE user (id_user UUID PRIMARY KEY, firstname VARCHAR(100))"
+```
+
+=== 4.3 Cardinalites incorrectes
+
+❌ **Mauvais :**
+```
+"Multiplicite 1-N"
+"Relation 1 vers plusieurs"
+"USER (1) -> LIBRARY (N)"
+```
+
+✅ **Correct :**
+```
+"Cardinalite 1,N"
+"Association un a plusieurs"
+"USER --[1,N]-- POSSEDER --[1,1]-- LIBRARY"
+```
+
+---
+
+== 5. Glossaire MERISE pour BBBV2
+
+=== 5.1 Termes generaux
+
+**Analyse conceptuelle :**
+- Phase de modelisation independante de l'implementation
+- Focus sur le QUOI plutot que le COMMENT
+- Utilise les concepts purs MERISE
+
+**Analyse logique :**
+- Traduction vers le modele relationnel
+- Introduction des concepts de cles
+- Preparation a l'implementation
+
+**Analyse physique :**
+- Implementation concrete dans PostgreSQL
+- Optimisations de performance
+- Types de donnees specifiques
+
+=== 5.2 Entites du domaine
+
+[cols="2,3,2"]
+|===
+|Entite |Definition metier |Cardinalites principales
+
+|**USER**
+|Compte utilisateur de l'application
+|1,N vers LIBRARY
+
+|**BOOK**
+|Livre avec metadonnees completes
+|0,N vers USER (via associations)
+
+|**LIBRARY**
+|Bibliotheque personnelle d'un utilisateur
+|1,1 vers USER, 0,N vers BOOK
+
+|**READING_LIST**
+|Liste thematique de livres
+|1,1 vers USER, 0,N vers BOOK
+
+|**REVIEW**
+|Avis detaille sur un livre
+|1,1 vers USER et BOOK
+
+|**AUTHOR**
+|Auteur de livres
+|1,N vers BOOK
+
+|**GENRE**
+|Categorie litteraire
+|0,N vers BOOK
+|===
+
+=== 5.3 Associations principales
+
+[cols="2,2,2,3"]
+|===
+|Association |Entites liees |Cardinalites |Semantique
+
+|**POSSEDER**
+|USER-LIBRARY
+|[1,N]-[1,1]
+|Un utilisateur possede plusieurs bibliotheques
+
+|**CONTENIR**
+|LIBRARY-BOOK
+|[1,1]-[0,N]
+|Une bibliotheque contient plusieurs livres
+
+|**ECRIRE**
+|AUTHOR-BOOK
+|[1,N]-[1,N]
+|Auteurs multiples possibles par livre
+
+|**APPARTENIR**
+|BOOK-GENRE
+|[0,N]-[0,N]
+|Un livre peut avoir plusieurs genres
+
+|**NOTER**
+|USER-BOOK
+|[0,N]-[0,N]
+|Via entite d'association REVIEW
+
+|**ORGANISER**
+|READING_LIST-BOOK
+|[0,N]-[0,N]
+|Livres dans des listes thematiques
+|===
+
+---
+
+== 6. Validation terminologique
+
+=== 6.1 Checklist de revision
+
+**Pour chaque document MERISE :**
+
+☐ Utilise "entite" au lieu de "table" en conceptuel
+☐ Utilise "association" au lieu de "relation" entre entites
+☐ Cardinalites notees au format [min,max]
+☐ Attributs nommes en snake_case
+☐ Entites nommees au singulier
+☐ Associations nommees par des verbes
+☐ Separation claire MCD/MLD/MPD
+☐ Pas de types SQL dans le MCD
+☐ Contraintes d'integrite explicites
+
+=== 6.2 Outils de validation
+
+**Verification automatique :**
+```bash
+# Recherche des anti-patterns dans la documentation
+grep -r "table.*utilisateur" Docs/ --include="*.adoc"
+grep -r "relation.*entre" Docs/ --include="*.adoc"
+grep -r "multiplicite" Docs/ --include="*.adoc"
+```
+
+**Validation manuelle :**
+- Review par pairs sur les documents MERISE
+- Verification coherence terminologique
+- Tests de comprehension par l'equipe
+
+---
+
+== 7. References et standards
+
+=== 7.1 Methodologie MERISE
+
+**Sources officielles :**
+- Methode MERISE - Principes et outils (Tardieu, Rochfeld, Colletti)
+- ISO/IEC 11179 - Metadata registries
+- Normalisation AFNOR Z67-001
+
+**Adaptations pour BBBV2 :**
+- Integration concepts NoSQL (JSON, arrays)
+- Prise en compte UUID vs SERIAL
+- Gestion des donnees temporaires
+- Conformite RGPD
+
+=== 7.2 Conventions projet
+
+**Langue :**
+- Documentation MERISE : Francais
+- Noms techniques : Anglais (compatibilite code)
+- Commentaires SQL : Francais
+
+**Format :**
+- Documents : AsciiDoc (.adoc)
+- Diagrammes : PlantUML ou Draw.io
+- Schemas : Format texte + export PNG
+
+**Versioning :**
+- Documents versiones avec le projet
+- Changelog terminologique maintenu
+- Migration guidee entre versions
+
+---
+
+== 8. Formation et adoption
+
+=== 8.1 Processus d'integration
+
+**Pour nouveaux membres :**
+1. Lecture obligatoire de ce guide
+2. Quiz de validation terminologique
+3. Review des premiers documents MERISE produits
+4. Mentorat par senior familier MERISE
+
+**Pour documents existants :**
+1. Audit terminologique complet
+2. Plan de migration progressive
+3. Mise a jour coordonnee
+4. Validation par l'equipe
+
+=== 8.2 Maintenance du guide
+
+**Responsabilites :**
+- **Lead Architect** : Validation des evolutions terminologiques
+- **Database Designer** : Coherence MCD/MLD/MPD
+- **Documentation Team** : Mise a jour et diffusion
+
+**Processus d'evolution :**
+1. Proposition d'evolution terminologique
+2. Discussion en equipe technique
+3. Validation Architecture Review Board
+4. Mise a jour guide + documents
+5. Communication equipe
+
+**Frequence de revision :**
+- Revision complete : Trimestrielle
+- Mises a jour ponctuelles : Au besoin
+- Synchronisation avec versions projet
+
+---
+
+Ce guide garantit l'utilisation correcte et coherente de la terminologie MERISE dans tout le projet BlaBlaBook V2. Il doit etre considere comme reference officielle pour tous les documents de conception et d'architecture.

@@ -1,0 +1,493 @@
+= Utils - Analyse Complète
+:toc:
+:toclevels: 3
+
+== Vue d'ensemble
+
+Les utilitaires de l'API BlaBlaBook V2 constituent des modules spécialisés pour des fonctionnalités transversales : mapping de genres depuis OpenLibrary et validation d'entités avec contrôle d'accès. Ils fournissent des services réutilisables à travers toute l'application.
+
+== Architecture des utils
+
+=== Design pattern d'utilitaires modulaires
+- **Fonctions pures** : Mapping de genres sans effet de bord
+- **Classe statique** : EntityValidator pour validation centralisée
+- **Réutilisabilité** : Modules importables dans tous les services
+- **Séparation des responsabilités** : Mapping vs validation vs accès
+- **Performance optimisée** : Requêtes ciblées avec limit et soft delete
+
+=== Responsabilités des modules
+1. **genreMapping** : Transformation des sujets OpenLibrary en genres locaux
+2. **validators** : Validation d'existence d'entités et contrôle d'accès
+3. **Intégration database** : Accès direct Drizzle pour validation
+4. **Gestion d'erreurs** : Messages standardisés et codes d'erreur spécialisés
+5. **Sécurité** : Contrôles d'accès granulaires pour ressources publiques/privées
+
+== genreMapping.ts - Mapping de genres OpenLibrary
+
+=== Architecture de mapping
+```typescript
+export function mapOLSubjectsToGenres(subjects: string[]): string[] {
+    const genreMap: Record<string, string> = {
+        // 25 catégories de genres avec sous-catégories
+    };
+
+    const mappedGenres = new Set<string>();
+
+    subjects.forEach(subject => {
+        const normalized = subject.toLowerCase().trim();
+        const genre = genreMap[normalized] || 'Divers';
+        mappedGenres.add(genre);
+    });
+
+    return Array.from(mappedGenres);
+}
+```
+
+**Caractéristiques :**
+- **Fonction pure** : Pas d'effet de bord, même entrée = même sortie
+- **Normalisation** : toLowerCase() + trim() pour correspondances fiables
+- **Déduplication** : Set pour éliminer les doublons de genres
+- **Fallback** : Genre "Divers" pour sujets non mappés
+- **Performance** : O(n) avec lookup O(1) dans Record
+
+=== Mapping détaillé des genres
+
+==== Genres littéraires classiques
+```typescript
+// Young Adult
+'juvenile fiction': 'Young Adult',
+'children\'s fiction': 'Young Adult',
+'school stories': 'Young Adult',
+'young adult': 'Young Adult',
+'teen fiction': 'Young Adult',
+
+// Drama
+'drama': 'Drama',
+'dramatic': 'Drama',
+'tragedy': 'Drama',
+
+// Poetry
+'poetry': 'Poetry',
+'poems': 'Poetry',
+'verse': 'Poetry',
+```
+
+**Catégories principales :**
+- **Young Adult** : Fiction jeunesse avec 5 variantes
+- **Drama** : Œuvres dramatiques avec 3 variantes
+- **Poetry** : Poésie sous toutes ses formes
+
+==== Genres de fiction populaire
+```typescript
+// Horror
+'horror': 'Horror',
+'ghosts': 'Horror',
+'monsters': 'Horror',
+'supernatural': 'Horror',
+'vampires': 'Horror',
+'zombies': 'Horror',
+
+// Science-Fiction
+'science fiction': 'Science-Fiction',
+'sci-fi': 'Science-Fiction',
+'futuristic': 'Science-Fiction',
+'space opera': 'Science-Fiction',
+'dystopian': 'Science-Fiction',
+'cyberpunk': 'Science-Fiction',
+
+// Fantasy
+'fantasy': 'Fantasy',
+'magic': 'Fantasy',
+'wizards': 'Fantasy',
+'witches': 'Fantasy',
+'mythology': 'Fantasy',
+'fairy tales': 'Fantasy',
+'epic fantasy': 'Fantasy',
+```
+
+**Genres imaginaires :**
+- **Horror** : 6 variantes du surnaturel et de l'épouvante
+- **Science-Fiction** : 6 sous-genres de la SF moderne
+- **Fantasy** : 7 déclinaisons de la fantasy classique
+
+==== Genres de suspense
+```typescript
+// Crime
+'crime': 'Crime',
+'detective': 'Crime',
+'murder': 'Crime',
+
+// Thriller
+'thriller': 'Thriller',
+'suspense': 'Thriller',
+'psychological thriller': 'Thriller',
+'spy': 'Thriller',
+'espionage': 'Thriller',
+
+// Policier
+'police': 'Policier',
+'detective fiction': 'Policier',
+'mystery': 'Policier',
+'noir': 'Policier',
+```
+
+**Distinction fine :**
+- **Crime** : Crimes généraux (3 variantes)
+- **Thriller** : Suspense psychologique (5 variantes)
+- **Policier** : Investigation policière (4 variantes)
+
+==== Genres non-fiction spécialisés
+```typescript
+// Biographie
+'biography': 'Biographie',
+'autobiography': 'Biographie',
+'biographical': 'Biographie',
+'life stories': 'Biographie',
+
+// Développement personnel
+'self-help': 'Développement personnel',
+'personal development': 'Développement personnel',
+'motivation': 'Développement personnel',
+'psychology': 'Développement personnel',
+'mental health': 'Développement personnel',
+
+// Business
+'business': 'Business',
+'economics': 'Business',
+'finance': 'Business',
+'entrepreneurship': 'Business',
+'management': 'Business',
+```
+
+**Spécialisations pratiques :**
+- **Biographie** : Récits de vie (4 variantes)
+- **Développement personnel** : Croissance personnelle (5 domaines)
+- **Business** : Monde des affaires (5 spécialités)
+
+==== Genres thématiques
+```typescript
+// Art
+'art': 'Art',
+'painting': 'Art',
+'sculpture': 'Art',
+'photography': 'Art',
+'design': 'Art',
+'architecture': 'Art',
+
+// Sciences
+'science': 'Sciences',
+'physics': 'Sciences',
+'biology': 'Sciences',
+'chemistry': 'Sciences',
+'mathematics': 'Sciences',
+'technology': 'Sciences',
+'computer science': 'Sciences',
+```
+
+**Domaines de connaissance :**
+- **Art** : Arts visuels et créatifs (6 disciplines)
+- **Sciences** : Sciences exactes et appliquées (7 branches)
+
+=== Logique de déduplication et normalisation
+```typescript
+const mappedGenres = new Set<string>();
+
+subjects.forEach(subject => {
+    const normalized = subject.toLowerCase().trim();
+    const genre = genreMap[normalized] || 'Divers';
+    mappedGenres.add(genre);
+});
+
+return Array.from(mappedGenres);
+```
+
+**Algorithme de traitement :**
+1. **Normalisation** : toLowerCase() + trim() pour chaque sujet
+2. **Lookup** : Recherche dans genreMap avec fallback "Divers"
+3. **Déduplication** : Set élimine automatiquement les doublons
+4. **Conversion** : Array.from() pour retour de tableau
+
+**Avantages :**
+- **Robustesse** : Gestion des variations de casse et d'espacement
+- **Performance** : Set O(1) pour ajout, O(n) total
+- **Fiabilité** : Toujours un genre assigné (fallback "Divers")
+- **Simplicité** : Fonction pure facilement testable
+
+== validators.ts - Validation d'entités et contrôle d'accès
+
+=== Architecture EntityValidator
+```typescript
+export class EntityValidator {
+    // Méthodes statiques pour validation d'entités
+    static async validateUser(userId: string)
+    static async validateBook(bookId: string)
+    static async validateLibrary(libraryId: string)
+    static async validateReadingList(listId: string)
+    static async validateGenre(genreId: string)
+    static async validateAuthor(authorId: string)
+
+    // Méthodes statiques pour contrôle d'accès
+    static validateLibraryAccess(library, userId, requireWrite)
+    static validateReadingListAccess(readingList, userId, requireWrite)
+}
+```
+
+**Design pattern :**
+- **Classe statique** : Pas d'instanciation, méthodes utilitaires pures
+- **Séparation des responsabilités** : Validation existence vs contrôle accès
+- **Requêtes optimisées** : limit(1) pour performance
+- **Soft delete** : Respect de deleted_at pour entités supprimées logiquement
+- **Gestion d'erreurs** : Messages standardisés avec throw Error
+
+=== Validation d'existence d'entités
+
+==== validateUser - Validation utilisateur avec soft delete
+```typescript
+static async validateUser(userId: string) {
+    const user = await db
+        .select()
+        .from(User)
+        .where(and(eq(User.id_user, userId), isNull(User.deleted_at)))
+        .limit(1);
+
+    if (user.length === 0) {
+        throw new Error('User not found.');
+    }
+    return user[0];
+}
+```
+
+**Spécificités :**
+- **Soft delete** : isNull(User.deleted_at) pour exclure utilisateurs supprimés
+- **Performance** : limit(1) car seule existence importe
+- **Retour entité** : Retourne l'utilisateur complet pour usage ultérieur
+- **Error standard** : Message uniforme "User not found."
+
+==== validateBook - Validation livre simple
+```typescript
+static async validateBook(bookId: string) {
+    const book = await db
+        .select()
+        .from(Book)
+        .where(eq(Book.id_book, bookId))
+        .limit(1);
+
+    if (book.length === 0) {
+        throw new Error('Book not found.');
+    }
+    return book[0];
+}
+```
+
+**Caractéristiques :**
+- **Pas de soft delete** : Les livres ne sont pas supprimés logiquement
+- **Validation simple** : Seule existence vérifiée
+- **Performance optimisée** : limit(1) pour requête minimale
+
+==== validateLibrary - Validation bibliothèque avec soft delete
+```typescript
+static async validateLibrary(libraryId: string) {
+    const library = await db
+        .select()
+        .from(Library)
+        .where(and(eq(Library.id_library, libraryId), isNull(Library.deleted_at)))
+        .limit(1);
+
+    if (library.length === 0) {
+        throw new Error('Library not found.');
+    }
+    return library[0];
+}
+```
+
+**Gestion soft delete :**
+- **deleted_at null** : Bibliothèques actives uniquement
+- **Cohérence** : Même pattern que validateUser
+- **Intégrité** : Pas d'accès aux bibliothèques supprimées
+
+==== validateAuthor - Validation auteur avec gestion UUID
+```typescript
+static async validateAuthor(authorId: string) {
+    try {
+        const author = await db
+            .select()
+            .from(Author)
+            .where(eq(Author.id_author, authorId))
+            .limit(1);
+
+        if (author.length === 0) {
+            throw new Error('Author not found.');
+        }
+        return author[0];
+    } catch (error: any) {
+        if (error.code === '22P02') {
+            const validationError = new Error('Invalid UUID format') as any;
+            validationError.status = 400;
+            throw validationError;
+        }
+        throw error;
+    }
+}
+```
+
+**Gestion d'erreurs avancée :**
+- **Catch spécialisé** : Gestion erreur PostgreSQL UUID invalide
+- **Code d'erreur** : '22P02' pour format UUID incorrect
+- **Status HTTP** : 400 pour Bad Request sur UUID invalide
+- **Propagation** : Autres erreurs re-lancées sans modification
+
+=== Contrôle d'accès granulaire
+
+==== validateLibraryAccess - Contrôle accès bibliothèque
+```typescript
+static validateLibraryAccess(library: LibrarySelect, userId: string, requireWrite: boolean = false) {
+    const isOwner = library.id_user === userId;
+    const isPublic = library.is_public;
+
+    if (requireWrite && !isOwner) {
+        throw new Error('You need write access to this library.');
+    }
+
+    if (!isOwner && !isPublic) {
+        throw new Error('Access denied to this library.');
+    }
+}
+```
+
+**Logique d'accès :**
+- **Propriétaire** : Accès complet (lecture + écriture)
+- **Bibliothèque publique** : Accès lecture pour tous
+- **Écriture restreinte** : Seul le propriétaire peut modifier
+- **Accès refusé** : Bibliothèque privée non propriétaire
+
+**Paramètres :**
+- **library** : Entité avec id_user et is_public
+- **userId** : Utilisateur demandeur
+- **requireWrite** : false par défaut, true pour modifications
+
+==== validateReadingListAccess - Contrôle accès liste simplifié
+```typescript
+static validateReadingListAccess(readingList: ReadingListSelect, userId: string, requireWrite: boolean = false) {
+    const isOwner = readingList.id_user === userId;
+
+    if (requireWrite && !isOwner) {
+        throw new Error('You need write access to this reading list.');
+    }
+
+    // Logique simplifiée : owner OU liste publique (is_public hérite de la bibliothèque)
+    if (!isOwner && !readingList.is_public) {
+        throw new Error('Access denied to this reading list.');
+    }
+}
+```
+
+**Logique d'accès simplifiée :**
+1. **Propriétaire** : Accès total (lecture + écriture) toujours
+2. **Liste publique** : Accès lecture pour tous (`is_public` hérite de la visibilité de la bibliothèque parente)
+3. **Liste privée** : Seul le propriétaire peut accéder
+4. **Écriture** : Propriétaire uniquement
+
+**Paramètres :**
+- **readingList** : Entité avec id_user et is_public
+- **userId** : Utilisateur demandeur
+- **requireWrite** : false par défaut, true pour modifications
+
+**Note importante :**
+Le champ `is_public` de la ReadingList hérite automatiquement de la visibilité de sa bibliothèque parente. Il n'est donc pas nécessaire de vérifier séparément la visibilité de la bibliothèque.
+
+=== Patterns de validation
+
+==== Pattern de requête optimisée
+```typescript
+// Pattern standard pour toutes les validations
+const entity = await db
+    .select()
+    .from(EntityTable)
+    .where(and(eq(EntityTable.id_field, entityId), isNull(EntityTable.deleted_at))) // soft delete si applicable
+    .limit(1); // Performance : une seule entité nécessaire
+
+if (entity.length === 0) {
+    throw new Error('Entity not found.');
+}
+return entity[0];
+```
+
+**Optimisations :**
+- **limit(1)** : Minimise les données transférées
+- **select()** : Récupère tous les champs pour usage ultérieur
+- **and()** : Combinaison conditions ID + soft delete
+- **Validation uniforme** : Même pattern sur toutes les entités
+
+==== Pattern de contrôle d'accès
+```typescript
+// Identification des droits
+const isOwner = entity.id_user === userId;
+const isPublic = entity.is_public;
+
+// Contrôle écriture si requis
+if (requireWrite && !isOwner) {
+    throw new Error('You need write access to this entity.');
+}
+
+// Contrôle lecture
+if (!isOwner && !isPublic) {
+    throw new Error('Access denied to this entity.');
+}
+```
+
+**Logique générale :**
+1. **Calcul droits** : isOwner, isPublic
+2. **Validation écriture** : Propriétaire uniquement si requireWrite
+3. **Validation lecture** : Propriétaire OU public
+4. **Messages explicites** : Différenciation accès lecture/écriture
+
+== Performance et optimisation
+
+=== Optimisations de mapping
+```typescript
+// genreMapping optimisations
+const genreMap: Record<string, string> = { ... }; // Lookup O(1)
+const mappedGenres = new Set<string>(); // Déduplication O(1)
+subjects.forEach(...); // Itération O(n)
+```
+
+**Performance O(n) :**
+- **Record lookup** : O(1) pour chaque mapping
+- **Set operations** : O(1) pour ajout avec déduplication
+- **Algorithme total** : O(n) où n = nombre de sujets
+- **Mémoire optimisée** : Set évite stockage doublons
+
+=== Optimisations de validation
+```typescript
+// Requêtes optimisées avec limit
+.limit(1) // Transfert minimal de données
+.select() // Champs complets pour usage ultérieur
+and(eq(), isNull()) // Index composites possibles
+```
+
+**Stratégies database :**
+- **limit(1)** : Arrêt dès première correspondance
+- **Index utilisation** : eq() sur clés primaires optimisées
+- **Soft delete** : isNull() pour filtrage deleted_at
+- **Projection complète** : select() pour éviter requêtes supplémentaires
+
+=== Cache et réutilisation
+**Opportunities d'optimisation :**
+- **Cache genreMap** : Mapping statique cacheable
+- **Cache validations** : Entités récemment validées
+- **Requêtes groupées** : Validation multiple entités
+- **Connection pooling** : Réutilisation connexions database
+
+== Résumé
+
+Les utils de l'API BlaBlaBook V2 fournissent des **services transversaux spécialisés** avec **2 modules** :
+
+- **genreMapping** : Fonction pure de mapping OpenLibrary vers genres locaux (25 catégories, 160+ variantes)
+- **validators** : Classe statique EntityValidator pour validation existence + contrôle d'accès granulaire
+- **Performance optimisée** : Requêtes limit(1), Set pour déduplication, lookup O(1)
+- **Soft delete** : Respect de deleted_at pour User, Library, ReadingList
+- **Contrôle d'accès sophistiqué** : Gestion propriétaire/public avec logique complexe listes parentes
+- **Gestion d'erreurs** : Messages standardisés avec codes HTTP spécialisés
+- **Réutilisabilité** : Modules importables dans tous les services de l'application
+
+**Ils constituent les fondations utilitaires pour mapping externe et sécurité d'accès aux ressources.**

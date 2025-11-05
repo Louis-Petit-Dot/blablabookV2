@@ -1,0 +1,176 @@
+// ========== LAYOUT ==========
+// Les styles de base (dashboardContainer, welcomeSection, section, etc.)
+// sont hérités de AdminPage.module.scss via adminPageStyles
+
+.sectionTitle {
+  color: var(--text-primary);
+  svg {
+    color: var(--text-primary);
+    display: inline;
+    margin-right: 0.5rem;
+  }
+
+}
+
+.adminBadge {
+  &.small {
+    font-size: 0.875rem;
+    padding: 0.25rem 0.75rem;
+  }
+}
+
+// ========== FILTERS & CONTROLS ==========
+.filtersContainer {
+  max-width: 600px;
+  margin: 0 auto 2rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+// ========== CARDS ==========
+.card {
+  max-width: 600px;
+  margin: 0 auto;
+}
+
+.cardHeaderContent {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  justify-content: space-between;
+}
+
+.cardHeaderLeft {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.userIcon {
+  width: 20px;
+  height: 20px;
+}
+
+.bookIcon {
+  width: 20px;
+  height: 20px;
+}
+
+.username {
+  font-weight: 600;
+}
+
+.bookTitle {
+  font-weight: 600;
+}
+
+.cardDetails {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.cardActions {
+  display: flex;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+// ========== MODAL REVIEWS ==========
+.modalLoading {
+  text-align: center;
+  padding: 2rem;
+}
+
+.modalEmpty {
+  text-align: center;
+  padding: 2rem;
+  color: var(--text-secondary);
+}
+
+.reviewsList {
+  max-height: 400px;
+  overflow-y: auto;
+  margin-bottom: 1rem;
+}
+
+.reviewItem {
+  padding: 1rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  margin-bottom: 0.75rem;
+  background-color: transparent;
+
+  &.selected {
+    background-color: var(--bg-secondary);
+  }
+}
+
+.reviewContent {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+}
+
+.reviewCheckbox {
+  margin-top: 0.25rem;
+  cursor: pointer;
+}
+
+.reviewDetails {
+  flex: 1;
+}
+
+.reviewHeader {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.reviewBadge {
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+
+  svg {
+    display: inline;
+    width: 12px;
+    height: 12px;
+  }
+}
+
+.reviewSpoilerBadge {
+  font-size: 0.75rem;
+  color: orange;
+
+  svg {
+    display: inline;
+    width: 12px;
+    height: 12px;
+    margin-right: 0.25rem;
+  }
+}
+
+.reviewAuthor {
+  font-size: 0.875rem;
+  margin-bottom: 0.5rem;
+}
+
+.reviewComment {
+  font-size: 0.875rem;
+  color: var(--text-secondary);
+}
+
+.reviewsFooter {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding-top: 1rem;
+  border-top: 1px solid var(--border);
+}
+
+.reviewsCounter {
+  font-size: 0.875rem;
+  color: var(--text-secondary);
+}

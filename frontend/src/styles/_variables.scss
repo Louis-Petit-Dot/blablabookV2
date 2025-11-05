@@ -1,0 +1,90 @@
+// ============================================
+// VARIABLES BLABLABOOK V2
+// ============================================
+
+// === COULEURS ===
+
+// Backgrounds (aligné avec _theme.scss)
+$bg-primary: #FEFBF6;         // --bg-primary
+$bg-secondary: #E8DFD0;       // --bg-secondary
+$bg-tertiary: #F2E5D0;        // --bg-tertiary
+
+// Textes (aligné avec _theme.scss)
+$text-primary: #8B5E50;       // --text-primary
+$text-secondary: #2b3149;     // --text-secondary
+$text-tertiary: #3b2f29;      // --text-tertiary
+$text-quaternary: #6B6560;    // --text-quaternary
+
+// États
+$success: #5E8B7E;
+$error: #A55B5B;
+$warning: #D4A574;
+$info: #7891A8;
+
+// Alias pour compatibilité (à remplacer progressivement)
+$bg-white: $bg-primary;
+$bg-beige: $bg-secondary;
+$bg-beige-soft: $bg-tertiary;
+$bg-cream: $bg-secondary;
+$text-dark: $text-primary;
+$text-gray: $text-secondary;
+$text-light: $text-quaternary;
+$primary: $text-primary;
+$secondary: #D0A868;
+$brown: $text-primary;
+$terracotta: #C17767;
+$white-paper: $bg-primary;
+$white-modern: $bg-primary;
+$beige-soft: $bg-tertiary;
+$black-ink: $text-primary;
+$brown-warm: $text-primary;
+
+// === TYPOGRAPHIE ===
+
+// Familles
+$font-base: 'Inter', system-ui, sans-serif;
+$font-heading: 'Merriweather', Georgia, serif;
+$font-display: 'Love Story', cursive;
+
+// Alias
+$font-family-base: $font-base;
+$font-family-heading: $font-heading;
+
+// === BREAKPOINTS (Mobile-first) ===
+$mobile: 320px;      // 320-767px
+$tablet: 768px;      // 768-1023px
+$desktop: 1024px;    // 1024-1279px
+$wide: 1280px;       // 1280px+
+
+// Alias
+$breakpoint-mobile: $mobile;
+$breakpoint-tablet: $tablet;
+$breakpoint-desktop: $desktop;
+$breakpoint-wide: $wide;
+
+// === MIXINS ===
+
+// Responsive (mobile-first)
+@mixin mobile {
+  @media (min-width: $mobile) {
+    @content;
+  }
+}
+
+@mixin tablet {
+  @media (min-width: $tablet) {
+    @content;
+  }
+}
+
+@mixin desktop {
+  @media (min-width: $desktop) {
+    @content;
+  }
+}
+
+@mixin wide {
+  @media (min-width: $wide) {
+    @content;
+  }
+}

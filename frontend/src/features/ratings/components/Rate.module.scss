@@ -1,0 +1,124 @@
+.ratingStars {
+    display: inline-flex;
+    gap: 0.25rem;
+    align-items: center;
+
+    &.interactive {
+        cursor: pointer;
+    }
+}
+
+.starButton {
+    background: none;
+    border: none;
+    padding: 0.125rem;
+    cursor: inherit;
+    transition: transform 0.2s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    line-height: 1;
+
+    &:disabled {
+        cursor: default;
+    }
+
+    &:not(:disabled):hover,
+    &:not(:disabled):focus-visible {
+        transform: scale(1.15);
+        outline: none;
+    }
+}
+
+  // Couleurs des icônes
+.iconFull {
+      color: var(--color-accent, #fbbf24); // Jaune/or
+}
+
+.iconEmpty {
+      color: var(--color-border, #d1d5db); // Gris clair
+}
+
+  // Demi-étoile : superposition avec clip-path
+.halfStarWrapper {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.iconHalf {
+    color: var(--color-accent, #fbbf24);
+}
+
+.halfStarFilled {
+    position: absolute;
+      clip-path: polygon(0 0, 50% 0, 50% 100%, 0 100%); // Moitié gauche
+}
+
+.halfStarEmpty {
+    color: var(--color-border, #d1d5db);
+      clip-path: polygon(50% 0, 100% 0, 100% 100%, 50% 100%); // Moitié droite
+}
+
+  // Tailles
+.S .starButton {
+      font-size: 1rem; // 16px
+}
+
+.M .starButton {
+      font-size: 1.5rem; // 24px
+}
+
+.L .starButton {
+      font-size: 2rem; // 32px
+}
+
+
+.averageRating {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+  }
+
+  .ratingText {
+      font-size: 0.875rem;
+      color: var(--color-text-secondary);
+  }
+
+.rateButton {
+    position: relative;
+    width: 100%;
+}
+
+.ratingModal {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    margin-top: 0.5rem;
+    z-index: 10;
+    background: var(--bg-tertiary, white);
+    padding: 1rem;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    border-radius: 8px;
+    border: 1px solid var(--border-color, #e5e7eb);
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+}
+
+  /* Helper text shown under the rating controls (success / error) */
+.helperText {
+    font-size: 0.875rem;
+    margin-top: 0.25rem;
+    color: var(--color-text-secondary);
+}
+
+.helperSuccess {
+    color: var(--success);
+}
+
+.helperError {
+    color: var(--error);
+}

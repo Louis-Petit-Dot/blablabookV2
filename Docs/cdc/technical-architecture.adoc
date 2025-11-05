@@ -1,0 +1,972 @@
+= BlaBlaBook V2 - Technical Architecture / Architecture Technique
+:toc: left
+:toclevels: 3
+:sectanchors:
+:icons: font
+:version: 2.0
+:date: {docdate}
+
+// Navigation inter-documents
+link:../README.adoc[📚 Documentation Hub] |
+link:business-requirements.adoc[📋 Business] |
+link:api-specifications.adoc[🛣️ API] |
+link:risk-analysis.adoc[⚠️ Risks]
+
+// Navigation langues
+<<section-fr,🇫🇷 Version Française>> | <<section-en,🇬🇧🇺🇸 English Version>>
+
+---
+
+[[section-fr]]
+== 🇫🇷 Architecture Technique
+
+<<section-en,🇬🇧🇺🇸 Switch to English>> | 🇫🇷 *Français*
+
+=== 🎨 Branding & Identité Visuelle
+
+==== Baseline de l'Application
+
+**Baseline principale :**
+> _"Des mots qui résonnent, des livres qui rassemblent, des histoires qui passionnent"_
+
+**Justification :**
+* **Rythme ternaire** : Structure en 3 parties qui facilite la mémorisation
+* **Allitération** : Répétition des sons "r" (résonnent, rassemblent) qui crée une musicalité
+* **Émotionnel** : Vocabulaire évocateur qui touche les lecteurs passionnés
+* **Communautaire** : Met l'accent sur le partage et le rassemblement
+* **Identité forte** : Se démarque des plateformes de lecture classiques
+
+**Alternatives considérées :**
+* "Le sens des mots, le recueil des livres, la passion de la lecture" (plus descriptif, moins impactant)
+* "Partagez vos lectures, découvrez des passions" (trop direct, manque de poésie)
+* "Lire, partager, découvrir ensemble" (trop minimaliste)
+
+==== Positionnement
+
+BlaBlaBook V2 se positionne comme **une bibliothèque sociale et communautaire** qui permet aux lecteurs de :
+* Organiser et gérer leurs collections personnelles
+* Partager leurs avis et recommandations
+* Découvrir de nouveaux livres à travers les passions des autres
+* Créer des liens autour de la lecture
+
+**Différenciation concurrentielle :**
+* **vs Goodreads** : Interface moderne, RGPD-compliant, sans publicité
+* **vs Babelio** : UX simplifiée, accessibilité native, gestion spoilers avancée
+* **vs Booknode** : Architecture technique moderne, performances optimales
+
+=== 🏗️ Choix et Justification de l'Architecture
+
+Nous avons opté pour une **architecture client-serveur moderne** basée sur les technologies les plus récentes pour garantir performance, sécurité et maintenabilité. Cette approche V2 consiste en une API REST développée avec **Deno 2.5.2 et Hono**, qui communique avec une Single Page Application (SPA) via des requêtes HTTP sécurisées.
+
+Le backend, orchestré avec **Drizzle 0.38.0** pour la gestion de la base de données PostgreSQL, expose des endpoints REST pour toutes les fonctionnalités métier : gestion des utilisateurs, bibliothèques personnelles, listes de lecture et avis.
+
+**Avantages de cette architecture V2 :**
+* **Performance native** : Deno runtime moderne avec support TypeScript natif
+* **Sécurité by design** : Permissions granulaires Deno + validation Drizzle-Zod intégrée
+* **Simplicité infrastructure** : 3 services Docker au lieu de 4 (suppression Redis)
+* **Developer Experience** : TypeScript end-to-end avec types automatiques
+
+=== 🚀 Stack Technique V2
+
+[cols="2,2,3"]
+|===
+|Composant |V1 (Ancien) |V2 (Nouveau)
+
+|*Backend Runtime*
+|Node.js/Express/Sequelize
+|**Deno 2.5.2 + Hono + Drizzle 0.38.0**
+
+|*Frontend Build*
+|Create React App/Webpack
+|**Vite 6.3.6 + React 19.1.1 + TypeScript**
+
+|*State Management*
+|Redux/Context API
+|**Zustand + Axios**
+
+|*Styling*
+|CSS-in-JS/Styled Components
+|**SCSS + Radix UI**
+
+|*Authentification*
+|Sessions Redis + CSRF
+|**JWT stateless + sécurité OWASP**
+
+|*Validation*
+|Zod externe
+|**Drizzle-Zod intégré**
+
+|*Accessibilité*
+|Manuellement implémentée
+|**Radix UI WCAG 2.1 AA natif**
+
+|*Infrastructure*
+|4 services Docker (+ Redis)
+|**3 services Docker (- Redis)**
+|===
+
+==== BackEnd V2 💻
+
+**RunTime & Framework :**
+
+* **Deno 2.5.2** : Runtime moderne JavaScript/TypeScript avec sécurité intégrée
+* **Hono** : Micro-framework web ultra-rapide et minimaliste
+* **TypeScript** : Langage typé natif avec Deno (pas de compilation externe)
+
+_Justifications :_
+- **Performance native** : Runtime optimisé, 4x plus rapide que Node.js
+- **Sécurité by design** : Permissions granulaires, pas d'accès filesystem par défaut
+- **Developer Experience** : TypeScript natif, pas de configuration
+- **Écosystème moderne** : Import maps, web standards, API compatibles
+
+**📦 Note sur JSR (JavaScript Registry) :**
+
+Hono est importé via `jsr:@hono/hono` sans version spécifique, contrairement aux packages npm comme `npm:drizzle-orm@^0.38.0`. Cette approche utilise le nouveau registre **JSR** (jsr.io) créé par l'équipe Deno en 2024.
+
+**Différences npm vs JSR :**
+
+[cols="2,2,2"]
+|===
+|Aspect |npm |JSR
+
+|**Syntaxe**
+|`npm:package@^1.0.0`
+|`jsr:@scope/package`
+
+|**TypeScript**
+|Fichiers `.d.ts` séparés
+|Types natifs inclus
+
+|**Résolution**
+|node_modules
+|Cache Deno global
+
+|**Version**
+|Toujours explicite
+|Dernière stable par défaut
+|===
+
+**Pourquoi pas de version pour Hono ?**
+
+Quand on écrit `jsr:@hono/hono` sans version, Deno utilise automatiquement la **dernière version stable** du registre JSR (actuellement 4.9.8). Cette approche est courante avec JSR car :
+
+* **TypeScript natif** : Hono est écrit en TypeScript pur, pas besoin de `@types/hono`
+* **Framework léger** : Compatible Deno, Node.js, Bun, Cloudflare Workers
+* **Cache global** : Résolution instantanée via `~/.cache/deno/`
+* **Audit automatique** : JSR vérifie les packages et leurs signatures
+* **Documentation intégrée** : Preview du code sur https://jsr.io/@hono/hono
+
+Pour fixer la version en production (recommandé) :
+```json
+"hono": "jsr:@hono/hono@^4.9.8"
+```
+
+**Infrastructure & Déploiement :**
+
+* **Docker** : Containerisation simplifiée (3 services au lieu de 4)
+* **Nginx** : Reverse proxy et SSL termination
+* **Docker Compose** : Orchestration multi-conteneurs optimisée
+
+_Justifications :_
+- **Architecture simplifiée** : App Deno + PostgreSQL + Nginx (suppression Redis)
+- **Performance** : Moins de services = démarrage plus rapide
+- **Maintenance** : Moins de dépendances à gérer
+
+==== Base de Données V2 🗄️
+
+**Choix techniques :**
+
+* **PostgreSQL** : SGBD relationnel avec support JSON natif (conteneur Docker)
+* **Drizzle 0.38.0** : ORM moderne TypeScript-first avec validation intégrée
+* **Drizzle-Zod** : Validation de schémas automatique et type-safe
+
+_Justifications PostgreSQL :_
+- **ACID complet** : Transactions sécurisées critiques
+- **JSON natif** : Stockage métadonnées Open Library
+- **Full-text search** : Recherche optimisée livres
+- **Extensions** : UUID, crypto, indexation avancée
+
+_Justifications Drizzle V2 :_
+- **Performance** : Queries 2x plus rapides que Sequelize
+- **TypeScript natif** : Types automatiques, inférence complète
+- **Migrations** : Gestion schéma robuste avec rollbacks
+- **Zero runtime overhead** : Compilation temps de build
+
+==== FrontEnd V2 🎨
+
+**Framework & Build Tool :**
+
+* **Vite 6.3.6** : Build tool moderne avec HMR ultra-rapide et support ESM natif
+* **React 19.1.1** : Framework UI avec Concurrent Features et Server Components
+* **TypeScript** : Langage typé end-to-end avec le backend Deno
+
+_Justifications Vite :_
+- **Performance de build** : 10-100x plus rapide que Webpack/CRA
+- **Support ESM natif** : Compatibilité parfaite avec Deno backend
+- **HMR instantané** : Hot Module Replacement en <50ms
+- **Configuration simple** : Zero-config pour React + TypeScript
+- **Optimisation automatique** : Tree-shaking et code splitting optimaux
+- **Écosystème moderne** : Plugins Rollup compatibles, vite-imagetools pour optimisation images
+
+**Routing & State Management :**
+
+* **React Router 7.9.3** : Routing déclaratif avec layouts et route protection
+* **Zustand** : State management léger et typé
+* **Axios** : Client HTTP avec interceptors JWT et httpOnly cookies
+
+_Justifications React Router 7.9.3 :_
+- **Route Groups** : Organisation /public, /auth, /private, /admin pour RBAC
+- **Layouts** : Header/footer différenciés par zone d'authentification via `<Outlet>`
+- **Loaders/Actions** : Chargement données avant rendu composants
+- **Protected Routes** : Middleware de protection via composants HOC
+
+_Justifications Zustand :_
+- **Simplicité** : Pas de boilerplate Redux, API intuitive
+- **Performance** : Re-renders optimisés, pas de providers
+- **TypeScript natif** : Inférence de types automatique
+- **Bundle size** : 2KB vs 60KB pour Redux Toolkit
+
+**Styling & UI Components :**
+
+* **SCSS** : CSS avec variables, mixins et nesting
+* **Radix UI** : Composants headless avec accessibilité WCAG 2.1
+* **shadcn/ui** : Collection composants Radix pré-stylés et personnalisables
+* **CSS Modules** : Encapsulation des styles par composant
+
+_Justifications SCSS :_
+- **Contrôle total** : Respect exact de la charte graphique définie
+- **Variables CSS** : Cohérence couleurs (#725B3A, #D0A868, #F2E5D0)
+- **Mixins réutilisables** : DRY pour responsive design et animations
+- **Performance** : Compilation optimisée sans runtime overhead
+- **Démonstration compétences** : Exigence pédagogique projet scolaire
+
+_Justifications Radix UI + shadcn/ui :_
+- **Accessibilité native** : Conformité WCAG 2.1 niveau AA automatique
+- **Headless architecture** : Logique sans style, personnalisation SCSS totale
+- **Navigation clavier** : Focus management et ARIA attributes intégrés (~50h économisées)
+- **Composants complexes** : Dialog, Dropdown, Tabs avec états gérés
+- **Copy-paste approach** : Code source modifiable, pas de dépendance runtime lourde
+- **TypeScript natif** : Props typées automatiquement
+
+**Architecture hybride :**
+```
+Landing page, Auth (login/register) → SCSS pur (showcase académique)
+Design system (_variables, _mixins, _animations) → SCSS
+Composants simples (BookCard, Sidebar) → SCSS + CSS Modules
+Composants accessibles complexes (Dialog, Dropdown) → shadcn/ui + Radix + adaptations SCSS
+```
+
+**Charte Graphique Intégrée :**
+
+```scss
+// styles/variables.scss
+$primary-color: #725B3A;    // Marron clair principal
+$secondary-green: #D0A868;  // Beige doré
+$secondary-beige: #F2E5D0;  // Beige clair
+$gray-color: #999999;       // Gris
+$cream-color: #FEFBF6;      // Blanc cassé
+```
+
+**🔒 Sécurité Frontend - Stratégie Défensive en Profondeur :**
+
+**Architecture "Texte Brut Uniquement" :**
+
+BlaBlaBook V2 utilise **exclusivement des éléments HTML natifs** (`<input>`, `<textarea>`) pour toute saisie de contenu utilisateur, en évitant délibérément les éditeurs de texte riche (TinyMCE, Quill, Draft.js, Slate, Lexical).
+
+**Exemple - Formulaire d'avis :**
+```typescript
+// ReviewForm.tsx - Lignes 74-82
+<textarea
+    id="review-comment"
+    className={`${inputStyles.input} ${styles.textarea}`}
+    value={comment}
+    onChange={e => setComment(e.target.value)}
+    rows={6}
+    placeholder="Votre avis détaillé..."
+/>
+// ✅ <textarea> HTML natif - accepte UNIQUEMENT du texte brut
+// ❌ PAS d'éditeur riche - aucune injection HTML possible
+```
+
+**Double Protection XSS :**
+
+1. **Couche Entrée** : `<textarea>` natif accepte **uniquement du texte brut** (pas de formatage HTML)
+2. **Couche Sortie** : React JSX **échappe automatiquement le HTML** dans les `{expressions}`
+
+```typescript
+// Ce qu'un attaquant pourrait tenter d'injecter :
+const maliciousInput = "<script>alert('XSS')</script>"
+
+// Ce qui est stocké en base de données :
+"<script>alert('XSS')</script>"  // Chaîne de texte brut
+
+// Ce que React affiche :
+<p>{review.comment}</p>
+// → &lt;script&gt;alert('XSS')&lt;/script&gt;  ✅ Sécurisé
+```
+
+**Pourquoi Pas de Bibliothèque DOMPurify ?**
+
+- **Auto-échappement React JSX** : Protection XSS intégrée pour toutes les interpolations `{variable}`
+- **Pas de dangerouslySetInnerHTML** : Jamais utilisé dans toute la codebase (vérifié)
+- **DOMPurify nécessaire uniquement** : Si rendu de contenu HTML riche (ce que nous ne faisons pas)
+- **Surface d'attaque réduite** : Pas de vulnérabilités CVE dans les bibliothèques d'éditeur externes
+- **Comportement prévisible** : Le HTML est toujours échappé, sans exceptions
+
+**Avantages de la Stratégie "Texte Brut" :**
+
+* **Surface d'attaque minimale** : `<textarea>` ne peut pas injecter `<script>`, `<iframe>`, ou gestionnaires d'événements
+* **Pas de dépendances externes** : Pas de vulnérabilités CVE de bibliothèques d'éditeur
+* **Meilleures performances** : Pas de surcharge JavaScript WYSIWYG
+* **UX cohérente** : Tout le contenu utilisateur rendu uniformément
+* **Modération facilitée** : Texte brut plus facile à scanner pour contenu inapproprié
+
+Cette décision architecturale suit le **principe du moindre privilège** pour les capacités de saisie utilisateur.
+
+=== 🔐 Authentification JWT httpOnly Cookie
+
+==== Architecture Sécurité V2 (Simplifiée)
+
+**Flow JWT simplifié :**
+```
+1. Login → JWT stocké en httpOnly cookie (8h expiration)
+2. Requêtes → Cookie envoyé automatiquement par navigateur
+3. Expiration → Re-login requis après 8h (pas de refresh token)
+4. Logout → Cookie cleared avec Max-Age=0
+```
+
+**Choix architecture :**
+* **JWT simple** : Access token unique de 8h (pas de refresh token)
+* **httpOnly cookie** : Protection XSS, JavaScript ne peut pas lire le token
+* **SameSite=Strict** : Protection CSRF automatique
+* **Max-Age=28800** : 8 heures = durée session travail complète
+* **Secure flag** : HTTPS obligatoire en production
+
+**Justifications JWT simple 8h :**
+- **Sécurité/UX équilibrée** : Session complète sans re-login constant
+- **Complexité réduite** : Pas de table refresh_tokens, pas de rotation
+- **Stateless maintenu** : Pas de Redis requis
+- **MVP optimal** : Implémentation rapide, sécurité suffisante
+
+**Claims JWT sécurisés :**
+* `id`, `email`, `username`, `iat`, `exp`
+* Signature HMAC-256 avec JWT_SECRET
+* Payload minimal pour réduire taille cookies
+
+**Protections XSS/CSRF :**
+* **httpOnly** : JavaScript ne peut pas accéder au token (protection XSS)
+* **SameSite=Strict** : Cookie non envoyé sur requêtes cross-origin (protection CSRF)
+* **Secure flag** : Cookie uniquement sur HTTPS en production
+* **CORS credentials** : `Access-Control-Allow-Credentials: true` configuré
+* **CSRF Token** : Double protection avec endpoint `/api/csrf-token`
+
+==== Gestion des Avis et Spoilers
+
+**Logique de protection par défaut :**
+* **Création d'avis** : `is_public: false, is_spoiler: false` (respect vie privée)
+* **Affichage lecteur** : Spoilers floutés CSS par défaut (protection spoiler)
+* **Toggle global** : Bouton "Afficher/Masquer spoilers" sur interface
+* **Consentement RGPD** : Cases à cocher explicites pour publication
+
+**Architecture Spoiler Management :**
+```
+Frontend:
+- CSS blur filter par défaut sur .spoiler-content
+- Toggle bouton: .show-spoilers active/inactive
+- État global: showSpoilers (true/false)
+
+Backend:
+- Endpoint GET /reviews avec param ?show_spoilers=true
+- Validation permissions utilisateur avant affichage
+- Metadata spoiler dans JSON: { is_spoiler: boolean }
+```
+
+**Avantages approche CSS blur :**
+* **UX intuitive** : Système Discord-like familier
+* **Performance** : Pas de parsing côté serveur
+* **Flexibilité** : Toggle instantané sans rechargement
+* **Sécurité** : Données spoiler non envoyées si show_spoilers=false
+
+==== Conformité OWASP Top 10
+
+[cols="2,3"]
+|===
+|Vulnérabilité |Protection V2
+
+|**A01 - Broken Access Control**
+|Claims rôles/permissions dans JWT + validation middleware
+
+|**A02 - Cryptographic Failures**
+|Argon2 pour mots de passe + HMAC-256 pour JWT
+
+|**A03 - Injection**
+|Drizzle ORM + validation Drizzle-Zod sur toutes entrées
+
+|**A05 - Security Misconfiguration**
+|Headers Helmet + HTTPS forcé + permissions Deno
+
+|**A07 - Authentication Failures**
+|Rate limiting Deno + rotation tokens + force logout
+|===
+
+=== 🛠️ Outils de Développement
+
+**Validation & Sécurité :**
+* **Drizzle-Zod** : Validation de schémas intégrée avec typage automatique
+* **Helmet** : Headers de sécurité HTTP (CSP, HSTS, X-Frame-Options)
+* **CORS** : Configuration Cross-Origin via middleware Hono
+* **SSL/TLS** : HTTPS obligatoire en production via Nginx
+
+**Tests & Qualité :**
+* **Deno Test** : Framework de tests natif intégré
+* **Deno Lint** : Linter TypeScript natif
+* **Deno Format** : Formatage code automatique
+
+=== ♿ Accessibilité Web (WCAG 2.1)
+
+**Conformité niveau AA obligatoire :**
+
+BlaBlaBook V2 respecte les **Web Content Accessibility Guidelines (WCAG) 2.1 niveau AA** pour garantir l'accessibilité à tous les utilisateurs, y compris les personnes en situation de handicap.
+
+**Principes WCAG implémentés :**
+
+[cols="2,3"]
+|===
+|Principe |Implémentation V2
+
+|**1. Perceptible**
+|Contrastes couleurs ≥4.5:1, textes alternatifs images, sous-titres vidéos
+
+|**2. Utilisable**
+|Navigation clavier complète, pas de clignotements, temps de session étendus
+
+|**3. Compréhensible**
+|Langue HTML déclarée, labels formulaires explicites, messages d'erreur clairs
+
+|**4. Robuste**
+|HTML sémantique valide, compatibilité technologies d'assistance
+|===
+
+**Outils et techniques :**
+
+* **HTML sémantique** : Utilisation correcte des balises `<main>`, `<nav>`, `<section>`, `<article>`
+* **ARIA labels** : Attributs `aria-label`, `aria-describedby` pour éléments interactifs
+* **Focus management** : Ordre de tabulation logique, indicateurs de focus visibles
+* **Responsive design** : Zoom jusqu'à 200% sans perte de fonctionnalité
+* **Tests automatisés** : Integration axe-core dans les tests Deno pour validation continue
+
+**Validation conformité :**
+
+* **Tests manuels** : Navigation clavier, lecteurs d'écran (NVDA, JAWS)
+* **Tests automatisés** : Lighthouse accessibility, axe-core dans CI/CD
+* **Audit externe** : Validation par expert accessibilité avant mise en production
+
+=== 🐳 Infrastructure Docker
+
+**Architecture 3 services :**
+
+```yaml
+services:
+  # Service 1: Application Deno
+  blablabook-app:
+    build: .
+    ports: ["3000:3000"]
+    depends_on: [postgres]
+
+  # Service 2: Base de données
+  postgres:
+    image: postgres:15
+    environment:
+      POSTGRES_DB: blablabook_v2
+
+  # Service 3: Reverse Proxy
+  nginx:
+    image: nginx:alpine
+    ports: ["80:80", "443:443"]
+    depends_on: [blablabook-app]
+```
+
+**Simplifications V2 :**
+* ❌ **Redis supprimé** : JWT stateless élimine le besoin de cache sessions
+* ✅ **3 conteneurs** au lieu de 4 : Architecture plus simple
+* ✅ **Moins de dépendances** : Maintenance réduite
+
+---
+
+[[section-en]]
+== 🇬🇧🇺🇸 Technical Architecture
+
+🇬🇧🇺🇸 *English* | <<section-fr,🇫🇷 Passer au Français>>
+
+=== 🎨 Branding & Visual Identity
+
+==== Application Baseline
+
+**Main baseline:**
+> _"Words that resonate, books that bring together, stories that captivate"_
+
+**Justification:**
+* **Ternary rhythm** : 3-part structure that facilitates memorization
+* **Alliteration** : Repetition of "r" sounds creates musicality
+* **Emotional** : Evocative vocabulary that touches passionate readers
+* **Community-focused** : Emphasizes sharing and bringing people together
+* **Strong identity** : Stands out from classic reading platforms
+
+**Considered alternatives:**
+* "The meaning of words, the collection of books, the passion for reading" (more descriptive, less impactful)
+* "Share your readings, discover passions" (too direct, lacks poetry)
+* "Read, share, discover together" (too minimalist)
+
+==== Positioning
+
+BlaBlaBook V2 positions itself as **a social and community library** that allows readers to:
+* Organize and manage their personal collections
+* Share their reviews and recommendations
+* Discover new books through others' passions
+* Create connections around reading
+
+**Competitive differentiation:**
+* **vs Goodreads** : Modern interface, GDPR-compliant, ad-free
+* **vs Babelio** : Simplified UX, native accessibility, advanced spoiler management
+* **vs Booknode** : Modern technical architecture, optimal performance
+
+=== 🏗️ Architecture Choice & Justification
+
+We chose a **modern client-server architecture** based on the latest technologies to guarantee performance, security, and maintainability. This V2 approach consists of a REST API developed with **Deno 2.5.2 and Hono**, communicating with a Single Page Application (SPA) via secure HTTP requests.
+
+The backend, orchestrated with **Drizzle 0.38.0** for PostgreSQL database management, exposes REST endpoints for all business functionalities: user management, personal libraries, reading lists, and reviews.
+
+**V2 Architecture Benefits:**
+* **Native performance** : Modern Deno runtime with native TypeScript support
+* **Security by design** : Granular Deno permissions + integrated Drizzle-Zod validation
+* **Infrastructure simplicity** : 3 Docker services instead of 4 (Redis removal)
+* **Developer Experience** : End-to-end TypeScript with automatic types
+
+=== 🚀 V2 Technical Stack
+
+[cols="2,2,3"]
+|===
+|Component |V1 (Legacy) |V2 (New)
+
+|*Backend Runtime*
+|Node.js/Express/Sequelize
+|**Deno 2.5.2 + Hono + Drizzle 0.38.0**
+
+|*Frontend Build*
+|Create React App/Webpack
+|**Vite 6.3.6 + React 19.1.1 + TypeScript**
+
+|*State Management*
+|Redux/Context API
+|**Zustand + Axios**
+
+|*Styling*
+|CSS-in-JS/Styled Components
+|**SCSS + Radix UI**
+
+|*Authentication*
+|Redis Sessions + CSRF
+|**JWT stateless + OWASP security**
+
+|*Validation*
+|External Zod
+|**Drizzle-Zod integrated**
+
+|*Accessibility*
+|Manually implemented
+|**Radix UI WCAG 2.1 AA native**
+
+|*Infrastructure*
+|4 Docker services (+ Redis)
+|**3 Docker services (- Redis)**
+|===
+
+==== BackEnd V2 💻
+
+**Runtime & Framework:**
+
+* **Deno 2.5.2** : Modern JavaScript/TypeScript runtime with integrated security
+* **Hono** : Ultra-fast and minimalist web micro-framework
+* **TypeScript** : Native typed language with Deno (no external compilation)
+
+_Justifications:_
+- **Native performance** : Optimized runtime, 4x faster than Node.js
+- **Security by design** : Granular permissions, no filesystem access by default
+- **Developer Experience** : Native TypeScript, no configuration needed
+- **Modern ecosystem** : Import maps, web standards, compatible APIs
+
+**📦 Note on JSR (JavaScript Registry):**
+
+Hono is imported via `jsr:@hono/hono` without a specific version, unlike npm packages like `npm:drizzle-orm@^0.38.0`. This approach uses the new **JSR** registry (jsr.io) created by the Deno team in 2024.
+
+**npm vs JSR differences:**
+
+[cols="2,2,2"]
+|===
+|Aspect |npm |JSR
+
+|**Syntax**
+|`npm:package@^1.0.0`
+|`jsr:@scope/package`
+
+|**TypeScript**
+|Separate `.d.ts` files
+|Native types included
+
+|**Resolution**
+|node_modules
+|Deno global cache
+
+|**Version**
+|Always explicit
+|Latest stable by default
+|===
+
+**Why no version for Hono?**
+
+When writing `jsr:@hono/hono` without a version, Deno automatically uses the **latest stable version** from the JSR registry (currently 4.9.8). This approach is common with JSR because:
+
+* **Native TypeScript** : Hono is written in pure TypeScript, no need for `@types/hono`
+* **Lightweight framework** : Compatible with Deno, Node.js, Bun, Cloudflare Workers
+* **Global cache** : Instant resolution via `~/.cache/deno/`
+* **Automatic audit** : JSR verifies packages and their signatures
+* **Integrated documentation** : Code preview at https://jsr.io/@hono/hono
+
+To pin the version in production (recommended):
+```json
+"hono": "jsr:@hono/hono@^4.9.8"
+```
+
+**Infrastructure & Deployment:**
+
+* **Docker** : Simplified containerization (3 services instead of 4)
+* **Nginx** : Reverse proxy and SSL termination
+* **Docker Compose** : Optimized multi-container orchestration
+
+_Justifications:_
+- **Simplified architecture** : Deno App + PostgreSQL + Nginx (Redis removal)
+- **Performance** : Fewer services = faster startup
+- **Maintenance** : Fewer dependencies to manage
+
+==== Database V2 🗄️
+
+**Technical choices:**
+
+* **PostgreSQL** : Relational DBMS with native JSON support (Docker container)
+* **Drizzle 0.38.0** : Modern TypeScript-first ORM with integrated validation
+* **Drizzle-Zod** : Automatic and type-safe schema validation
+
+_PostgreSQL Justifications:_
+- **Complete ACID** : Critical secure transactions
+- **Native JSON** : Open Library metadata storage
+- **Full-text search** : Optimized book search
+- **Extensions** : UUID, crypto, advanced indexing
+
+_Drizzle V2 Justifications:_
+- **Performance** : Queries 2x faster than Sequelize
+- **Native TypeScript** : Automatic types, complete inference
+- **Migrations** : Robust schema management with rollbacks
+- **Zero runtime overhead** : Build-time compilation
+
+==== FrontEnd V2 🎨
+
+**Framework & Build Tool:**
+
+* **Vite 6.3.6** : Modern build tool with ultra-fast HMR and native ESM support
+* **React 19.1.1** : UI framework with Concurrent Features and Server Components
+* **TypeScript** : End-to-end typed language with Deno backend
+
+_Vite Justifications:_
+- **Build performance** : 10-100x faster than Webpack/CRA
+- **Native ESM support** : Perfect compatibility with Deno backend
+- **Instant HMR** : Hot Module Replacement in <50ms
+- **Simple configuration** : Zero-config for React + TypeScript
+- **Automatic optimization** : Optimal tree-shaking and code splitting
+- **Modern ecosystem** : Rollup plugins compatible, vite-imagetools for image optimization
+
+**Routing & State Management:**
+
+* **React Router 7.9.3** : Declarative routing with layouts and route protection
+* **Zustand** : Lightweight and typed state management
+* **Axios** : HTTP client with JWT interceptors and httpOnly cookies
+
+_React Router 7.9.3 Justifications:_
+- **Route Groups** : /public, /auth, /private, /admin organization for RBAC
+- **Layouts** : Differentiated header/footer by authentication zone via `<Outlet>`
+- **Loaders/Actions** : Data loading before component render
+- **Protected Routes** : Protection middleware via HOC components
+
+_Zustand Justifications:_
+- **Simplicity** : No Redux boilerplate, intuitive API
+- **Performance** : Optimized re-renders, no providers
+- **Native TypeScript** : Automatic type inference
+- **Bundle size** : 2KB vs 60KB for Redux Toolkit
+
+**Styling & UI Components:**
+
+* **SCSS** : CSS with variables, mixins and nesting
+* **Radix UI** : Headless components with WCAG 2.1 accessibility
+* **shadcn/ui** : Pre-styled and customizable Radix components collection
+* **CSS Modules** : Component-scoped style encapsulation
+
+_SCSS Justifications:_
+- **Total control** : Exact respect of defined graphic charter
+- **CSS variables** : Color consistency (#725B3A, #D0A868, #F2E5D0)
+- **Reusable mixins** : DRY for responsive design and animations
+- **Performance** : Optimized compilation without runtime overhead
+- **Skills demonstration** : Academic project pedagogical requirement
+
+_Radix UI + shadcn/ui Justifications:_
+- **Native accessibility** : Automatic WCAG 2.1 level AA compliance
+- **Headless architecture** : Logic without style, total SCSS customization
+- **Keyboard navigation** : Integrated focus management and ARIA attributes (~50h saved)
+- **Complex components** : Dialog, Dropdown, Tabs with managed states
+- **Copy-paste approach** : Modifiable source code, no heavy runtime dependency
+- **Native TypeScript** : Automatically typed props
+
+**Hybrid architecture:**
+```
+Landing page, Auth (login/register) → Pure SCSS (academic showcase)
+Design system (_variables, _mixins, _animations) → SCSS
+Simple components (BookCard, Sidebar) → SCSS + CSS Modules
+Complex accessible components (Dialog, Dropdown) → shadcn/ui + Radix + SCSS adaptations
+```
+
+**Integrated Graphic Charter:**
+
+```scss
+// styles/variables.scss
+$primary-color:  #725B3A;    // Primary light brown
+$secondary-black: #D0A868 // Golden beige
+econdary-beige: #F2E5D0;  // Light beige
+$gray-color: #999999;       // Gray
+$cream-color: #FEFBF6;      // Off-white
+```
+
+**🔒 Frontend Security - Defense in Depth Strategy:**
+
+**Plain Text Only Architecture:**
+
+BlaBlaBook V2 uses **exclusively native HTML elements** (`<input>`, `<textarea>`) for all user content input, deliberately avoiding rich text editors (TinyMCE, Quill, Draft.js, Slate, Lexical).
+
+**Example - Review Form:**
+```typescript
+// ReviewForm.tsx - Lines 74-82
+<textarea
+    id="review-comment"
+    className={`${inputStyles.input} ${styles.textarea}`}
+    value={comment}
+    onChange={e => setComment(e.target.value)}
+    rows={6}
+    placeholder="Votre avis détaillé..."
+/>
+// ✅ Native HTML <textarea> - accepts ONLY plain text
+// ❌ NO rich text editor - no HTML injection possible
+```
+
+**Double XSS Protection:**
+
+1. **Input Layer** : Native `<textarea>` accepts **only plain text** (no HTML formatting)
+2. **Output Layer** : React JSX **automatically escapes HTML** in `{expressions}`
+
+```typescript
+// What an attacker might try to inject:
+const maliciousInput = "<script>alert('XSS')</script>"
+
+// What is stored in database:
+"<script>alert('XSS')</script>"  // Plain text string
+
+// What React displays:
+<p>{review.comment}</p>
+// → &lt;script&gt;alert('XSS')&lt;/script&gt;  ✅ Safe
+```
+
+**Why No DOMPurify Library?**
+
+- **React JSX auto-escaping** : Built-in XSS protection for all `{variable}` interpolations
+- **No dangerouslySetInnerHTML** : Never used in entire codebase (verified)
+- **DOMPurify only needed** : If rendering rich HTML content (which we don't)
+- **Smaller attack surface** : No CVE vulnerabilities from external editor libraries
+- **Predictable behavior** : HTML is always escaped, no exceptions
+
+**Benefits of Plain Text Strategy:**
+
+* **Minimal attack surface** : `<textarea>` cannot inject `<script>`, `<iframe>`, or event handlers
+* **No external dependencies** : No CVE vulnerabilities from editor libraries
+* **Better performance** : No WYSIWYG JavaScript overhead
+* **Consistent UX** : All user content rendered uniformly
+* **Easier moderation** : Plain text easier to scan for inappropriate content
+
+This architectural decision follows the **principle of least privilege** for user input capabilities.
+
+=== 🔐 JWT httpOnly Cookie Authentication
+
+==== V2 Security Architecture (Simplified)
+
+**Simplified JWT Flow:**
+```
+1. Login → JWT stored in httpOnly cookie (8h expiration)
+2. Requests → Cookie automatically sent by browser
+3. Expiration → Re-login required after 8h (no refresh token)
+4. Logout → Cookie cleared with Max-Age=0
+```
+
+**Architecture choices:**
+* **Simple JWT** : Single 8h access token (no refresh token)
+* **httpOnly cookie** : XSS protection, JavaScript cannot read token
+* **SameSite=Strict** : Automatic CSRF protection
+* **Max-Age=28800** : 8 hours = complete work session duration
+* **Secure flag** : HTTPS mandatory in production
+
+**Simple 8h JWT Justifications:**
+- **Balanced security/UX** : Complete session without constant re-login
+- **Reduced complexity** : No refresh_tokens table, no rotation
+- **Stateless maintained** : No Redis required
+- **Optimal MVP** : Fast implementation, sufficient security
+
+**Secure JWT Claims:**
+* `id`, `email`, `username`, `iat`, `exp`
+* HMAC-256 signature with JWT_SECRET
+* Minimal payload to reduce cookie size
+
+**XSS/CSRF Protections:**
+* **httpOnly** : JavaScript cannot access token (XSS protection)
+* **SameSite=Strict** : Cookie not sent on cross-origin requests (CSRF protection)
+* **Secure flag** : Cookie only on HTTPS in production
+* **CORS credentials** : `Access-Control-Allow-Credentials: true` configured
+* **CSRF Token** : Double protection with `/api/csrf-token` endpoint
+
+==== Review and Spoiler Management
+
+**Default protection logic:**
+* **Review creation** : `is_public: false, is_spoiler: false` (privacy respect)
+* **Reader display** : Spoilers CSS-blurred by default (spoiler protection)
+* **Global toggle** : "Show/Hide spoilers" button on interface
+* **GDPR consent** : Explicit checkboxes for publication
+
+**Spoiler Management Architecture:**
+```
+Frontend:
+- CSS blur filter by default on .spoiler-content
+- Toggle button: .show-spoilers active/inactive
+- Global state: showSpoilers (true/false)
+
+Backend:
+- GET /reviews endpoint with ?show_spoilers=true param
+- User permissions validation before display
+- Spoiler metadata in JSON: { is_spoiler: boolean }
+```
+
+**CSS blur approach advantages:**
+* **Intuitive UX** : Discord-like familiar system
+* **Performance** : No server-side parsing
+* **Flexibility** : Instant toggle without reload
+* **Security** : Spoiler data not sent if show_spoilers=false
+
+==== OWASP Top 10 Compliance
+
+[cols="2,3"]
+|===
+|Vulnerability |V2 Protection
+
+|**A01 - Broken Access Control**
+|JWT roles/permissions claims + middleware validation
+
+|**A02 - Cryptographic Failures**
+|Argon2 for passwords + HMAC-256 for JWT
+
+|**A03 - Injection**
+|Drizzle ORM + Drizzle-Zod validation on all inputs
+
+|**A05 - Security Misconfiguration**
+|Helmet headers + forced HTTPS + Deno permissions
+
+|**A07 - Authentication Failures**
+|Deno rate limiting + token rotation + forced logout
+|===
+
+=== 🛠️ Development Tools
+
+**Validation & Security:**
+* **Drizzle-Zod** : Integrated schema validation with automatic typing
+* **Helmet** : HTTP security headers (CSP, HSTS, X-Frame-Options)
+* **CORS** : Cross-Origin configuration via Hono middleware
+* **SSL/TLS** : HTTPS mandatory in production via Nginx
+
+**Testing & Quality:**
+* **Deno Test** : Integrated native test framework
+* **Deno Lint** : Native TypeScript linter
+* **Deno Format** : Automatic code formatting
+
+=== ♿ Web Accessibility (WCAG 2.1)
+
+**Mandatory AA level compliance:**
+
+BlaBlaBook V2 complies with **Web Content Accessibility Guidelines (WCAG) 2.1 level AA** to ensure accessibility for all users, including people with disabilities.
+
+**WCAG principles implemented:**
+
+[cols="2,3"]
+|===
+|Principle |V2 Implementation
+
+|**1. Perceivable**
+|Color contrasts ≥4.5:1, image alt texts, video captions
+
+|**2. Operable**
+|Complete keyboard navigation, no flashing content, extended session times
+
+|**3. Understandable**
+|HTML language declared, explicit form labels, clear error messages
+
+|**4. Robust**
+|Valid semantic HTML, assistive technology compatibility
+|===
+
+**Tools and techniques:**
+
+* **Semantic HTML** : Proper use of `<main>`, `<nav>`, `<section>`, `<article>` tags
+* **ARIA labels** : `aria-label`, `aria-describedby` attributes for interactive elements
+* **Focus management** : Logical tab order, visible focus indicators
+* **Responsive design** : Zoom up to 200% without functionality loss
+* **Automated testing** : axe-core integration in Deno tests for continuous validation
+
+**Compliance validation:**
+
+* **Manual testing** : Keyboard navigation, screen readers (NVDA, JAWS)
+* **Automated testing** : Lighthouse accessibility, axe-core in CI/CD
+* **External audit** : Accessibility expert validation before production
+
+=== 🐳 Docker Infrastructure
+
+**3-service architecture:**
+
+```yaml
+services:
+  # Service 1: Deno Application
+  blablabook-app:
+    build: .
+    ports: ["3000:3000"]
+    depends_on: [postgres]
+
+  # Service 2: Database
+  postgres:
+    image: postgres:15
+    environment:
+      POSTGRES_DB: blablabook_v2
+
+  # Service 3: Reverse Proxy
+  nginx:
+    image: nginx:alpine
+    ports: ["80:80", "443:443"]
+    depends_on: [blablabook-app]
+```
+
+**V2 Simplifications:**
+* ❌ **Redis removed** : Stateless JWT eliminates session cache need
+* ✅ **3 containers** instead of 4 : Simpler architecture
+* ✅ **Fewer dependencies** : Reduced maintenance
+
+---
+
+*Document créé le {14/09/2025} - Version {V1} - Generated on {2025/09/14} - Version {V1}*

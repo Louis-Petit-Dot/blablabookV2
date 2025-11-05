@@ -1,0 +1,16 @@
+@use '../styles/variables' as *;
+
+// ============================================
+// ADMIN LAYOUT - Structure de base
+// ============================================
+
+.adminLayout {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+}
+
+.adminMain {
+  flex: 1; // Prend tout l'espace disponible
+  background-color: var(--background-color);
+}

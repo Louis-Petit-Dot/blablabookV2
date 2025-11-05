@@ -1,0 +1,44 @@
+services:
+  # Service Backend - API Deno + Hono (Production)
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.prod
+    env_file: ./backend/.env
+    environment:
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - NODE_ENV=production
+    ports:
+      - "3000:3000"
+    depends_on:
+      - postgres
+    restart: unless-stopped
+
+  # Service Frontend - Next.js 15 + Node 22 (Production)
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.prod
+    env_file: ./frontend/.env
+    environment:
+      - NEXT_PUBLIC_API_URL=http://backend:3000
+      - NODE_ENV=production
+    ports:
+      - "5173:5173"
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+  # Service PostgreSQL
+  postgres:
+    image: postgres:17-alpine
+    env_file: ./backend/.env
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres_prod_data:/var/lib/postgresql/data
+    restart: unless-stopped
+
+volumes:
+  postgres_prod_data:

@@ -1,0 +1,30 @@
+@use '../../../styles/variables' as *;
+
+.toggleButton {
+    background: transparent;
+    border: 2px solid var(--text-primary);
+    border-radius: 50%;
+    width: 2.5rem;
+    height: 2.5rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    color: var(--text-primary);
+    transition: all 200ms ease;
+
+    &:hover {
+        background: var(--text-primary);
+        color: var(--bg-primary);
+        transform: rotate(15deg);
+    }
+
+    &:focus-visible {
+        outline: 2px solid var(--error);
+        outline-offset: 2px;
+    }
+
+    svg {
+        transition: transform 200ms ease;
+    }
+}

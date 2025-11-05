@@ -1,0 +1,16 @@
+@use '../styles/variables' as *;
+
+// ============================================
+// USER LAYOUT - Structure de base
+// ============================================
+
+.userLayout {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+}
+
+.userMain {
+  flex: 1; // Prend tout l'espace disponible
+  background-color: var(--background-color);
+}

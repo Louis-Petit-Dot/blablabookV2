@@ -1,0 +1,618 @@
+= BookLibraryService Workflow Documentation (Version Views SQL)
+:doctype: article
+:toc: left
+:toclevels: 3
+:sectlinks:
+:sectanchors:
+:source-highlighter: highlight.js
+
+== Vue d'ensemble
+
+Le `bookLibraryService` gère l'ajout et la suppression de livres dans les bibliothèques personnelles des utilisateurs. Il intègre un système de bibliothèques système automatiques et propose un workflow complet d'ajout simultané aux bibliothèques et listes de lecture.
+
+**Architecture modernisée** : Le service utilise maintenant la vue SQL `LibraryBooksView` pour optimiser la récupération des livres d'une bibliothèque, et des helpers internes pour factoriser le code.
+
+== Architecture des bibliothèques système
+
+=== Concept
+
+Chaque utilisateur possède automatiquement 2 bibliothèques système :
+
+* **"Bibliothèque privée"** : Collection personnelle privée
+* **"À partager"** : Collection pouvant être rendue publique
+
+=== Règles d'accès
+
+* **Propriétaire** : Accès complet (lecture/écriture)
+* **Bibliothèque publique** : Accès lecture pour tous
+* **Bibliothèque système** : Ne peut pas être vidée via removeBook
+
+== Vue SQL - LibraryBooksView
+
+**Définition SQL :**
+```sql
+CREATE VIEW library_books_view AS
+SELECT
+  bl.id_library,
+  bl.created_at AS book_added_at,
+  b.id_book, b.title, b.isbn, b.summary,
+  b.nb_pages, b.publication_year, b.language, b.image
+FROM BOOK_LIBRARY bl
+INNER JOIN BOOK b ON bl.id_book = b.id_book;
+```
+
+**Avantages :**
+- Évite le JOIN manuel BookLibrary + Book
+- Données pré-agrégées optimisées pour l'API
+- Tri facile par `book_added_at`
+- Performance améliorée avec index
+
+== Helpers internes
+
+Le service utilise un objet `helpers` pour factoriser le code commun :
+
+=== getSystemLibrary
+
+**But :** Trouve la bibliothèque système appropriée d'un utilisateur.
+
+```typescript
+async getSystemLibrary(userId: string, isPrivate: boolean) {
+    const targetName = isPrivate ? "Bibliothèque privée" : "À partager";
+
+    const library = await db
+        .select()
+        .from(Library)
+        .where(
+            and(
+                eq(Library.id_user, userId),
+                eq(Library.is_system, true),
+                eq(Library.lib_name, targetName),
+                isNull(Library.deleted_at)
+            )
+        )
+        .limit(1);
+
+    if (library.length === 0) {
+        throw new Error('Target library not found.');
+    }
+
+    return library[0];
+}
+```
+
+**Paramètres :**
+- `isPrivate: true` → "Bibliothèque privée"
+- `isPrivate: false` → "À partager"
+
+**Gestion d'erreurs :**
+- `"Target library not found."` si bibliothèque système absente
+
+=== checkBookLibraryExists
+
+**But :** Vérifie si un livre est déjà dans une bibliothèque.
+
+```typescript
+async checkBookLibraryExists(id_book: string, id_library: string) {
+    return await db
+        .select()
+        .from(BookLibrary)
+        .where(
+            and(
+                eq(BookLibrary.id_book, id_book),
+                eq(BookLibrary.id_library, id_library)
+            )
+        )
+        .limit(1);
+}
+```
+
+**Retour :**
+- Array avec association si existe
+- Array vide si pas d'association
+
+== Méthodes du service
+
+=== getLibraryBooks(libraryId: string, userId: string)
+
+**But :** Récupère tous les livres d'une bibliothèque avec contrôle d'accès.
+
+**Workflow simplifié avec LibraryBooksView :**
+```
+1. Validation bibliothèque (EntityValidator.validateLibrary)
+2. Vérification accès (EntityValidator.validateLibraryAccess)
+3. SELECT FROM LibraryBooksView WHERE id_library = ?
+4. ORDER BY book_added_at
+5. Retour : bibliothèque + livres + total
+```
+
+**Code :**
+```typescript
+async getLibraryBooks(libraryId: string, userId: string) {
+    const libraryData = await EntityValidator.validateLibrary(libraryId);
+    EntityValidator.validateLibraryAccess(libraryData, userId);
+
+    const libraryBooks = await db
+        .select()
+        .from(LibraryBooksView)
+        .where(eq(LibraryBooksView.id_library, libraryId))
+        .orderBy(LibraryBooksView.book_added_at);
+
+    return {
+        library: {
+            id_library: libraryData.id_library,
+            lib_name: libraryData.lib_name,
+            description: libraryData.description,
+            is_public: libraryData.is_public,
+            is_system: libraryData.is_system
+        },
+        books: libraryBooks,
+        total_books: libraryBooks.length
+    };
+}
+```
+
+**Avantages de la vue :**
+- Pas de JOIN manuel côté application
+- Données pré-formatées pour l'API
+- `book_added_at` directement disponible pour le tri
+
+**Données retournées :**
+```typescript
+{
+  library: {
+    id_library, lib_name, description,
+    is_public, is_system
+  },
+  books: [
+    {
+      id_book, title, isbn, summary,
+      nb_pages, publication_year, language, image,
+      book_added_at  // Date d'ajout à la bibliothèque
+    }
+  ],
+  total_books: number
+}
+```
+
+=== addBookToLibrary(data: {id_book, id_library, user_id})
+
+**But :** Ajoute un livre à une bibliothèque spécifique.
+
+**Workflow avec helpers :**
+```
+1. Validation livre (EntityValidator.validateBook)
+2. Validation bibliothèque (EntityValidator.validateLibrary)
+3. Vérification accès en écriture (requireWrite: true)
+4. Contrôle doublon (helper checkBookLibraryExists)
+5. Création association BookLibrary
+6. Retour : association + livre + bibliothèque
+```
+
+**Code :**
+```typescript
+async addBookToLibrary(data: {
+    id_book: string;
+    id_library: string;
+    user_id: string;
+}) {
+    const { id_book, id_library, user_id } = data;
+
+    // Note: library ownership and book existence should be validated by middleware/controller
+    const book = await EntityValidator.validateBook(id_book);
+    const libraryData = await EntityValidator.validateLibrary(id_library);
+    EntityValidator.validateLibraryAccess(libraryData, user_id, true);
+
+    const existingAssociation = await helpers.checkBookLibraryExists(id_book, id_library);
+
+    if (existingAssociation.length > 0) {
+        throw new Error('A book with this library already exists.');
+    }
+
+    const newBookLibrary = await db
+        .insert(BookLibrary)
+        .values({ id_book, id_library })
+        .returning();
+
+    return {
+        book_library: newBookLibrary[0],
+        book,
+        library: libraryData
+    };
+}
+```
+
+**Contrôles :**
+- Livre existe et accessible (EntityValidator)
+- Bibliothèque appartient à l'utilisateur (EntityValidator)
+- Pas de doublon (helper)
+
+=== removeBookFromLibrary(data: {id_book, id_library, user_id})
+
+**But :** Supprime un livre d'une bibliothèque (avec restrictions).
+
+**Workflow avec helpers :**
+```
+1. Vérification existence association (helper checkBookLibraryExists)
+2. Validation bibliothèque (EntityValidator.validateLibrary)
+3. Vérification accès en écriture
+4. Interdiction : bibliothèque système
+5. Suppression association (DELETE hard)
+6. Retour association supprimée
+```
+
+**Code :**
+```typescript
+async removeBookFromLibrary(data: {
+    id_book: string;
+    id_library: string;
+    user_id: string;
+}) {
+    const { id_book, id_library, user_id } = data;
+
+    const existingAssociation = await helpers.checkBookLibraryExists(id_book, id_library);
+
+    if (existingAssociation.length === 0) {
+        throw new Error('Book not found in this library.');
+    }
+
+    // Note: library ownership should be validated by middleware
+    const libraryData = await EntityValidator.validateLibrary(id_library);
+    EntityValidator.validateLibraryAccess(libraryData, user_id, true);
+
+    if (libraryData.is_system) {
+        throw new Error('Cannot remove books from system libraries.');
+    }
+
+    const removedBookLibrary = await db
+        .delete(BookLibrary)
+        .where(
+            and(
+                eq(BookLibrary.id_book, id_book),
+                eq(BookLibrary.id_library, id_library)
+            )
+        )
+        .returning();
+
+    return { book_library: removedBookLibrary[0] };
+}
+```
+
+**Restrictions :**
+- Seul le propriétaire peut supprimer (EntityValidator)
+- Interdiction sur bibliothèques système
+
+=== addBookWithOptionalLists(data: {id_book, user_id, is_private, reading_list_ids?})
+
+**But :** Workflow complet d'ajout livre + organisation en listes.
+
+**Workflow détaillé :**
+```
+1. ÉTAPE PRINCIPALE - Bibliothèque
+   └─ Détermination bibliothèque cible (helper getSystemLibrary)
+   └─ Ajout livre à la bibliothèque (addBookToLibrary)
+   └─ [OBLIGATOIRE - Si échec, tout échoue]
+
+2. ÉTAPE SECONDAIRE - Listes de lecture
+   └─ Pour chaque reading_list_id :
+       ├─ Tentative ajout (bookReadingListService.addBookToList)
+       ├─ Si SUCCÈS : ajout à la liste des réussites
+       └─ Si ÉCHEC : log erreur + continuation
+   └─ [OPTIONNEL - Échecs individuels n'interrompent pas]
+
+3. RETOUR COMPLET
+   └─ book_library : Résultat ajout principal
+   └─ added_to_lists : Liste des ajouts réussis
+   └─ target_library : Bibliothèque utilisée
+```
+
+**Code :**
+```typescript
+async addBookWithOptionalLists(data: {
+    id_book: string;
+    user_id: string;
+    is_private: boolean;
+    reading_list_ids?: string[];
+}) {
+    const { id_book, user_id, is_private, reading_list_ids } = data;
+
+    const targetLibrary = await helpers.getSystemLibrary(user_id, is_private);
+
+    const bookLibrary = await this.addBookToLibrary({
+        id_book,
+        id_library: targetLibrary.id_library,
+        user_id
+    });
+
+    const addedToLists = [];
+    if (reading_list_ids?.length) {
+        for (const listId of reading_list_ids) {
+            try {
+                const result = await bookReadingListService.addBookToList({
+                    id_book,
+                    id_list: listId,
+                    user_id
+                });
+                addedToLists.push(result);
+            } catch (error) {
+                console.error(`Failed to add book to list ${listId}:`, error);
+            }
+        }
+    }
+
+    return {
+        book_library: bookLibrary,
+        added_to_lists: addedToLists,
+        target_library: targetLibrary
+    };
+}
+```
+
+**Stratégie de gestion d'erreurs :**
+
+[cols="1,1,1"]
+|===
+|Composant |Échec |Comportement
+
+|Bibliothèque système
+|Introuvable
+|❌ Tout échoue (throw)
+
+|Ajout bibliothèque
+|Livre déjà présent
+|❌ Tout échoue (throw)
+
+|Liste individuelle
+|Accès refusé
+|⚠️ Log + continue
+
+|Liste individuelle
+|Liste inexistante
+|⚠️ Log + continue
+|===
+
+**Exemple de retour :**
+```typescript
+{
+  book_library: {
+    book_library: { id_book_library, id_book, id_library, created_at },
+    book: { /* Détails du livre */ },
+    library: { /* Détails de la bibliothèque */ }
+  },
+  added_to_lists: [
+    { /* Liste 1 - succès */ },
+    { /* Liste 3 - succès */ }
+    // Liste 2 a échoué mais n'apparaît pas ici
+  ],
+  target_library: { /* Bibliothèque "À partager" */ }
+}
+```
+
+== Cas d'usage typiques
+
+=== Ajout simple à une bibliothèque
+
+```typescript
+// Utilisateur ajoute livre à sa collection privée
+await bookLibraryService.addBookToLibrary({
+  id_book: "uuid-harry-potter",
+  id_library: "uuid-biblio-privee",
+  user_id: "uuid-user"
+});
+```
+
+=== Workflow d'ajout complet
+
+```typescript
+// Utilisateur ajoute livre + organisation
+await bookLibraryService.addBookWithOptionalLists({
+  id_book: "uuid-harry-potter",
+  user_id: "uuid-user",
+  is_private: false, // → "À partager"
+  reading_list_ids: [
+    "uuid-liste-fantasy",    // ✅ Succès
+    "uuid-liste-inexistante", // ❌ Échec (logged)
+    "uuid-liste-a-lire"      // ✅ Succès
+  ]
+});
+
+// Résultat :
+// - Livre dans bibliothèque "À partager" ✅
+// - Livre dans "Fantasy" et "À lire" ✅
+// - Erreur "liste inexistante" logged ⚠️
+```
+
+=== Consultation d'une bibliothèque
+
+```typescript
+// Récupération des livres avec métadonnées
+const result = await bookLibraryService.getLibraryBooks(
+  "uuid-biblio",
+  "uuid-user"
+);
+
+// Accès selon :
+// - Propriétaire → Toujours autorisé
+// - Bibliothèque publique → Autorisé
+// - Bibliothèque privée d'autrui → Refusé
+```
+
+== Intégrations avec autres services
+
+=== Avec BookReadingListService
+
+```typescript
+// Dans addBookWithOptionalLists()
+await bookReadingListService.addBookToList({
+  id_book,
+  id_list: listId,
+  user_id
+});
+```
+
+**Possibles échecs (gérés gracieusement) :**
+- Liste inexistante
+- Accès refusé à la liste
+- Livre déjà dans la liste
+
+=== Avec EntityValidator
+
+```typescript
+// Validation système
+const book = await EntityValidator.validateBook(id_book);
+const library = await EntityValidator.validateLibrary(id_library);
+EntityValidator.validateLibraryAccess(library, user_id, true);
+```
+
+**Validations :**
+- `validateBook` : Vérifie existence du livre
+- `validateLibrary` : Vérifie existence de la bibliothèque
+- `validateLibraryAccess` : Vérifie propriété (requireWrite = true pour écriture)
+
+== Gestion des erreurs
+
+=== Erreurs système
+
+- `"Book not found."` - Livre inexistant (EntityValidator)
+- `"Library not found."` - Bibliothèque inexistante (EntityValidator)
+- `"Target library not found."` - Bibliothèque système manquante (helper)
+
+=== Erreurs d'accès
+
+- `"Access denied to this library."` - Bibliothèque inaccessible (EntityValidator)
+- `"You need write access to this library."` - Droits insuffisants (EntityValidator)
+- `"Cannot remove books from system libraries."` - Action interdite
+
+=== Erreurs de logique métier
+
+- `"A book with this library already exists."` - Doublon détecté (helper)
+- `"Book not found in this library."` - Association inexistante (helper)
+
+=== Logging des échecs non-critiques
+
+```typescript
+console.error(`Failed to add book to list ${listId}:`, error);
+```
+
+**Justification :** Les échecs de listes individuelles n'empêchent pas l'ajout principal à la bibliothèque. Le logging permet le diagnostic sans casser l'expérience utilisateur.
+
+== Optimisations et bonnes pratiques
+
+=== Performance
+
+- **LibraryBooksView** : Évite JOIN manuel BookLibrary + Book
+- **Helpers réutilisables** : `getSystemLibrary`, `checkBookLibraryExists`
+- **Validation précoce** : EntityValidator avant opérations coûteuses
+- **LIMIT 1** : Pour vérifications d'existence
+- **ORDER BY sur la vue** : Tri efficace par `book_added_at`
+
+=== Sécurité
+
+- **Contrôle d'accès strict** : EntityValidator avec `requireWrite` pour écriture
+- **Protection bibliothèques système** : Interdiction de suppression
+- **Validation exhaustive** : Toutes les entrées contrôlées
+- **Vérification doublon** : Empêche associations multiples
+
+=== Maintenabilité
+
+- **Séparation des responsabilités** :
+  - Service → Logique métier
+  - EntityValidator → Contrôles d'accès
+  - Helpers → Logique réutilisable
+  - LibraryBooksView → Requêtes optimisées
+- **Nommage explicite** : `getSystemLibrary`, `addBookWithOptionalLists`
+- **Commentaires dans le code** : Note sur validations middleware
+
+== Diagramme de flux - Ajout complet avec listes
+
+```
+┌────────────────────────────────────────────────┐
+│ addBookWithOptionalLists()                     │
+│ {id_book, user_id, is_private,                │
+│  reading_list_ids: [list1, list2, list3]}     │
+└──────────────────┬─────────────────────────────┘
+                   │
+                   v
+┌────────────────────────────────────────────────┐
+│ Helper: getSystemLibrary(user_id, is_private) │
+└──────────────────┬─────────────────────────────┘
+                   │
+                   v
+         ┌─────────────────┐
+         │ is_private ?    │
+         └────┬───────┬────┘
+              │ true  │ false
+              v       v
+    ┌──────────────┐ ┌──────────────┐
+    │ "Bibliothèque│ │ "À partager" │
+    │  privée"     │ │              │
+    └──────┬───────┘ └──────┬───────┘
+           │                │
+           └────────┬───────┘
+                    v
+          ┌──────────────────┐
+          │ addBookToLibrary │
+          │ (OBLIGATOIRE)    │
+          └────────┬─────────┘
+                   │
+         ┌─────────┴─────────┐
+         │ Succès ?          │
+         └───┬───────────┬───┘
+             │ NON       │ OUI
+             v           v
+    ┌───────────┐   ┌────────────────────────┐
+    │ THROW     │   │ reading_list_ids ?     │
+    │ ERROR     │   └───┬────────────────┬───┘
+    └───────────┘       │ NON            │ OUI
+                        v                v
+               ┌──────────────┐  ┌────────────────┐
+               │ Return       │  │ FOR EACH list  │
+               │ (sans listes)│  └────────┬───────┘
+               └──────────────┘           │
+                                         v
+                              ┌────────────────────┐
+                              │ TRY:               │
+                              │ bookReadingList-   │
+                              │ Service.addBookTo- │
+                              │ List()             │
+                              └────────┬───────────┘
+                                       │
+                              ┌────────┴────────┐
+                              │ Succès ?        │
+                              └───┬────────┬────┘
+                                  │ OUI    │ NON
+                                  v        v
+                         ┌──────────┐  ┌─────────┐
+                         │ Add to   │  │ CATCH + │
+                         │ results  │  │ LOG     │
+                         └────┬─────┘  └────┬────┘
+                              │             │
+                              └──────┬──────┘
+                                     │
+                                     v (continue)
+                              ┌────────────────┐
+                              │ Next list...   │
+                              └────────┬───────┘
+                                       │
+                                       v
+                              ┌────────────────┐
+                              │ Return:        │
+                              │ - book_library │
+                              │ - added_to_lists│
+                              │ - target_library│
+                              └────────────────┘
+```
+
+== Résumé
+
+Le service bookLibraryService est un **gestionnaire de collections de livres** avec :
+
+- **LibraryBooksView** : Vue SQL optimisée pour éviter JOIN BookLibrary + Book
+- **Helpers réutilisables** : `getSystemLibrary`, `checkBookLibraryExists`
+- **Bibliothèques système** : "Bibliothèque privée" et "À partager" auto-créées
+- **Workflow complet** : `addBookWithOptionalLists` pour ajout + organisation
+- **Gestion d'erreurs gracieuse** : Échecs de listes n'interrompent pas l'ajout principal
+- **Contrôle d'accès strict** : EntityValidator avec `requireWrite`
+- **Protection système** : Interdiction suppression depuis bibliothèques système
+- **Optimisations** : Vue SQL, helpers, LIMIT 1, validation précoce
+
+**Architecture modernisée : Vue SQL + Helpers + Gestion d'erreurs gracieuse = Workflow complet, robuste et performant.**

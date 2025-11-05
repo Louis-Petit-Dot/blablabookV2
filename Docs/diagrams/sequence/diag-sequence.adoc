@@ -1,0 +1,1244 @@
+= Diagrammes de Séquence - BlaBlaBook V2 / Sequence Diagrams - BlaBlaBook V2
+:toc: left
+:toclevels: 3
+:sectanchors:
+:icons: font
+:version: 2.0
+:date: {docdate}
+
+// Navigation inter-documents
+link:../../README.adoc[📚 Documentation Hub] |
+link:../../project/CONCEPTION-BLABLABOOKV2.adoc[🏗️ Architecture] |
+link:../../cdc/technical-architecture.adoc[🔧 Technical] |
+link:../../cdc/api-specifications.adoc[🛣️ API]
+
+// Navigation langues
+<<section-fr,🇫🇷 Version Française>> | <<section-en,🇬🇧🇺🇸 English Version>>
+
+---
+
+**NOTE IMPORTANTE :** Ces diagrammes sont synchronisés avec le code backend actuel (Deno 2.0, Hono, Drizzle ORM, PostgreSQL).
+
+[[section-fr]]
+== 🇫🇷 Diagrammes de Séquence
+
+<<section-en,🇬🇧🇺🇸 Switch to English>> | 🇫🇷 *Français*
+
+=== Rechercher un livre (Hybride : DB + OpenLibrary API)
+
+```mermaid
+sequenceDiagram
+    participant Utilisateur
+    participant Frontend
+    participant Backend
+    participant BaseDeDonnees
+    participant OpenLibrary_API
+
+    Utilisateur->>Frontend: rechercher "science fiction"
+    Frontend->>Backend: GET /api/books/search?q=science fiction
+    note over Backend: Token JWT optionnel (connecté ou visiteur)
+
+    alt Utilisateur connecté
+        Backend->>Backend: Extraire utilisateur du JWT (middleware auth)
+        Backend->>BaseDeDonnees: Récupérer rôles/permissions (avec cache)
+    else Visiteur (non connecté)
+        Backend->>Backend: Utilisateur anonyme (accès lecture seul)
+    end
+
+    %% Phase 1: Recherche dans notre DB
+    Backend->>BaseDeDonnees: SELECT * FROM BOOK WHERE title ILIKE '%science fiction%'
+    BaseDeDonnees-->>Backend: Livres correspondants avec métadonnées
+
+    alt Résultats suffisants dans DB (≥ 10 livres)
+        Backend->>Backend: Trier par pertinence
+        Backend-->>Frontend: Résultats BDD locale
+        Frontend-->>Utilisateur: Afficher livres avec couvertures Cloudinary
+    else Résultats insuffisants (< 10 livres)
+        %% Phase 2: Complément avec OpenLibrary API
+        Backend->>OpenLibrary_API: GET /search.json?q=science fiction&fields=key,title,author_name,cover_i,isbn,subject
+        OpenLibrary_API-->>Backend: Résultats API (métadonnées brutes)
+        note over Backend: Payload réduit ~70% via limitation champs
+
+        %% Pas de système is_temporary dans version actuelle
+        Backend->>Backend: Fusionner résultats DB + API
+        Backend-->>Frontend: Résultats hybrides
+        Frontend-->>Utilisateur: Livres mixtes (BDD + API)
+    end
+
+    note over Frontend: Pas de distinction "Communauté" vs "Externe" dans version actuelle
+```
+
+**Différences avec design initial :**
+- ❌ Pas de système `is_temporary` pour import temporaire
+- ❌ Pas de nettoyage automatique après 72h
+- ✅ Limitation champs API pour optimisation payload
+- ✅ Cache trending books 1h (cacheService)
+
+=== Connexion avec JWT
+
+```mermaid
+sequenceDiagram
+    participant Utilisateur
+    participant Frontend
+    participant Backend
+    participant DenoKV
+    participant BaseDeDonnees
+
+    Utilisateur->>Frontend: saisir identifiants (email, mot de passe)
+    Frontend->>Backend: POST /api/users/login {email, password}
+
+    %% Middleware authLockout vérifie blocage
+    Backend->>DenoKV: Vérifier tentatives échec (authLockout)
+    DenoKV-->>Backend: Compte non bloqué
+
+    Backend->>BaseDeDonnees: SELECT * FROM USER WHERE email = ? AND deleted_at IS NULL
+    BaseDeDonnees-->>Backend: Utilisateur trouvé (ou non)
+    Backend->>Backend: Vérifier mot de passe (bcrypt, pas Argon2)
+
+    alt Identifiants valides
+        Backend->>DenoKV: Réinitialiser tentatives échec
+        Backend->>BaseDeDonnees: UPDATE USER SET last_login = NOW()
+        Backend->>BaseDeDonnees: SELECT rôles via USER_ROLE
+        Backend->>BaseDeDonnees: SELECT permissions via ROLE_PERMISSION
+        BaseDeDonnees-->>Backend: Données RBAC
+
+        Backend->>Backend: Générer token JWT (un seul, pas refresh)
+        Backend->>Backend: Définir httpOnly cookie
+        Backend-->>Frontend: 200 OK + {token, user, roles, permissions} + httpOnly cookie
+
+        Frontend->>Frontend: Stocker user/roles/permissions (pas token)
+        Frontend-->>Utilisateur: Rediriger vers dashboard
+    else Identifiants invalides
+        Backend->>DenoKV: Incrémenter tentatives échec
+        alt 5 tentatives atteintes
+            Backend->>DenoKV: Bloquer compte 15 min (lockedUntil)
+            Backend-->>Frontend: 429 Too Many Requests
+            Frontend-->>Utilisateur: "Account locked. Try again in X minutes"
+        else Moins de 5 tentatives
+            Backend-->>Frontend: 401 Unauthorized "Invalid email or password"
+            Frontend-->>Utilisateur: Message erreur flou (sécurité)
+        end
+    end
+```
+
+**Différences avec design initial :**
+- ❌ Pas de refresh token (un seul JWT)
+- ❌ Hash bcrypt, pas Argon2
+- ✅ httpOnly cookie pour token (protection XSS)
+- ✅ Lockout 15 min après 5 tentatives (Deno KV)
+- ✅ Code HTTP 429 pour lockout
+- ✅ Cache rôles/permissions (cacheService)
+
+=== Inscription avec assignation rôle USER
+
+```mermaid
+sequenceDiagram
+    participant Utilisateur
+    participant Frontend
+    participant Backend
+    participant BaseDeDonnees
+
+    Utilisateur->>Frontend: remplir formulaire (firstname, lastname, username, email, password, passwordConfirm)
+    Frontend->>Backend: POST /api/users/register {firstname, lastname, username, email, password, passwordConfirm}
+
+    %% Validation Zod
+    Backend->>Backend: Valider données (middleware Zod)
+    note over Backend: 8 caractères min, 1 maj, 1 min, 1 chiffre, 1 spécial (@$!%*?&) REQUIS
+
+    Backend->>BaseDeDonnees: SELECT * FROM USER WHERE email = ? OR username = ?
+    BaseDeDonnees-->>Backend: Vérification unicité
+
+    alt Email déjà utilisé
+        Backend-->>Frontend: 409 Conflict "A user with this email already exists"
+        Frontend-->>Utilisateur: Rediriger vers connexion
+    else Username déjà pris
+        Backend-->>Frontend: 409 Conflict "A user with this username already exists"
+        Frontend-->>Utilisateur: Message erreur + suggestions
+    else Nouvel utilisateur valide
+        Backend->>Backend: Hasher mot de passe (bcrypt)
+        Backend->>BaseDeDonnees: BEGIN TRANSACTION
+
+        Backend->>BaseDeDonnees: INSERT INTO USER (firstname, lastname, username, email, password)
+        BaseDeDonnees-->>Backend: Utilisateur créé avec UUID
+
+        Backend->>BaseDeDonnees: SELECT id_role FROM ROLE WHERE role_name = 'USER'
+        Backend->>BaseDeDonnees: INSERT INTO USER_ROLE (id_user, id_role)
+        note over BaseDeDonnees: Rôle USER assigné automatiquement
+
+        Backend->>BaseDeDonnees: COMMIT TRANSACTION
+
+        Backend->>BaseDeDonnees: SELECT rôles et permissions
+        Backend->>Backend: Générer token JWT + httpOnly cookie
+        Backend-->>Frontend: 201 Created + {token, user, roles, permissions}
+
+        Frontend-->>Utilisateur: Connexion automatique + redirection dashboard
+    end
+```
+
+**Différences avec design initial :**
+- ❌ **PAS** de création automatique bibliothèque (non implémenté)
+- ✅ Rôle USER assigné automatiquement
+- ✅ Validation Zod stricte (caractère spécial REQUIS)
+- ✅ Connexion automatique après inscription
+- ✅ Username accepte tirets `-` en plus underscore
+
+=== Affichage des détails d'un livre
+
+```mermaid
+sequenceDiagram
+    participant Utilisateur
+    participant Frontend
+    participant Backend
+    participant OpenLibrary_API
+    participant BaseDeDonnees
+
+    Utilisateur->>Frontend: Voir détails livre (id_book UUID)
+    Frontend->>Backend: GET /api/books/{id_book}
+
+    note over Backend: Token JWT optionnel (public/connecté)
+
+    Backend->>BaseDeDonnees: SELECT * FROM BOOK WHERE id_book = ?
+
+    alt Livre trouvé localement
+        Backend->>BaseDeDonnees: SELECT auteurs (BOOK_AUTHOR + AUTHOR)
+        Backend->>BaseDeDonnees: SELECT genres (BOOK_GENRE + GENRE)
+        Backend->>BaseDeDonnees: SELECT avis publics (REVIEW WHERE is_public = true)
+        Backend->>BaseDeDonnees: SELECT notes (RATE)
+        BaseDeDonnees-->>Backend: Données livre complètes
+
+        Backend->>Backend: Calculer moyenne notes
+        Backend-->>Frontend: Livre + auteurs + genres + avis + stats
+
+    else Livre non trouvé localement
+        Backend-->>Frontend: 404 Not Found "Book not found"
+        note over Frontend: Pas de création automatique depuis API\nDans version actuelle
+    end
+
+    Frontend-->>Utilisateur: Afficher détails livre avec couverture Cloudinary
+```
+
+**Différences avec design initial :**
+- ❌ Pas de système `is_temporary`
+- ❌ Pas de création automatique livre depuis API lors consultation
+- ✅ id_book UUID, pas book_code
+- ✅ Couvertures servies depuis Cloudinary (WebP optimisé)
+
+=== Ajout d'un livre à la bibliothèque
+
+```mermaid
+sequenceDiagram
+    participant Utilisateur
+    participant Frontend
+    participant Backend
+    participant OpenLibrary_API
+    participant Cloudinary
+    participant BaseDeDonnees
+
+    Utilisateur->>Frontend: Clic "Ajouter à ma bibliothèque" (depuis recherche OpenLibrary)
+    Frontend->>Backend: POST /api/books/openlibrary {openLibraryData: {key, title, author_name, isbn, cover_i, subject}}
+
+    note over Backend: Token JWT requis (middleware auth)
+    Backend->>Backend: Extraire utilisateur du JWT
+
+    %% Vérification existence livre
+    Backend->>BaseDeDonnees: SELECT * FROM BOOK WHERE openlibrary_key = ? OR isbn = ?
+
+    alt Livre existe déjà
+        BaseDeDonnees-->>Backend: Livre trouvé
+        Backend->>Backend: Retourner {book, isNew: false}
+
+    else Livre nouveau
+        Backend->>BaseDeDonnees: BEGIN TRANSACTION
+
+        Backend->>BaseDeDonnees: INSERT INTO BOOK (title, isbn, openlibrary_key, publication_year)
+        BaseDeDonnees-->>Backend: Livre créé avec id_book UUID
+
+        %% Upload couverture Cloudinary
+        Backend->>OpenLibrary_API: Trouver meilleure couverture française (languageService)
+        OpenLibrary_API-->>Backend: cover_id optimal
+        Backend->>Cloudinary: Upload URL OpenLibrary → WebP auto:best
+        Cloudinary-->>Backend: URL HTTPS Cloudinary
+        Backend->>BaseDeDonnees: UPDATE BOOK SET image = ?
+
+        %% Créer auteurs
+        loop Pour chaque auteur
+            Backend->>BaseDeDonnees: SELECT * FROM AUTHOR WHERE author_name = ?
+            alt Auteur existe
+                BaseDeDonnees-->>Backend: id_author existant
+            else Nouvel auteur
+                Backend->>BaseDeDonnees: INSERT INTO AUTHOR (author_name)
+                BaseDeDonnees-->>Backend: id_author nouveau
+            end
+            Backend->>BaseDeDonnees: INSERT INTO BOOK_AUTHOR (id_book, id_author)
+        end
+
+        %% Mapper et créer genres
+        Backend->>Backend: Mapper sujets OpenLibrary → genres (genreMapping)
+        note over Backend: 25 catégories, 160+ variantes, fallback "Divers"
+        loop Pour chaque genre mappé
+            Backend->>BaseDeDonnees: SELECT * FROM GENRE WHERE genre_name = ?
+            alt Genre existe
+                BaseDeDonnees-->>Backend: id_genre existant
+            else Nouveau genre
+                Backend->>BaseDeDonnees: INSERT INTO GENRE (genre_name)
+                BaseDeDonnees-->>Backend: id_genre nouveau
+            end
+            Backend->>BaseDeDonnees: INSERT INTO BOOK_GENRE (id_book, id_genre)
+        end
+
+        Backend->>BaseDeDonnees: COMMIT TRANSACTION
+        Backend->>Backend: Retourner {book, isNew: true}
+    end
+
+    %% Ajout à bibliothèque utilisateur
+    Backend->>BaseDeDonnees: SELECT id_library FROM LIBRARY WHERE id_user = ?
+    BaseDeDonnees-->>Backend: id_library utilisateur
+
+    Backend->>BaseDeDonnees: SELECT * FROM BOOK_LIBRARY WHERE id_book = ? AND id_library = ?
+    alt Déjà dans bibliothèque
+        Backend-->>Frontend: 409 Conflict "Livre déjà dans votre bibliothèque"
+    else Pas encore dans bibliothèque
+        Backend->>BaseDeDonnees: INSERT INTO BOOK_LIBRARY (id_book, id_library)
+        BaseDeDonnees-->>Backend: Relation créée
+        Backend-->>Frontend: 201 Created + {book}
+    end
+
+    Frontend-->>Utilisateur: Confirmation ajout + proposition ajout à liste
+```
+
+**Différences avec design initial :**
+- ❌ Pas de champ `is_temporary` sur BOOK
+- ✅ Vérification double existence (openlibrary_key + isbn)
+- ✅ Upload Cloudinary avec optimisation WebP
+- ✅ Sélection couverture française automatique (languageService)
+- ✅ Mapping genres intelligent (genreMapping utility)
+- ✅ Livre permanent dès création
+
+=== Suppression d'un livre de la bibliothèque
+
+```mermaid
+sequenceDiagram
+    participant Utilisateur
+    participant Frontend
+    participant Backend
+    participant BaseDeDonnees
+
+    Utilisateur->>Frontend: Supprimer livre de la bibliothèque
+    Frontend->>Backend: DELETE /api/libraries/{id_library}/books/{id_book}
+
+    note over Backend: Token JWT requis
+    Backend->>Backend: Extraire utilisateur du JWT
+
+    Backend->>BaseDeDonnees: SELECT * FROM LIBRARY WHERE id_library = ? AND id_user = ? AND deleted_at IS NULL
+    BaseDeDonnees-->>Backend: Vérifier propriété bibliothèque
+
+    Backend->>BaseDeDonnees: DELETE FROM BOOK_LIBRARY WHERE id_book = ? AND id_library = ?
+    BaseDeDonnees-->>Backend: Relation supprimée
+
+    Backend-->>Frontend: 200 OK "Book removed from library successfully"
+    Frontend-->>Utilisateur: Mettre à jour vue bibliothèque
+```
+
+**Différences avec design initial :**
+- ✅ id_library et id_book UUID (pas book_code)
+- ✅ Vérification soft delete (deleted_at IS NULL)
+- ✅ Pas de permission LIBRARY_DELETE spécifique (propriété suffit)
+
+=== Créer une Liste de Lecture
+
+```mermaid
+sequenceDiagram
+    participant Utilisateur
+    participant Frontend
+    participant Backend
+    participant BaseDeDonnees
+
+    Utilisateur->>Frontend: Clic "Créer nouvelle liste de lecture"
+    Utilisateur->>Frontend: Remplir formulaire (list_name, description, is_public)
+    Frontend->>Backend: POST /api/reading-lists {list_name, description, id_library, is_public}
+
+    note over Backend: Token JWT requis
+    Backend->>Backend: Extraire utilisateur du JWT
+
+    %% Validation propriété bibliothèque
+    Backend->>BaseDeDonnees: SELECT * FROM LIBRARY WHERE id_library = ? AND id_user = ? AND deleted_at IS NULL
+    BaseDeDonnees-->>Backend: Bibliothèque utilisateur validée
+
+    %% Vérification unicité nom dans bibliothèque
+    Backend->>BaseDeDonnees: SELECT * FROM READING_LIST WHERE id_user = ? AND id_library = ? AND list_name = ? AND deleted_at IS NULL
+
+    alt Nom déjà utilisé dans cette bibliothèque
+        Backend-->>Frontend: 409 Conflict "A reading list with this name already exists in this library"
+        Frontend-->>Utilisateur: Message erreur + modifier nom
+
+    else Nom disponible
+        Backend->>BaseDeDonnees: INSERT INTO READING_LIST (id_user, id_library, list_name, description, is_public)
+        note over BaseDeDonnees: Contrainte unique (id_user, id_library, list_name)
+        BaseDeDonnees-->>Backend: Liste créée avec id_list UUID
+
+        Backend-->>Frontend: 201 Created + {id_list}
+        Frontend-->>Utilisateur: Afficher liste vide + proposer ajout livres
+    end
+```
+
+**Différences avec design initial :**
+- ✅ Contrainte unique (id_user, id_library, list_name)
+- ✅ Soft delete (deleted_at)
+- ✅ Visibilité hérite de la bibliothèque parente
+- ❌ Pas de permission LIST_CREATE spécifique (propriété bibliothèque suffit)
+
+=== Ajout d'un livre à une Liste de Lecture
+
+```mermaid
+sequenceDiagram
+    participant Utilisateur
+    participant Frontend
+    participant Backend
+    participant BaseDeDonnees
+
+    Utilisateur->>Frontend: Ajouter livre à liste de lecture existante
+    Frontend->>Backend: POST /api/reading-lists/{id_list}/books {id_book}
+
+    note over Backend: Token JWT requis
+    Backend->>Backend: Extraire utilisateur du JWT
+
+    %% Vérification propriété liste
+    Backend->>BaseDeDonnees: SELECT * FROM READING_LIST WHERE id_list = ? AND id_user = ? AND deleted_at IS NULL
+    BaseDeDonnees-->>Backend: Liste utilisateur validée
+
+    %% Vérification existence livre
+    Backend->>BaseDeDonnees: SELECT * FROM BOOK WHERE id_book = ?
+    BaseDeDonnees-->>Backend: Livre validé
+
+    %% Vérification doublon
+    Backend->>BaseDeDonnees: SELECT * FROM READING_LIST_BOOK WHERE id_list = ? AND id_book = ?
+
+    alt Livre déjà dans liste
+        Backend-->>Frontend: 409 Conflict "Book already in this reading list"
+        Frontend-->>Utilisateur: Message information
+
+    else Livre pas encore dans liste
+        Backend->>BaseDeDonnees: INSERT INTO READING_LIST_BOOK (id_list, id_book)
+        note over BaseDeDonnees: Pas de statut lecture/priorité/notes dans version actuelle
+        BaseDeDonnees-->>Backend: Relation créée
+
+        Backend-->>Frontend: 201 Created "Book added to reading list successfully"
+        Frontend-->>Utilisateur: Livre ajouté à la liste
+    end
+```
+
+**Différences avec design initial :**
+- ❌ Pas de statut lecture (a_lire, en_cours, lu, abandonné)
+- ❌ Pas de notes personnelles sur livres
+- ❌ Pas de priorité (1-5)
+- ✅ Table READING_LIST_BOOK simple (id_list + id_book + created_at)
+- ❌ Pas de permission LIST_WRITE spécifique
+
+=== Ajout d'un avis avec is_public et is_spoiler
+
+```mermaid
+sequenceDiagram
+    participant Utilisateur
+    participant Frontend
+    participant Backend
+    participant BaseDeDonnees
+
+    Utilisateur->>Frontend: Rédiger avis sur livre
+    note over Frontend: Checkboxes : ☐ Public (default false), ☐ Spoiler (default false)
+
+    Frontend->>Frontend: Validation côté client
+    Frontend->>Backend: POST /api/reviews {id_book, title, comment, is_public, is_spoiler}
+
+    note over Backend: Token JWT requis (utilisateur connecté)
+    Backend->>Backend: Extraire utilisateur du JWT
+
+    %% Vérification existence livre
+    Backend->>BaseDeDonnees: SELECT * FROM BOOK WHERE id_book = ?
+    BaseDeDonnees-->>Backend: Livre validé
+
+    %% Vérification unicité (id_user, id_book)
+    Backend->>BaseDeDonnees: SELECT * FROM REVIEW WHERE id_user = ? AND id_book = ?
+
+    alt Avis déjà existant
+        Backend-->>Frontend: 409 Conflict "You have already reviewed this book"
+        Frontend-->>Utilisateur: Proposer modifier avis existant
+
+    else Premier avis pour ce livre
+        Backend->>BaseDeDonnees: INSERT INTO REVIEW (id_user, id_book, title, comment, is_public, is_spoiler, published_at)
+        note over BaseDeDonnees: Contrainte unique (id_user, id_book)\nPas de champs consent_to_publish/consent_date
+        BaseDeDonnees-->>Backend: Avis créé avec id_review UUID
+
+        alt Avis public
+            Backend-->>Frontend: 201 Created "Review created successfully" (public)
+            Frontend-->>Utilisateur: "Avis publié publiquement"
+        else Avis privé
+            Backend-->>Frontend: 201 Created "Review created successfully" (private)
+            Frontend-->>Utilisateur: "Avis sauvegardé (privé, visible par vous seul)"
+        end
+    end
+```
+
+**Différences avec design initial :**
+- ❌ Pas de champ `published_as` (pseudonyme)
+- ❌ Pas de champs `consent_to_publish`, `consent_date`
+- ✅ is_public contrôle visibilité (default false = privé)
+- ✅ is_spoiler contrôle masquage contenu (default false)
+- ✅ Contrainte unique (id_user, id_book) : un avis par livre
+- ✅ CASCADE DELETE user, RESTRICT DELETE book
+- ❌ Pas de permission REVIEW_CREATE spécifique
+
+=== Ajout d'une note à un livre
+
+```mermaid
+sequenceDiagram
+    participant Utilisateur
+    participant Frontend
+    participant Backend
+    participant BaseDeDonnees
+
+    Utilisateur->>Frontend: Noter un livre (1-5 étoiles)
+    Frontend->>Backend: POST /api/rates {id_book, rating}
+
+    note over Backend: Token JWT requis
+    Backend->>Backend: Extraire utilisateur du JWT
+
+    Backend->>BaseDeDonnees: SELECT * FROM BOOK WHERE id_book = ?
+    BaseDeDonnees-->>Backend: Livre validé
+
+    Backend->>BaseDeDonnees: SELECT * FROM RATE WHERE id_user = ? AND id_book = ?
+
+    alt Utilisateur a déjà noté
+        Backend->>BaseDeDonnees: UPDATE RATE SET rating = ?, updated_at = NOW()
+        BaseDeDonnees-->>Backend: Note mise à jour
+        Backend-->>Frontend: 200 OK "Rating updated successfully"
+
+    else Première notation
+        Backend->>BaseDeDonnees: INSERT INTO RATE (id_user, id_book, rating)
+        note over BaseDeDonnees: Contrainte unique (id_user, id_book)
+        BaseDeDonnees-->>Backend: Note créée avec id_rate UUID
+        Backend-->>Frontend: 201 Created "Rating created successfully"
+    end
+
+    Frontend-->>Utilisateur: Afficher confirmation notation
+```
+
+**Différences avec design initial :**
+- ✅ Table RATE séparée de REVIEW
+- ✅ Contrainte unique (id_user, id_book)
+- ✅ CASCADE DELETE user, RESTRICT DELETE book
+- ❌ Pas de permission RATING_CREATE spécifique
+- ❌ Pas de recalcul automatique moyenne sur BOOK
+
+=== Partage de bibliothèque (visibilité is_public)
+
+```mermaid
+sequenceDiagram
+    participant Proprietaire
+    participant Frontend
+    participant Backend
+    participant BaseDeDonnees
+    participant AutreUtilisateur
+
+    Proprietaire->>Frontend: Rendre bibliothèque publique
+    Frontend->>Backend: PATCH /api/libraries/{id_library} {is_public: true}
+
+    note over Backend: Token JWT requis
+    Backend->>Backend: Extraire propriétaire du JWT
+
+    Backend->>BaseDeDonnees: SELECT * FROM LIBRARY WHERE id_library = ? AND id_user = ? AND deleted_at IS NULL
+    BaseDeDonnees-->>Backend: Bibliothèque propriétaire validée
+
+    Backend->>BaseDeDonnees: UPDATE LIBRARY SET is_public = true, updated_at = NOW()
+    BaseDeDonnees-->>Backend: Bibliothèque mise à jour
+
+    Backend-->>Frontend: 200 OK "Library visibility updated"
+    Frontend-->>Proprietaire: "Bibliothèque maintenant publique"
+
+    note over AutreUtilisateur: Les utilisateurs peuvent voir bibliothèques publiques
+
+    AutreUtilisateur->>Frontend: Consulter bibliothèques publiques
+    Frontend->>Backend: GET /api/libraries/public
+
+    Backend->>BaseDeDonnees: SELECT * FROM LIBRARY WHERE is_public = true AND deleted_at IS NULL
+    BaseDeDonnees-->>Backend: Bibliothèques publiques
+
+    Backend-->>Frontend: Liste bibliothèques publiques
+    Frontend-->>AutreUtilisateur: Afficher bibliothèques accessibles (lecture seule)
+```
+
+**Différences avec design initial :**
+- ❌ **PAS** de table LIBRARY_PERMISSION (supprimée)
+- ✅ Visibilité gérée par champ is_public (boolean)
+- ✅ Bibliothèques publiques = lecture seule pour tous
+- ✅ Bibliothèques privées = propriétaire uniquement
+- ❌ Pas de permissions granulaires (read/write/admin)
+
+=== Affichage des avis avec gestion spoiler
+
+```mermaid
+sequenceDiagram
+    participant Utilisateur
+    participant Frontend
+    participant Backend
+    participant BaseDeDonnees
+
+    Utilisateur->>Frontend: Consulter avis d'un livre
+    Frontend->>Backend: GET /api/reviews/book/{id_book}
+
+    note over Backend: Token JWT optionnel (public/connecté)
+
+    alt Utilisateur connecté
+        Backend->>Backend: Extraire utilisateur du JWT
+        Backend->>BaseDeDonnees: SELECT avis publics + avis utilisateur
+        note over BaseDeDonnees: WHERE is_public = true OR id_user = current_user
+    else Visiteur
+        Backend->>BaseDeDonnees: SELECT avis publics uniquement
+        note over BaseDeDonnees: WHERE is_public = true
+    end
+
+    BaseDeDonnees-->>Backend: Liste avis avec flags is_spoiler
+    Backend->>Backend: Compter avis avec spoilers
+    Backend-->>Frontend: {reviews[], spoilerCount}
+
+    Frontend->>Frontend: Rendu avec spoilers masqués par défaut (CSS blur)
+    note over Frontend: is_spoiler=true → Classe "review-spoiler"
+
+    Frontend-->>Utilisateur: Afficher avis + bouton "Révéler spoilers (X)"
+
+    alt Utilisateur clique "Révéler spoilers"
+        Frontend->>Frontend: Toggle spoilersRevealed = true
+        Frontend->>Frontend: Supprimer floutage CSS
+        Frontend-->>Utilisateur: Tous avis visibles sans flou
+        note over Frontend: Bouton devient "Masquer spoilers"
+    else Utilisateur ne révèle pas
+        Frontend-->>Utilisateur: Spoilers restent floutés
+        note over Frontend: Protection spoiler respectée
+    end
+```
+
+**Différences avec design initial :**
+- ✅ is_spoiler flag sur REVIEW
+- ✅ Masquage géré côté frontend (CSS blur)
+- ✅ Révélation sur demande utilisateur
+- ❌ Pas de permission READ_REVIEWS spécifique
+- ✅ Filtrage avis publics/privés selon authentification
+
+[[section-en]]
+== 🇬🇧🇺🇸 Sequence Diagrams
+
+<<section-fr,🇫🇷 Passer en Français>> | 🇬🇧🇺🇸 *English*
+
+=== Search Book (Hybrid: DB + OpenLibrary API)
+
+```mermaid
+sequenceDiagram
+    participant User
+    participant Frontend
+    participant Backend
+    participant Database
+    participant OpenLibrary_API
+
+    User->>Frontend: search "science fiction"
+    Frontend->>Backend: GET /api/books/search?q=science fiction
+    note over Backend: Optional JWT token (logged in or visitor)
+
+    alt Logged in user
+        Backend->>Backend: Extract user from JWT (auth middleware)
+        Backend->>Database: Get roles/permissions (with cache)
+    else Visitor (not logged in)
+        Backend->>Backend: Anonymous user (read-only access)
+    end
+
+    %% Phase 1: Search in our DB
+    Backend->>Database: SELECT * FROM BOOK WHERE title ILIKE '%science fiction%'
+    Database-->>Backend: Matching books with metadata
+
+    alt Sufficient results in DB (≥ 10 books)
+        Backend->>Backend: Sort by relevance
+        Backend-->>Frontend: Local DB results
+        Frontend-->>User: Display books with Cloudinary covers
+    else Insufficient results (< 10 books)
+        %% Phase 2: Complement with OpenLibrary API
+        Backend->>OpenLibrary_API: GET /search.json?q=science fiction&fields=key,title,author_name,cover_i,isbn,subject
+        OpenLibrary_API-->>Backend: API results (raw metadata)
+        note over Backend: ~70% payload reduction via field limiting
+
+        %% No is_temporary system in current version
+        Backend->>Backend: Merge DB + API results
+        Backend-->>Frontend: Hybrid results
+        Frontend-->>User: Mixed books (DB + API)
+    end
+
+    note over Frontend: No "Community" vs "External" distinction in current version
+```
+
+**Differences from initial design:**
+- ❌ No `is_temporary` system for temporary import
+- ❌ No automatic cleanup after 72h
+- ✅ Field limiting for API payload optimization
+- ✅ Trending books cache 1h (cacheService)
+
+=== Login with JWT
+
+```mermaid
+sequenceDiagram
+    participant User
+    participant Frontend
+    participant Backend
+    participant DenoKV
+    participant Database
+
+    User->>Frontend: enter credentials (email, password)
+    Frontend->>Backend: POST /api/users/login {email, password}
+
+    %% authLockout middleware checks for lockout
+    Backend->>DenoKV: Check failed attempts (authLockout)
+    DenoKV-->>Backend: Account not locked
+
+    Backend->>Database: SELECT * FROM USER WHERE email = ? AND deleted_at IS NULL
+    Database-->>Backend: User found (or not)
+    Backend->>Backend: Verify password (bcrypt, not Argon2)
+
+    alt Valid credentials
+        Backend->>DenoKV: Reset failed attempts
+        Backend->>Database: UPDATE USER SET last_login = NOW()
+        Backend->>Database: SELECT roles via USER_ROLE
+        Backend->>Database: SELECT permissions via ROLE_PERMISSION
+        Database-->>Backend: RBAC data
+
+        Backend->>Backend: Generate JWT token (single, no refresh)
+        Backend->>Backend: Set httpOnly cookie
+        Backend-->>Frontend: 200 OK + {token, user, roles, permissions} + httpOnly cookie
+
+        Frontend->>Frontend: Store user/roles/permissions (not token)
+        Frontend-->>User: Redirect to dashboard
+    else Invalid credentials
+        Backend->>DenoKV: Increment failed attempts
+        alt 5 attempts reached
+            Backend->>DenoKV: Lock account 15 min (lockedUntil)
+            Backend-->>Frontend: 429 Too Many Requests
+            Frontend-->>User: "Account locked. Try again in X minutes"
+        else Less than 5 attempts
+            Backend-->>Frontend: 401 Unauthorized "Invalid email or password"
+            Frontend-->>User: Vague error message (security)
+        end
+    end
+```
+
+**Differences from initial design:**
+- ❌ No refresh token (single JWT)
+- ❌ bcrypt hash, not Argon2
+- ✅ httpOnly cookie for token (XSS protection)
+- ✅ 15 min lockout after 5 attempts (Deno KV)
+- ✅ HTTP 429 for lockout
+- ✅ Roles/permissions cache (cacheService)
+
+=== Registration with USER Role Assignment
+
+```mermaid
+sequenceDiagram
+    participant User
+    participant Frontend
+    participant Backend
+    participant Database
+
+    User->>Frontend: fill form (firstname, lastname, username, email, password, passwordConfirm)
+    Frontend->>Backend: POST /api/users/register {firstname, lastname, username, email, password, passwordConfirm}
+
+    %% Zod validation
+    Backend->>Backend: Validate data (Zod middleware)
+    note over Backend: 8 chars min, 1 upper, 1 lower, 1 digit, 1 special (@$!%*?&) REQUIRED
+
+    Backend->>Database: SELECT * FROM USER WHERE email = ? OR username = ?
+    Database-->>Backend: Check uniqueness
+
+    alt Email already used
+        Backend-->>Frontend: 409 Conflict "A user with this email already exists"
+        Frontend-->>User: Redirect to login
+    else Username already taken
+        Backend-->>Frontend: 409 Conflict "A user with this username already exists"
+        Frontend-->>User: Error message + suggestions
+    else Valid new user
+        Backend->>Backend: Hash password (bcrypt)
+        Backend->>Database: BEGIN TRANSACTION
+
+        Backend->>Database: INSERT INTO USER (firstname, lastname, username, email, password)
+        Database-->>Backend: User created with UUID
+
+        Backend->>Database: SELECT id_role FROM ROLE WHERE role_name = 'USER'
+        Backend->>Database: INSERT INTO USER_ROLE (id_user, id_role)
+        note over Database: USER role assigned automatically
+
+        Backend->>Database: COMMIT TRANSACTION
+
+        Backend->>Database: SELECT roles and permissions
+        Backend->>Backend: Generate JWT token + httpOnly cookie
+        Backend-->>Frontend: 201 Created + {token, user, roles, permissions}
+
+        Frontend-->>User: Automatic login + redirect to dashboard
+    end
+```
+
+**Differences from initial design:**
+- ❌ **NO** automatic library creation (not implemented)
+- ✅ USER role assigned automatically
+- ✅ Strict Zod validation (special character REQUIRED)
+- ✅ Automatic login after registration
+- ✅ Username accepts hyphens `-` in addition to underscore
+
+=== Display Book Details
+
+```mermaid
+sequenceDiagram
+    participant User
+    participant Frontend
+    participant Backend
+    participant OpenLibrary_API
+    participant Database
+
+    User->>Frontend: View book details (id_book UUID)
+    Frontend->>Backend: GET /api/books/{id_book}
+
+    note over Backend: Optional JWT token (public/logged in)
+
+    Backend->>Database: SELECT * FROM BOOK WHERE id_book = ?
+
+    alt Book found locally
+        Backend->>Database: SELECT authors (BOOK_AUTHOR + AUTHOR)
+        Backend->>Database: SELECT genres (BOOK_GENRE + GENRE)
+        Backend->>Database: SELECT public reviews (REVIEW WHERE is_public = true)
+        Backend->>Database: SELECT ratings (RATE)
+        Database-->>Backend: Complete book data
+
+        Backend->>Backend: Calculate average rating
+        Backend-->>Frontend: Book + authors + genres + reviews + stats
+
+    else Book not found locally
+        Backend-->>Frontend: 404 Not Found "Book not found"
+        note over Frontend: No automatic creation from API\nIn current version
+    end
+
+    Frontend-->>User: Display book details with Cloudinary cover
+```
+
+**Differences from initial design:**
+- ❌ No `is_temporary` system
+- ❌ No automatic book creation from API on consultation
+- ✅ id_book UUID, not book_code
+- ✅ Covers served from Cloudinary (optimized WebP)
+
+=== Add Book to Library
+
+```mermaid
+sequenceDiagram
+    participant User
+    participant Frontend
+    participant Backend
+    participant OpenLibrary_API
+    participant Cloudinary
+    participant Database
+
+    User->>Frontend: Click "Add to my library" (from OpenLibrary search)
+    Frontend->>Backend: POST /api/books/openlibrary {openLibraryData: {key, title, author_name, isbn, cover_i, subject}}
+
+    note over Backend: JWT token required (auth middleware)
+    Backend->>Backend: Extract user from JWT
+
+    %% Check book existence
+    Backend->>Database: SELECT * FROM BOOK WHERE openlibrary_key = ? OR isbn = ?
+
+    alt Book already exists
+        Database-->>Backend: Book found
+        Backend->>Backend: Return {book, isNew: false}
+
+    else New book
+        Backend->>Database: BEGIN TRANSACTION
+
+        Backend->>Database: INSERT INTO BOOK (title, isbn, openlibrary_key, publication_year)
+        Database-->>Backend: Book created with id_book UUID
+
+        %% Upload cover to Cloudinary
+        Backend->>OpenLibrary_API: Find best French cover (languageService)
+        OpenLibrary_API-->>Backend: Optimal cover_id
+        Backend->>Cloudinary: Upload OpenLibrary URL → WebP auto:best
+        Cloudinary-->>Backend: HTTPS Cloudinary URL
+        Backend->>Database: UPDATE BOOK SET image = ?
+
+        %% Create authors
+        loop For each author
+            Backend->>Database: SELECT * FROM AUTHOR WHERE author_name = ?
+            alt Author exists
+                Database-->>Backend: Existing id_author
+            else New author
+                Backend->>Database: INSERT INTO AUTHOR (author_name)
+                Database-->>Backend: New id_author
+            end
+            Backend->>Database: INSERT INTO BOOK_AUTHOR (id_book, id_author)
+        end
+
+        %% Map and create genres
+        Backend->>Backend: Map OpenLibrary subjects → genres (genreMapping)
+        note over Backend: 25 categories, 160+ variants, "Divers" fallback
+        loop For each mapped genre
+            Backend->>Database: SELECT * FROM GENRE WHERE genre_name = ?
+            alt Genre exists
+                Database-->>Backend: Existing id_genre
+            else New genre
+                Backend->>Database: INSERT INTO GENRE (genre_name)
+                Database-->>Backend: New id_genre
+            end
+            Backend->>Database: INSERT INTO BOOK_GENRE (id_book, id_genre)
+        end
+
+        Backend->>Database: COMMIT TRANSACTION
+        Backend->>Backend: Return {book, isNew: true}
+    end
+
+    %% Add to user library
+    Backend->>Database: SELECT id_library FROM LIBRARY WHERE id_user = ?
+    Database-->>Backend: User's id_library
+
+    Backend->>Database: SELECT * FROM BOOK_LIBRARY WHERE id_book = ? AND id_library = ?
+    alt Already in library
+        Backend-->>Frontend: 409 Conflict "Book already in your library"
+    else Not yet in library
+        Backend->>Database: INSERT INTO BOOK_LIBRARY (id_book, id_library)
+        Database-->>Backend: Relation created
+        Backend-->>Frontend: 201 Created + {book}
+    end
+
+    Frontend-->>User: Confirmation + suggest adding to reading list
+```
+
+**Differences from initial design:**
+- ❌ No `is_temporary` field on BOOK
+- ✅ Double existence check (openlibrary_key + isbn)
+- ✅ Cloudinary upload with WebP optimization
+- ✅ Automatic French cover selection (languageService)
+- ✅ Intelligent genre mapping (genreMapping utility)
+- ✅ Permanent book from creation
+
+=== Remove Book from Library
+
+```mermaid
+sequenceDiagram
+    participant User
+    participant Frontend
+    participant Backend
+    participant Database
+
+    User->>Frontend: Remove book from library
+    Frontend->>Backend: DELETE /api/libraries/{id_library}/books/{id_book}
+
+    note over Backend: JWT token required
+    Backend->>Backend: Extract user from JWT
+
+    Backend->>Database: SELECT * FROM LIBRARY WHERE id_library = ? AND id_user = ? AND deleted_at IS NULL
+    Database-->>Backend: Verify library ownership
+
+    Backend->>Database: DELETE FROM BOOK_LIBRARY WHERE id_book = ? AND id_library = ?
+    Database-->>Backend: Relation deleted
+
+    Backend-->>Frontend: 200 OK "Book removed from library successfully"
+    Frontend-->>User: Update library view
+```
+
+**Differences from initial design:**
+- ✅ id_library and id_book UUID (not book_code)
+- ✅ Soft delete check (deleted_at IS NULL)
+- ✅ No specific LIBRARY_DELETE permission (ownership sufficient)
+
+=== Create Reading List
+
+```mermaid
+sequenceDiagram
+    participant User
+    participant Frontend
+    participant Backend
+    participant Database
+
+    User->>Frontend: Click "Create new reading list"
+    User->>Frontend: Fill form (list_name, description, is_public)
+    Frontend->>Backend: POST /api/reading-lists {list_name, description, id_library, is_public}
+
+    note over Backend: JWT token required
+    Backend->>Backend: Extract user from JWT
+
+    %% Validate library ownership
+    Backend->>Database: SELECT * FROM LIBRARY WHERE id_library = ? AND id_user = ? AND deleted_at IS NULL
+    Database-->>Backend: User's library validated
+
+    %% Check name uniqueness within library
+    Backend->>Database: SELECT * FROM READING_LIST WHERE id_user = ? AND id_library = ? AND list_name = ? AND deleted_at IS NULL
+
+    alt Name already used in this library
+        Backend-->>Frontend: 409 Conflict "A reading list with this name already exists in this library"
+        Frontend-->>User: Error message + modify name
+
+    else Name available
+        Backend->>Database: INSERT INTO READING_LIST (id_user, id_library, list_name, description, is_public)
+        note over Database: Unique constraint (id_user, id_library, list_name)
+        Database-->>Backend: List created with id_list UUID
+
+        Backend-->>Frontend: 201 Created + {id_list}
+        Frontend-->>User: Display empty list + suggest adding books
+    end
+```
+
+**Differences from initial design:**
+- ✅ Unique constraint (id_user, id_library, list_name)
+- ✅ Soft delete (deleted_at)
+- ✅ Visibility inherited from parent library
+- ❌ No specific LIST_CREATE permission (library ownership sufficient)
+
+=== Add Book to Reading List
+
+```mermaid
+sequenceDiagram
+    participant User
+    participant Frontend
+    participant Backend
+    participant Database
+
+    User->>Frontend: Add book to existing reading list
+    Frontend->>Backend: POST /api/reading-lists/{id_list}/books {id_book}
+
+    note over Backend: JWT token required
+    Backend->>Backend: Extract user from JWT
+
+    %% Verify list ownership
+    Backend->>Database: SELECT * FROM READING_LIST WHERE id_list = ? AND id_user = ? AND deleted_at IS NULL
+    Database-->>Backend: User's list validated
+
+    %% Verify book existence
+    Backend->>Database: SELECT * FROM BOOK WHERE id_book = ?
+    Database-->>Backend: Book validated
+
+    %% Check for duplicate
+    Backend->>Database: SELECT * FROM READING_LIST_BOOK WHERE id_list = ? AND id_book = ?
+
+    alt Book already in list
+        Backend-->>Frontend: 409 Conflict "Book already in this reading list"
+        Frontend-->>User: Information message
+
+    else Book not yet in list
+        Backend->>Database: INSERT INTO READING_LIST_BOOK (id_list, id_book)
+        note over Database: No reading status/priority/notes in current version
+        Database-->>Backend: Relation created
+
+        Backend-->>Frontend: 201 Created "Book added to reading list successfully"
+        Frontend-->>User: Book added to list
+    end
+```
+
+**Differences from initial design:**
+- ❌ No reading status (to_read, reading, read, dnf)
+- ❌ No personal notes on books
+- ❌ No priority (1-5)
+- ✅ Simple READING_LIST_BOOK table (id_list + id_book + created_at)
+- ❌ No specific LIST_WRITE permission
+
+=== Add Review with is_public and is_spoiler
+
+```mermaid
+sequenceDiagram
+    participant User
+    participant Frontend
+    participant Backend
+    participant Database
+
+    User->>Frontend: Write review on book
+    note over Frontend: Checkboxes: ☐ Public (default false), ☐ Spoiler (default false)
+
+    Frontend->>Frontend: Client-side validation
+    Frontend->>Backend: POST /api/reviews {id_book, title, comment, is_public, is_spoiler}
+
+    note over Backend: JWT token required (logged in user)
+    Backend->>Backend: Extract user from JWT
+
+    %% Check book existence
+    Backend->>Database: SELECT * FROM BOOK WHERE id_book = ?
+    Database-->>Backend: Book validated
+
+    %% Check uniqueness (id_user, id_book)
+    Backend->>Database: SELECT * FROM REVIEW WHERE id_user = ? AND id_book = ?
+
+    alt Review already exists
+        Backend-->>Frontend: 409 Conflict "You have already reviewed this book"
+        Frontend-->>User: Suggest editing existing review
+
+    else First review for this book
+        Backend->>Database: INSERT INTO REVIEW (id_user, id_book, title, comment, is_public, is_spoiler, published_at)
+        note over Database: Unique constraint (id_user, id_book)\nNo consent_to_publish/consent_date fields
+        Database-->>Backend: Review created with id_review UUID
+
+        alt Public review
+            Backend-->>Frontend: 201 Created "Review created successfully" (public)
+            Frontend-->>User: "Review published publicly"
+        else Private review
+            Backend-->>Frontend: 201 Created "Review created successfully" (private)
+            Frontend-->>User: "Review saved (private, visible to you only)"
+        end
+    end
+```
+
+**Differences from initial design:**
+- ❌ No `published_as` field (pseudonym)
+- ❌ No `consent_to_publish`, `consent_date` fields
+- ✅ is_public controls visibility (default false = private)
+- ✅ is_spoiler controls content masking (default false)
+- ✅ Unique constraint (id_user, id_book): one review per book
+- ✅ CASCADE DELETE user, RESTRICT DELETE book
+- ❌ No specific REVIEW_CREATE permission
+
+=== Add Rating to Book
+
+```mermaid
+sequenceDiagram
+    participant User
+    participant Frontend
+    participant Backend
+    participant Database
+
+    User->>Frontend: Rate book (1-5 stars)
+    Frontend->>Backend: POST /api/rates {id_book, rating}
+
+    note over Backend: JWT token required
+    Backend->>Backend: Extract user from JWT
+
+    Backend->>Database: SELECT * FROM BOOK WHERE id_book = ?
+    Database-->>Backend: Book validated
+
+    Backend->>Database: SELECT * FROM RATE WHERE id_user = ? AND id_book = ?
+
+    alt User already rated
+        Backend->>Database: UPDATE RATE SET rating = ?, updated_at = NOW()
+        Database-->>Backend: Rating updated
+        Backend-->>Frontend: 200 OK "Rating updated successfully"
+
+    else First time rating
+        Backend->>Database: INSERT INTO RATE (id_user, id_book, rating)
+        note over Database: Unique constraint (id_user, id_book)
+        Database-->>Backend: Rating created with id_rate UUID
+        Backend-->>Frontend: 201 Created "Rating created successfully"
+    end
+
+    Frontend-->>User: Display rating confirmation
+```
+
+**Differences from initial design:**
+- ✅ Separate RATE table from REVIEW
+- ✅ Unique constraint (id_user, id_book)
+- ✅ CASCADE DELETE user, RESTRICT DELETE book
+- ❌ No specific RATING_CREATE permission
+- ❌ No automatic average calculation on BOOK
+
+=== Library Sharing (is_public visibility)
+
+```mermaid
+sequenceDiagram
+    participant Owner
+    participant Frontend
+    participant Backend
+    participant Database
+    participant OtherUser
+
+    Owner->>Frontend: Make library public
+    Frontend->>Backend: PATCH /api/libraries/{id_library} {is_public: true}
+
+    note over Backend: JWT token required
+    Backend->>Backend: Extract owner from JWT
+
+    Backend->>Database: SELECT * FROM LIBRARY WHERE id_library = ? AND id_user = ? AND deleted_at IS NULL
+    Database-->>Backend: Owner's library validated
+
+    Backend->>Database: UPDATE LIBRARY SET is_public = true, updated_at = NOW()
+    Database-->>Backend: Library updated
+
+    Backend-->>Frontend: 200 OK "Library visibility updated"
+    Frontend-->>Owner: "Library now public"
+
+    note over OtherUser: Users can view public libraries
+
+    OtherUser->>Frontend: View public libraries
+    Frontend->>Backend: GET /api/libraries/public
+
+    Backend->>Database: SELECT * FROM LIBRARY WHERE is_public = true AND deleted_at IS NULL
+    Database-->>Backend: Public libraries
+
+    Backend-->>Frontend: Public libraries list
+    Frontend-->>OtherUser: Display accessible libraries (read-only)
+```
+
+**Differences from initial design:**
+- ❌ **NO** LIBRARY_PERMISSION table (removed)
+- ✅ Visibility managed by is_public field (boolean)
+- ✅ Public libraries = read-only for everyone
+- ✅ Private libraries = owner only
+- ❌ No granular permissions (read/write/admin)
+
+=== Display Reviews with Spoiler Management
+
+```mermaid
+sequenceDiagram
+    participant User
+    participant Frontend
+    participant Backend
+    participant Database
+
+    User->>Frontend: View book reviews
+    Frontend->>Backend: GET /api/reviews/book/{id_book}
+
+    note over Backend: Optional JWT token (public/logged in)
+
+    alt Logged in user
+        Backend->>Backend: Extract user from JWT
+        Backend->>Database: SELECT public reviews + user reviews
+        note over Database: WHERE is_public = true OR id_user = current_user
+    else Visitor
+        Backend->>Database: SELECT public reviews only
+        note over Database: WHERE is_public = true
+    end
+
+    Database-->>Backend: Review list with is_spoiler flags
+    Backend->>Backend: Count reviews with spoilers
+    Backend-->>Frontend: {reviews[], spoilerCount}
+
+    Frontend->>Frontend: Render with spoilers masked by default (CSS blur)
+    note over Frontend: is_spoiler=true → "review-spoiler" class
+
+    Frontend-->>User: Display reviews + "Reveal spoilers (X)" button
+
+    alt User clicks "Reveal spoilers"
+        Frontend->>Frontend: Toggle spoilersRevealed = true
+        Frontend->>Frontend: Remove CSS blur
+        Frontend-->>User: All reviews visible without blur
+        note over Frontend: Button becomes "Hide spoilers"
+    else User doesn't reveal
+        Frontend-->>User: Spoilers remain blurred
+        note over Frontend: Spoiler protection respected
+    end
+```
+
+**Differences from initial design:**
+- ✅ is_spoiler flag on REVIEW
+- ✅ Masking handled frontend-side (CSS blur)
+- ✅ Reveal on user request
+- ❌ No specific READ_REVIEWS permission
+- ✅ Public/private review filtering based on authentication
+
+== Notes de synchronisation / Synchronization Notes
+
+**FR :** Ces diagrammes sont synchronisés avec le code backend actuel (userController, userService, authLockout, bookService, reviewService, etc.). Les différences avec le design initial sont documentées pour chaque diagramme.
+
+**EN :** These diagrams are synchronized with the current backend code (userController, userService, authLockout, bookService, reviewService, etc.). Differences from the initial design are documented for each diagram.
+
+**Architecture actuelle / Current Architecture :**
+- Backend: Deno 2.0 + Hono framework
+- ORM: Drizzle ORM
+- Database: PostgreSQL
+- Auth: JWT + httpOnly cookies + bcrypt
+- Lockout: Deno KV (15 min après 5 tentatives)
+- Cache: Deno KV pour roles/permissions/trending
+- Images: Cloudinary CDN (WebP auto:best)
+- API externe: OpenLibrary (avec limitation champs)

@@ -1,0 +1,657 @@
+= Service API - Interceptors et Gestion d'Erreurs
+:toc:
+:toclevels: 3
+
+== Qu'est-ce qu'on a fait ?
+
+On a cree un service API centralise base sur **axios** qui gere toutes les communications HTTP entre le frontend React et le backend Hono/Deno.
+
+=== Fichiers crees/modifies
+
+* `frontend/src/services/api.ts` - Service API avec interceptors
+
+=== Fonctionnalites implementees
+
+1. **Configuration axios** avec baseURL, timeout, headers par defaut
+2. **Request Interceptor** - Logger les requetes sortantes en mode dev
+3. **Response Interceptor** - Gestion globale des erreurs HTTP
+4. **Logout automatique** sur 401 (token expire)
+5. **Cookies httpOnly** - Le JWT est gere automatiquement par le navigateur
+
+---
+
+== Pourquoi on a fait ca ?
+
+=== Probleme 1 : Code duplique partout
+
+**Sans service API centralise**, chaque composant doit :
+
+* Definir l'URL du backend
+* Gerer les erreurs manuellement
+* Logger les requetes/reponses
+* Gerer le logout sur 401
+
+Exemple de code **sans** service centralise :
+
+[source,typescript]
+----
+// Dans BookList.tsx
+const fetchBooks = async () => {
+  try {
+    const res = await fetch('http://localhost:3000/api/books', {
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' }
+    })
+
+    if (res.status === 401) {
+      useAuthStore.getState().logout()
+      navigate('/login')
+    }
+
+    const data = await res.json()
+    setBooks(data)
+  } catch (error) {
+    console.error('Error fetching books:', error)
+  }
+}
+
+// Dans UserProfile.tsx - MEME CODE DUPLIQUE
+const fetchUser = async () => {
+  try {
+    const res = await fetch('http://localhost:3000/api/user', {
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' }
+    })
+
+    if (res.status === 401) {
+      useAuthStore.getState().logout()
+      navigate('/login')
+    }
+
+    const data = await res.json()
+    setUser(data)
+  } catch (error) {
+    console.error('Error fetching user:', error)
+  }
+}
+----
+
+=== Solution : Service API centralise avec interceptors
+
+**Avec** `api.ts`, le code est simplifie :
+
+[source,typescript]
+----
+// Dans BookList.tsx
+import api from '../services/api'
+
+const fetchBooks = async () => {
+  const { data } = await api.get('/api/books')
+  setBooks(data)
+}
+// Si 401 → logout automatique via interceptor
+// Logger automatique en dev
+// Gestion erreurs centralisee
+----
+
+=== Avantages
+
+* **DRY (Don't Repeat Yourself)** - Configuration unique
+* **Maintenance facilitee** - Changement d'URL backend en un seul endroit
+* **Gestion erreurs uniforme** - Tous les 401 → logout auto
+* **Debug facilite** - Logger centralisé en mode dev
+* **Type safety** - Axios retourne des types TypeScript
+
+---
+
+== Comment ca fonctionne ?
+
+=== Architecture du service API
+
+[source,typescript]
+----
+┌─────────────────────────────────────────────────────┐
+│           Composants React                          │
+│  (BookList, UserProfile, LoginForm, etc.)           │
+└────────────────────┬────────────────────────────────┘
+                     │ import api from './services/api'
+                     │ api.get('/books')
+                     ↓
+┌─────────────────────────────────────────────────────┐
+│              Request Interceptor                    │
+│  - Logger requete en mode dev                       │
+│  - console.log('[API Request] GET /api/books')      │
+└────────────────────┬────────────────────────────────┘
+                     ↓
+┌─────────────────────────────────────────────────────┐
+│                   Axios                             │
+│  - Ajoute headers (Content-Type: application/json)  │
+│  - Envoie cookie httpOnly automatiquement           │
+│  - Gere timeout (10s)                               │
+└────────────────────┬────────────────────────────────┘
+                     ↓
+              [ RESEAU HTTP ]
+                     ↓
+┌─────────────────────────────────────────────────────┐
+│            Backend (Hono/Deno)                      │
+│  - Verifie JWT dans cookie                          │
+│  - Execute logique metier                           │
+│  - Retourne reponse JSON                            │
+└────────────────────┬────────────────────────────────┘
+                     ↓
+┌─────────────────────────────────────────────────────┐
+│            Response Interceptor                     │
+│  - Logger reponse en mode dev                       │
+│  - Detecter erreurs (401/403/404/500)               │
+│  - Si 401 → logout() + redirect /login              │
+│  - Si 500 → console.error                           │
+└────────────────────┬────────────────────────────────┘
+                     ↓
+┌─────────────────────────────────────────────────────┐
+│           Composant React                           │
+│  - Recoit donnees ou erreur                         │
+│  - Affiche UI                                       │
+└─────────────────────────────────────────────────────┘
+----
+
+=== Configuration axios
+
+[source,typescript]
+----
+const api = axios.create({
+  baseURL: import.meta.env.VITE_API_URL || 'http://localhost:3000',
+  timeout: 10000,
+  headers: {
+    'Content-Type': 'application/json',
+  },
+  withCredentials: true, // IMPORTANT pour cookies httpOnly
+})
+----
+
+**Explication :**
+
+* `baseURL` : URL du backend (depuis .env ou fallback localhost:3000)
+* `timeout: 10000` : Annule requete apres 10 secondes
+* `Content-Type: application/json` : Header envoye sur toutes les requetes
+* `withCredentials: true` : **CRUCIAL** - Permet l'envoi automatique du cookie httpOnly contenant le JWT
+
+=== Request Interceptor
+
+[source,typescript]
+----
+api.interceptors.request.use(
+  (config) => {
+    if (import.meta.env.DEV) {
+      console.log(`[API Request] ${config.method?.toUpperCase()} ${config.url}`, config.data)
+    }
+    return config
+  },
+  (error) => {
+    console.error('[API Request Error]', error)
+    return Promise.reject(error)
+  }
+)
+----
+
+**Explication :**
+
+* **Phase** : Execute **avant** l'envoi de la requete HTTP
+* **Mode DEV uniquement** : `import.meta.env.DEV` = true en developpement, false en production
+* **Logger format** : `[API Request] POST /api/login {email: "...", password: "..."}`
+* **Erreur preparation requete** : Catch les erreurs de configuration (rare)
+* **Return config** : On retourne la config modifiee (ou non) pour que axios continue
+
+=== Response Interceptor
+
+[source,typescript]
+----
+api.interceptors.response.use(
+  (response) => {
+    if (import.meta.env.DEV) {
+      console.log(`[API Response] ${response.config.method?.toUpperCase()} ${response.config.url}`, response.data)
+    }
+    return response
+  },
+  (error) => {
+    const status = error.response?.status
+    const message = error.response?.data?.error || error.message
+
+    console.error('[API Error]', {
+      status,
+      message,
+      url: error.config?.url,
+      method: error.config?.method
+    })
+
+    // Gestion par code HTTP
+    switch (status) {
+      case 401:
+        console.warn('[401] Unauthorized - Logout automatique')
+        useAuthStore.getState().logout()
+        window.location.href = '/login'
+        break
+
+      case 403:
+        console.warn('[403] Forbidden - Acces refuse')
+        break
+
+      case 404:
+        console.warn('[404] Not Found')
+        break
+
+      case 500:
+        console.error('[500] Server Error')
+        break
+
+      default:
+        console.error(`[${status}] Unknown error`)
+    }
+
+    return Promise.reject(error)
+  }
+)
+----
+
+**Explication :**
+
+==== Success handler (1er argument)
+
+* **Logger reponse en dev** : `[API Response] GET /api/books [{...}, {...}]`
+* **Return response** : Passe la reponse au composant appelant
+
+==== Error handler (2eme argument)
+
+* **Extraction infos** : `status`, `message`, `url`, `method`
+* **Logger erreur** : Toujours logger les erreurs (meme en prod) pour debug
+
+**Switch selon code HTTP :**
+
+* **401 Unauthorized** :
+  - Token JWT expire ou invalide
+  - **Action** : Logout automatique via `useAuthStore.getState().logout()`
+  - Redirection vers `/login` avec `window.location.href`
+
+* **403 Forbidden** :
+  - User authentifie mais pas les permissions
+  - Exemple : USER essaie d'acceder route ADMIN
+  - **Action** : Logger warning (pas de logout, user est valide)
+
+* **404 Not Found** :
+  - Ressource inexistante
+  - **Action** : Logger warning
+
+* **500 Server Error** :
+  - Erreur backend (bug, DB down, etc.)
+  - **Action** : Logger error
+
+* **Default** :
+  - Autres codes (400, 409, etc.)
+  - **Action** : Logger generic error
+
+=== Acces au store Zustand hors composant
+
+[source,typescript]
+----
+useAuthStore.getState().logout()
+----
+
+**Probleme** : L'interceptor n'est pas un composant React, on ne peut pas utiliser `const { logout } = useAuthStore()`
+
+**Solution** : `useAuthStore.getState()` retourne l'etat actuel du store + les fonctions
+
+**Equivalent :**
+
+[source,typescript]
+----
+// Dans un composant React
+const { logout } = useAuthStore()
+logout()
+
+// Dans un interceptor/fonction externe
+useAuthStore.getState().logout()
+----
+
+---
+
+== Diagrammes de sequence
+
+=== Flux nominal (requete reussie)
+
+[source,mermaid]
+----
+sequenceDiagram
+    participant Composant as Composant React<br/>(BookList.tsx)
+    participant API as Service API<br/>(api.ts)
+    participant ReqInt as Request Interceptor
+    participant Axios as Axios HTTP Client
+    participant Backend as Backend Hono/Deno
+    participant ResInt as Response Interceptor
+
+    Note over Composant: User charge la page
+    Composant->>API: api.get('/api/books')
+
+    Note over ReqInt: Phase 1 : Preparation
+    API->>ReqInt: Execute request interceptor
+    ReqInt->>ReqInt: Logger requete en dev<br/>[API Request] GET /api/books
+    ReqInt->>Axios: Return config
+
+    Note over Axios: Phase 2 : Envoi HTTP
+    Axios->>Axios: Ajoute headers (Content-Type)<br/>Attache cookie httpOnly (JWT)
+    Axios->>Backend: GET /api/books<br/>Cookie: jwt=eyJhbGc...
+
+    Note over Backend: Phase 3 : Traitement
+    Backend->>Backend: Verifie JWT (middleware auth)<br/>Fetch books from PostgreSQL
+    Backend->>Axios: 200 OK<br/>{success: true, books: [...]}
+
+    Note over ResInt: Phase 4 : Reception
+    Axios->>ResInt: Execute response interceptor
+    ResInt->>ResInt: Logger reponse en dev<br/>[API Response] GET /api/books
+    ResInt->>ResInt: Status 200 → OK, pas d'erreur
+    ResInt->>API: Return response.data
+
+    API->>Composant: {books: [{...}, {...}]}
+    Note over Composant: Affiche la liste des livres
+----
+
+=== Flux avec erreur 401 (token expire)
+
+[source,mermaid]
+----
+sequenceDiagram
+    participant Composant as Composant React<br/>(BookList.tsx)
+    participant API as Service API<br/>(api.ts)
+    participant ReqInt as Request Interceptor
+    participant Axios as Axios HTTP Client
+    participant Backend as Backend Hono/Deno
+    participant ResInt as Response Interceptor
+    participant AuthStore as Auth Store<br/>(Zustand)
+    participant Browser as Navigateur
+
+    Note over Composant: User charge la page<br/>(JWT expire il y a 1h)
+    Composant->>API: api.get('/api/books')
+
+    API->>ReqInt: Execute request interceptor
+    ReqInt->>ReqInt: Logger requete
+    ReqInt->>Axios: Return config
+
+    Axios->>Axios: Attache cookie httpOnly<br/>(JWT EXPIRE)
+    Axios->>Backend: GET /api/books<br/>Cookie: jwt=eyJhbGc... (EXPIRE)
+
+    Note over Backend: Middleware auth verifie JWT
+    Backend->>Backend: JWT.verify() → FAIL<br/>Token expired
+    Backend->>Axios: 401 Unauthorized<br/>{error: "Token expired"}
+
+    Note over ResInt: Response interceptor detecte 401
+    Axios->>ResInt: Execute response interceptor (error)
+    ResInt->>ResInt: status === 401 detected
+    ResInt->>ResInt: console.warn('[401] Logout auto')
+
+    Note over ResInt: Logout automatique
+    ResInt->>AuthStore: useAuthStore.getState().logout()
+    AuthStore->>AuthStore: Clear user data<br/>isAuthenticated = false<br/>localStorage.removeItem('auth-storage')
+
+    ResInt->>Browser: window.location.href = '/login'
+    Browser->>Browser: Redirection vers page login
+
+    Note over Browser: User voit page login<br/>Message "Session expiree"
+----
+
+=== Flux avec erreur 403 (permissions insuffisantes)
+
+[source,mermaid]
+----
+sequenceDiagram
+    participant Composant as Composant React<br/>(AdminPanel.tsx)
+    participant API as Service API<br/>(api.ts)
+    participant Axios as Axios HTTP Client
+    participant Backend as Backend Hono/Deno
+    participant ResInt as Response Interceptor
+
+    Note over Composant: User role USER tente<br/>d'acceder route ADMIN
+    Composant->>API: api.delete('/api/users/123')
+
+    API->>Axios: Prepare requete
+    Axios->>Backend: DELETE /api/users/123<br/>Cookie: jwt=... (role=USER)
+
+    Note over Backend: Middleware RBAC verifie
+    Backend->>Backend: requireRole('ADMIN')<br/>User a role USER → FAIL
+    Backend->>Axios: 403 Forbidden<br/>{error: "Insufficient permissions"}
+
+    Axios->>ResInt: Execute response interceptor (error)
+    ResInt->>ResInt: status === 403 detected
+    ResInt->>ResInt: console.warn('[403] Access denied')
+
+    Note over ResInt: PAS de logout<br/>(user valide, juste pas les droits)
+    ResInt->>API: Reject promise avec error 403
+    API->>Composant: throw Error (403)
+
+    Note over Composant: Catch error dans try/catch<br/>Affiche toast "Acces refuse"
+----
+
+---
+
+== Integration avec le reste de l'application
+
+=== Utilisation dans les composants
+
+[source,typescript]
+----
+// frontend/src/features/books/BookList.tsx
+import { useState, useEffect } from 'react'
+import api from '../../services/api'
+
+export function BookList() {
+  const [books, setBooks] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState(null)
+
+  useEffect(() => {
+    const fetchBooks = async () => {
+      try {
+        const { data } = await api.get('/api/books')
+        setBooks(data.books)
+      } catch (error) {
+        // 401 → deja gere par interceptor (logout auto)
+        // 403/404/500 → afficher message utilisateur
+        setError('Erreur lors du chargement des livres')
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    fetchBooks()
+  }, [])
+
+  if (loading) return <div>Chargement...</div>
+  if (error) return <div>{error}</div>
+
+  return (
+    <div>
+      {books.map(book => (
+        <div key={book.id}>{book.title}</div>
+      ))}
+    </div>
+  )
+}
+----
+
+=== Exemple POST (creation de livre)
+
+[source,typescript]
+----
+// frontend/src/features/books/CreateBookForm.tsx
+import api from '../../services/api'
+
+async function handleSubmit(formData) {
+  try {
+    const { data } = await api.post('/api/books', {
+      title: formData.title,
+      author: formData.author,
+      isbn: formData.isbn
+    })
+
+    console.log('Livre cree:', data.book)
+    navigate('/books')
+  } catch (error) {
+    if (error.response?.status === 409) {
+      setError('Ce livre existe deja')
+    } else {
+      setError('Erreur lors de la creation')
+    }
+  }
+}
+----
+
+=== Exemple DELETE avec gestion 403
+
+[source,typescript]
+----
+// frontend/src/features/admin/UserManagement.tsx
+import api from '../../services/api'
+
+async function deleteUser(userId) {
+  try {
+    await api.delete(`/api/users/${userId}`)
+    toast.success('Utilisateur supprime')
+    refreshUserList()
+  } catch (error) {
+    if (error.response?.status === 403) {
+      toast.error('Vous n\'avez pas les permissions')
+    } else if (error.response?.status === 401) {
+      // Deja gere par interceptor → logout + redirect
+    } else {
+      toast.error('Erreur lors de la suppression')
+    }
+  }
+}
+----
+
+---
+
+== Points d'attention
+
+=== Cookie httpOnly et withCredentials
+
+**IMPORTANT** : Pour que le cookie httpOnly soit envoye automatiquement, il faut :
+
+1. **Backend** : CORS configure avec `credentials: true`
++
+[source,typescript]
+----
+// backend/src/index.ts
+app.use('*', cors({
+  origin: 'http://localhost:5173',
+  credentials: true // IMPORTANT
+}))
+----
+
+2. **Frontend** : axios avec `withCredentials: true`
++
+[source,typescript]
+----
+const api = axios.create({
+  withCredentials: true // IMPORTANT
+})
+----
+
+Sans ca, le cookie JWT ne sera **jamais envoye** et toutes les requetes seront 401.
+
+=== Redirection window.location vs navigate()
+
+Dans l'interceptor, on utilise `window.location.href = '/login'` au lieu de `navigate('/login')` car :
+
+* L'interceptor n'est **pas un composant React**
+* On n'a pas acces a `useNavigate()` hook
+* `window.location.href` force un **hard reload** → nettoie tous les states React
+
+**Avantage du hard reload** :
+* Garantit que tous les states sont vides apres logout
+* Evite les bugs de states obsoletes
+
+=== Logger en production
+
+Actuellement, les erreurs sont **toujours loggees** :
+
+[source,typescript]
+----
+console.error('[API Error]', { status, message, url, method })
+----
+
+**En production**, il faudrait :
+
+1. Envoyer les erreurs vers un service de monitoring (Sentry, LogRocket)
+2. Ne pas logger les erreurs utilisateur (404, 403) mais seulement les erreurs serveur (500)
+
+Exemple avec Sentry :
+
+[source,typescript]
+----
+if (status >= 500) {
+  Sentry.captureException(error)
+}
+----
+
+=== Gestion des timeouts
+
+Timeout configure a **10 secondes** :
+
+[source,typescript]
+----
+timeout: 10000
+----
+
+**Si le backend ne repond pas en 10s** :
+
+* Axios throw une erreur `ECONNABORTED`
+* L'interceptor la catch dans le error handler
+* `error.code === 'ECONNABORTED'`
+
+On pourrait ajouter :
+
+[source,typescript]
+----
+if (error.code === 'ECONNABORTED') {
+  console.error('[Timeout] Le serveur ne repond pas')
+  toast.error('Le serveur met trop de temps a repondre')
+}
+----
+
+---
+
+== Resume
+
+|===
+| Fonctionnalite | Description | Avantage
+
+| Configuration centralisee
+| baseURL, timeout, headers en un seul endroit
+| Changement d'URL backend facile
+
+| Request Interceptor
+| Logger toutes les requetes sortantes
+| Debug facilite en developpement
+
+| Response Interceptor
+| Gestion globale des erreurs HTTP
+| Code DRY, pas de duplication
+
+| Logout automatique 401
+| Token expire → logout + redirect
+| Experience utilisateur fluide
+
+| Cookie httpOnly
+| JWT non accessible en JavaScript
+| Securite XSS
+
+| Logger conditionnel
+| Logs en DEV uniquement
+| Performance en production
+
+| Type safety
+| Axios + TypeScript
+| Moins de bugs
+|===
+
+**Phase 1 complete** : Service API avec interceptors fonctionnel.
+
+**Prochaine etape** : Implementer les pages (Login, Register, Dashboard) et utiliser `api` pour les appels backend.

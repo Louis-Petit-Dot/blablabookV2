@@ -1,0 +1,734 @@
+= Architecture Sécurité BlaBlaBook V2 - Guide Complet
+:toc: left
+:toclevels: 4
+:sectanchors:
+:source-highlighter: highlight.js
+:icons: font
+:version: 2.0
+:date: {docdate}
+
+// Navigation inter-documents
+link:../project/CONCEPTION-BLABLABOOKV2.adoc[📋 Conception] |
+link:../cdc/technical-architecture.adoc[🏗️ Architecture] |
+link:../diagrams/activity/authentification-workflow.adoc[🔐 Auth Workflow]
+
+---
+
+== 🛡️ Vue d'ensemble sécuritaire
+
+=== Philosophie "Security by Design"
+
+**Sécurité intégrée dès la conception, pas ajoutée après.**
+
+[NOTE]
+====
+**Principe fondamental :** Chaque fonctionnalité est pensée avec la sécurité en premier.
+Pas de compromis sur la sécurité pour gagner du temps ou simplifier le code.
+====
+
+=== Triple Protection
+
+[cols="1,2,3"]
+|===
+|Couche |Approche |Explication simple
+
+|**🏗️ Security by Design**
+|Sécurité native
+|Comme construire une maison avec des fondations solides plutôt que d'ajouter des barreaux aux fenêtres après
+
+|**🔒 Zero Trust**
+|"Ne jamais faire confiance"
+|Comme un vigile qui vérifie CHAQUE personne, même celles qu'il connaît
+
+|**🛡️ OWASP Top 10**
+|Standards industrie
+|Comme suivre un manuel des 10 erreurs de sécurité les plus dangereuses
+|===
+
+== 🔒 Zero Trust Architecture
+
+=== Le principe expliqué simplement
+
+**Analogie du château fort :**
+
+[cols="2,3"]
+|===
+|**❌ Sécurité traditionnelle** |**✅ Zero Trust**
+
+|Une fois dans le château, on peut tout faire
+|Chaque porte du château demande à nouveau qui vous êtes
+
+|Si quelqu'un vole vos clés, il a accès à tout
+|Même avec des clés volées, chaque porte vérifie qui vous êtes
+|===
+
+=== Implémentation Zero Trust BlaBlaBook V2
+
+[source,typescript]
+----
+// Chaque requête = nouvelle vérification
+const zeroTrustFlow = {
+  1: "Utilisateur fait une action",
+  2: "Vérifier le JWT token (qui êtes-vous ?)",
+  3: "Vérifier les permissions (que pouvez-vous faire ?)",
+  4: "Vérifier le device (êtes-vous sur le bon appareil ?)",
+  5: "Vérifier l'IP (êtes-vous au bon endroit ?)",
+  6: "Si tout OK → autoriser l'action",
+  7: "Sinon → bloquer et alerter"
+};
+----
+
+[IMPORTANT]
+====
+**Refresh token = 24h maximum** (pas 7 jours)
+
+Pourquoi ? Si quelqu'un vole votre token, il ne peut l'utiliser que 24h au lieu d'une semaine.
+====
+
+=== Device Fingerprinting (Empreinte d'appareil)
+
+**Qu'est-ce que c'est ?**
+Créer une "carte d'identité" unique de votre navigateur/ordinateur.
+
+**Comment ça marche :**
+
+[source,typescript]
+----
+// Éléments collectés pour créer l'empreinte
+const deviceFingerprint = {
+  navigateur: "Chrome 120.0",
+  systeme: "Windows 11",
+  resolution: "1920x1080",
+  timezone: "Europe/Paris",
+  langue: "fr-FR"
+};
+
+// Transformé en hash unique
+const fingerprint = "sha256_abc123def456"; // Impossible à deviner
+----
+
+**Pourquoi c'est utile :**
+Si quelqu'un vole votre session mais utilise un autre ordinateur, on le détecte immédiatement.
+
+== 🛡️ OWASP Top 10 - Protection complète
+
+=== A01: Broken Access Control (Contrôle d'accès cassé)
+
+**❌ Le problème :** Un utilisateur normal peut accéder aux fonctions admin.
+
+**✅ Notre solution :**
+
+[source,typescript]
+----
+// Middleware de vérification des permissions
+const checkPermission = (requiredPermission: string) => {
+  return async (c: Context, next: Next) => {
+    const user = c.get("user");
+
+    // Vérifier si l'utilisateur a la permission
+    if (!user.permissions.includes(requiredPermission)) {
+      return c.json({ error: "Accès interdit" }, 403);
+    }
+
+    await next();
+  };
+};
+
+// Usage sur une route admin
+app.delete("/api/books/:id",
+  checkPermission("delete_any_book"), // Seuls les admins ont ça
+  deleteBookHandler
+);
+----
+
+**En mots simples :** Comme avoir différentes clés pour différentes pièces. La clé de votre chambre n'ouvre pas le coffre-fort.
+
+=== A02: Cryptographic Failures (Échecs cryptographiques)
+
+**❌ Le problème :** Mots de passe stockés en clair, données sensibles non chiffrées.
+
+**✅ Notre solution :**
+
+[source,typescript]
+----
+import { hash, verify } from "https://deno.land/x/scrypt@v4.3.4/mod.ts";
+
+// Hachage sécurisé des mots de passe
+const hashPassword = async (password: string): Promise<string> => {
+  // Scrypt est plus sécurisé que bcrypt pour Deno
+  return await hash(password);
+};
+
+// Vérification
+const verifyPassword = async (password: string, hashed: string): Promise<boolean> => {
+  return await verify(password, hashed);
+};
+
+// HTTPS obligatoire en production
+const secureHeaders = {
+  "Strict-Transport-Security": "max-age=31536000; includeSubDomains",
+  "Content-Security-Policy": "default-src 'self'"
+};
+----
+
+**En mots simples :** Au lieu de noter votre mot de passe sur un papier, on le transforme en code secret que même nous ne pouvons pas lire.
+
+=== A03: Injection (Injection SQL)
+
+**❌ Le problème :** Un attaquant peut exécuter du code malveillant via les formulaires.
+
+**✅ Notre solution : Drizzle ORM**
+
+[source,typescript]
+----
+// ❌ DANGEREUX - Injection SQL possible
+const badQuery = `SELECT * FROM users WHERE email = '${userInput}'`;
+
+// ✅ SÉCURISÉ - Drizzle protège automatiquement
+const safeQuery = await db.select()
+  .from(users)
+  .where(eq(users.email, userInput)); // Drizzle échappe automatiquement
+
+// ✅ SÉCURISÉ - Validation en amont avec Zod
+const userSchema = z.object({
+  email: z.string().email().max(255),
+  password: z.string().min(8).max(100)
+});
+
+// Si les données ne respectent pas le schéma → rejet automatique
+const validatedData = userSchema.parse(userInput);
+----
+
+**En mots simples :** Au lieu de recopier bêtement ce que dit l'utilisateur, on vérifie que c'est bien ce qu'on attend.
+
+=== A04: Insecure Design (Conception non sécurisée)
+
+**❌ Le problème :** L'application n'a pas été pensée pour être sécurisée.
+
+**✅ Notre solution : Security by Design**
+
+[source,typescript]
+----
+// Exemple : Partage de bibliothèque
+const shareLibrarySecure = async (libraryId: string, targetUserId: string) => {
+  // 1. Vérifier que l'utilisateur possède la bibliothèque
+  const library = await getLibraryWithOwnershipCheck(libraryId, currentUserId);
+
+  // 2. Vérifier que l'utilisateur cible existe
+  const targetUser = await getUserById(targetUserId);
+  if (!targetUser) throw new Error("Utilisateur inexistant");
+
+  // 3. Vérifier qu'il n'y a pas déjà un partage
+  const existingShare = await getLibraryPermission(libraryId, targetUserId);
+  if (existingShare) throw new Error("Déjà partagé");
+
+  // 4. Créer le partage avec permission limitée par défaut
+  await createLibraryPermission({
+    libraryId,
+    userId: targetUserId,
+    permission: "read", // Jamais "admin" par défaut
+    grantedAt: new Date()
+  });
+
+  // 5. Logger l'action pour audit
+  await logSecurityEvent("LIBRARY_SHARED", {
+    owner: currentUserId,
+    target: targetUserId,
+    library: libraryId
+  });
+};
+----
+
+**En mots simples :** Penser à tous les cas de figure malveillants avant de coder, pas après avoir été hacké.
+
+=== A05: Security Misconfiguration (Mauvaise configuration)
+
+**✅ Notre solution : Configuration sécurisée par défaut**
+
+[source,typescript]
+----
+import helmet from "npm:helmet@7.1.0";
+
+// Headers de sécurité automatiques
+app.use("*", helmet({
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      styleSrc: ["'self'", "'unsafe-inline'"], // Pour le CSS
+      scriptSrc: ["'self'"], // Pas de JavaScript externe
+      imgSrc: ["'self'", "data:", "https://covers.openlibrary.org"], // Images OpenLibrary OK
+    }
+  },
+  hsts: {
+    maxAge: 31536000, // 1 an
+    includeSubDomains: true
+  }
+}));
+
+// CORS restrictif
+const corsConfig = {
+  origin: ["https://blablabook.fr", "https://www.blablabook.fr"], // Seulement nos domaines
+  methods: ["GET", "POST", "PUT", "DELETE"],
+  allowedHeaders: ["Content-Type", "Authorization"],
+  credentials: true // Pour les cookies refresh token
+};
+----
+
+**En mots simples :** Configurer l'application comme un bunker, pas comme une maison avec la porte ouverte.
+
+=== A06: Vulnerable Components (Composants vulnérables)
+
+**✅ Notre solution : Deno + Audit automatique**
+
+[source,typescript]
+----
+// deno.json - Versions explicites et récentes
+{
+  "imports": {
+    "hono": "https://deno.land/x/hono@v3.12.8/mod.ts", // Version spécifique
+    "drizzle-orm": "npm:drizzle-orm@^0.29.0", // Version récente
+    "helmet": "npm:helmet@^7.1.0" // Headers sécurisés
+  }
+}
+
+// Audit automatique dans CI/CD
+// deno task audit
+"audit": "deno cache --reload src/main.ts && deno info --json src/main.ts"
+----
+
+**En mots simples :** Utiliser des bibliothèques récentes et fiables, comme utiliser des serrures modernes plutôt que des cadenas rouillés.
+
+=== A07: Authentication Failures (Échecs d'authentification)
+
+**✅ Notre solution : JWT + Rate Limiting + Zero Trust**
+
+[source,typescript]
+----
+// Rate limiting sur les connexions
+const loginRateLimit = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 5, // 5 tentatives max
+  message: "Trop de tentatives de connexion. Réessayez dans 15 minutes.",
+  standardHeaders: true
+});
+
+// Protection force brute
+const loginAttempts = new Map<string, { count: number, lastAttempt: Date }>();
+
+const trackLoginAttempt = (email: string, success: boolean) => {
+  if (success) {
+    loginAttempts.delete(email); // Reset si succès
+    return;
+  }
+
+  const attempts = loginAttempts.get(email) || { count: 0, lastAttempt: new Date() };
+  attempts.count++;
+  attempts.lastAttempt = new Date();
+
+  if (attempts.count >= 5) {
+    // Bloquer pendant 30 minutes après 5 échecs
+    const blockUntil = new Date(attempts.lastAttempt.getTime() + 30 * 60 * 1000);
+    throw new Error(`Compte temporairement bloqué jusqu'à ${blockUntil}`);
+  }
+
+  loginAttempts.set(email, attempts);
+};
+----
+
+**En mots simples :** Si quelqu'un essaie de deviner votre mot de passe, on le bloque automatiquement après quelques tentatives.
+
+=== A08: Software Integrity Failures (Échecs d'intégrité logicielle)
+
+**✅ Notre solution : Deno + Verification d'intégrité**
+
+[source,typescript]
+----
+// deno.lock - Verrouillage des versions
+{
+  "https://deno.land/x/hono@v3.12.8/mod.ts": "abc123...", // Checksum de sécurité
+}
+
+// Vérification des imports en CI/CD
+// Si le checksum change = potentielle compromission
+"verify": "deno cache --lock=deno.lock --lock-write src/main.ts"
+
+// Variables d'environnement sécurisées
+const requiredEnvVars = ["JWT_SECRET", "DB_PASSWORD"];
+requiredEnvVars.forEach(envVar => {
+  if (!Deno.env.get(envVar)) {
+    console.error(`❌ Variable d'environnement manquante: ${envVar}`);
+    Deno.exit(1);
+  }
+});
+----
+
+**En mots simples :** Vérifier que personne n'a trafiqué le code qu'on télécharge, comme vérifier les sceaux de sécurité sur les médicaments.
+
+=== A09: Security Logging Failures (Échecs de journalisation)
+
+**✅ Notre solution : Audit complet des actions sensibles**
+
+[source,typescript]
+----
+interface SecurityEvent {
+  type: "LOGIN" | "FAILED_LOGIN" | "PERMISSION_CHANGE" | "DATA_ACCESS" | "SUSPICIOUS_ACTIVITY";
+  userId?: string;
+  ip: string;
+  userAgent: string;
+  timestamp: Date;
+  details: Record<string, any>;
+  severity: "LOW" | "MEDIUM" | "HIGH" | "CRITICAL";
+}
+
+const logSecurityEvent = async (event: SecurityEvent) => {
+  // Log local pour debug
+  console.log(`🔐 [${event.severity}] ${event.type}`, event);
+
+  // Stockage BDD pour audit
+  await db.insert(securityLogs).values({
+    type: event.type,
+    userId: event.userId,
+    ip: event.ip,
+    userAgent: event.userAgent,
+    details: event.details,
+    severity: event.severity,
+    timestamp: event.timestamp
+  });
+
+  // Alerte immédiate si critique
+  if (event.severity === "CRITICAL") {
+    await sendSecurityAlert(event);
+  }
+};
+
+// Usage dans l'authentification
+await logSecurityEvent({
+  type: "FAILED_LOGIN",
+  ip: clientIP,
+  userAgent: req.headers["user-agent"],
+  timestamp: new Date(),
+  details: { email, reason: "Invalid password" },
+  severity: "MEDIUM"
+});
+----
+
+**En mots simples :** Noter tout ce qui se passe de suspect, comme un système de vidéosurveillance pour le code.
+
+=== A10: Server-Side Request Forgery (SSRF)
+
+**✅ Notre solution : Validation stricte des URLs externes**
+
+[source,typescript]
+----
+// Seules les URLs OpenLibrary autorisées
+const allowedDomains = [
+  "openlibrary.org",
+  "covers.openlibrary.org"
+];
+
+const validateExternalUrl = (url: string): boolean => {
+  try {
+    const urlObj = new URL(url);
+
+    // Bloquer les IPs privées (127.0.0.1, 192.168.x.x, etc.)
+    if (isPrivateIP(urlObj.hostname)) {
+      throw new Error("IP privée interdite");
+    }
+
+    // Seuls les domaines autorisés
+    if (!allowedDomains.includes(urlObj.hostname)) {
+      throw new Error("Domaine non autorisé");
+    }
+
+    // Seulement HTTPS
+    if (urlObj.protocol !== "https:") {
+      throw new Error("HTTPS obligatoire");
+    }
+
+    return true;
+  } catch {
+    return false;
+  }
+};
+
+// Usage pour récupérer des couvertures de livres
+const fetchBookCover = async (coverUrl: string) => {
+  if (!validateExternalUrl(coverUrl)) {
+    throw new Error("URL de couverture invalide");
+  }
+
+  return await fetch(coverUrl, {
+    method: "GET",
+    timeout: 5000 // 5 secondes max
+  });
+};
+----
+
+**En mots simples :** Ne faire confiance qu'aux sites web qu'on connaît, comme ne donner son numéro de téléphone qu'aux amis.
+
+== 🔧 Stack Sécuritaire Technique
+
+=== Technologies et leur rôle
+
+[cols="2,2,4"]
+|===
+|Technologie |Rôle sécuritaire |Explication simple
+
+|**🦕 Deno Runtime**
+|Permissions explicites
+|Contrairement à Node.js, Deno ne peut rien faire sans permission explicite
+
+|**🛡️ Helmet**
+|Headers sécurisés
+|Ajoute automatiquement les protections navigateur (XSS, clickjacking...)
+
+|**🌐 CORS**
+|Filtrage domaines
+|Seuls nos sites web peuvent utiliser notre API
+
+|**⏱️ Rate Limiter**
+|Protection force brute
+|Limite le nombre de requêtes par minute/heure
+
+|**✅ Drizzle ORM**
+|Anti-injection SQL
+|Impossible d'injecter du code malveillant via les formulaires
+
+|**🔐 JWT Stateless**
+|Sessions sécurisées
+|Pas de stockage serveur = impossible à compromettre côté serveur
+
+|**🎯 Validateur Deno/Zod**
+|Validation données
+|Rejette automatiquement les données malformées
+
+|**🔒 CSRF Protection**
+|Anti-attaque croisée
+|Empêche les sites malveillants d'utiliser votre session
+|===
+
+=== Configuration Helmet complète
+
+[source,typescript]
+----
+// Protection maximum avec Helmet
+app.use("*", helmet({
+  // Empêche l'injection de code JavaScript malveillant
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"], // Seul notre domaine
+      styleSrc: ["'self'", "'unsafe-inline'"], // CSS autorisé
+      scriptSrc: ["'self'"], // Pas de JS externe
+      objectSrc: ["'none'"], // Pas de Flash/plugins
+      upgradeInsecureRequests: [], // Force HTTPS
+    }
+  },
+
+  // Force HTTPS pendant 1 an
+  hsts: {
+    maxAge: 31536000,
+    includeSubDomains: true,
+    preload: true
+  },
+
+  // Empêche l'intégration dans une iframe (clickjacking)
+  frameguard: { action: 'deny' },
+
+  // Empêche la détection du type de fichier (XSS)
+  noSniff: true,
+
+  // Active la protection XSS du navigateur
+  xssFilter: true,
+
+  // Cache les informations serveur
+  hidePoweredBy: true,
+
+  // Contrôle les référents
+  referrerPolicy: { policy: "strict-origin-when-cross-origin" }
+}));
+----
+
+=== Rate Limiting adaptatif
+
+[source,typescript]
+----
+// Rate limits différenciés par endpoint
+const rateLimits = {
+  // Connexion : très restrictif
+  login: {
+    windowMs: 15 * 60 * 1000, // 15 minutes
+    max: 5, // 5 tentatives
+    message: "Trop de tentatives de connexion"
+  },
+
+  // Inscription : restrictif
+  register: {
+    windowMs: 60 * 60 * 1000, // 1 heure
+    max: 3, // 3 inscriptions max par heure
+    message: "Trop d'inscriptions"
+  },
+
+  // API lecture : permissif
+  api: {
+    windowMs: 15 * 60 * 1000, // 15 minutes
+    max: 1000, // 1000 requêtes
+    message: "Limite API dépassée"
+  },
+
+  // API écriture : modéré
+  apiWrite: {
+    windowMs: 15 * 60 * 1000, // 15 minutes
+    max: 100, // 100 modifications
+    message: "Trop de modifications"
+  }
+};
+----
+
+=== CSRF Protection
+
+[source,typescript]
+----
+// Protection CSRF pour les actions sensibles
+const csrfProtection = async (c: Context, next: Next) => {
+  const method = c.req.method;
+
+  // CSRF nécessaire pour modifications
+  if (["POST", "PUT", "DELETE", "PATCH"].includes(method)) {
+    const csrfToken = c.req.header("X-CSRF-Token");
+    const sessionCSRF = c.get("user")?.csrfToken;
+
+    if (!csrfToken || csrfToken !== sessionCSRF) {
+      return c.json({ error: "Token CSRF manquant ou invalide" }, 403);
+    }
+  }
+
+  await next();
+};
+
+// Génération token CSRF dans JWT
+const generateCSRFToken = (): string => {
+  return crypto.randomUUID(); // Token aléatoire unique
+};
+----
+
+== 📊 Monitoring et Alertes Sécurité
+
+=== Dashboard Sécurité Temps Réel
+
+[source,typescript]
+----
+// Métriques sécurité à surveiller
+const securityMetrics = {
+  // Tentatives de connexion échouées par heure
+  failedLogins: await getFailedLoginsLastHour(),
+
+  // Changements d'IP suspects
+  suspiciousIPs: await getSuspiciousIPChanges(),
+
+  // Tentatives d'accès non autorisées
+  unauthorizedAccess: await getUnauthorizedAttempts(),
+
+  // Utilisations de tokens expirés
+  expiredTokenUse: await getExpiredTokenAttempts(),
+
+  // Vitesse anormale de requêtes
+  rateLimitViolations: await getRateLimitViolations()
+};
+
+// Seuils d'alerte
+const alertThresholds = {
+  failedLogins: 20, // 20 échecs/heure = alerte
+  suspiciousIPs: 5, // 5 changements IP/jour = suspect
+  unauthorizedAccess: 10, // 10 tentatives = alerte immédiate
+  expiredTokenUse: 50, // 50 tokens expirés = possible attaque
+  rateLimitViolations: 100 // 100 violations = attaque probable
+};
+----
+
+=== Réponse Automatique aux Incidents
+
+[source,typescript]
+----
+// Actions automatiques selon le niveau de menace
+const securityResponse = async (threat: SecurityThreat) => {
+  switch (threat.severity) {
+    case "LOW":
+      // Log seulement
+      await logSecurityEvent(threat);
+      break;
+
+    case "MEDIUM":
+      // Log + notification admin
+      await logSecurityEvent(threat);
+      await notifySecurityTeam(threat);
+      break;
+
+    case "HIGH":
+      // Bloquer IP temporairement
+      await blockIPTemporary(threat.ip, "30 minutes");
+      await alertSecurityTeam(threat);
+      break;
+
+    case "CRITICAL":
+      // Bloquer IP + révoquer tous tokens utilisateur
+      await blockIPPermanent(threat.ip);
+      if (threat.userId) {
+        await revokeAllUserTokens(threat.userId);
+      }
+      await emergencyAlert(threat);
+      break;
+  }
+};
+----
+
+== 📋 Checklist Sécurité Déploiement
+
+=== Avant chaque déploiement
+
+- [ ] **Audit dépendances** : `deno task audit`
+- [ ] **Tests sécurité** : Tous les tests de sécurité passent
+- [ ] **Variables env** : Toutes les variables sécurisées définies
+- [ ] **HTTPS** : Certificat SSL valide et configuré
+- [ ] **Headers** : Helmet configuré avec tous les headers
+- [ ] **Rate limits** : Configurés selon les environnements
+- [ ] **JWT secrets** : Secrets forts et uniques par environnement
+- [ ] **CORS** : Domaines autorisés corrects
+- [ ] **Logs** : Système de log et alertes fonctionnel
+
+=== Monitoring continu
+
+- [ ] **Dashboards** : Métriques sécurité temps réel
+- [ ] **Alertes** : Notifications automatiques configurées
+- [ ] **Sauvegardes** : Logs sécurité sauvegardés
+- [ ] **Révision** : Audit sécurité mensuel planifié
+
+== 🎓 Formation Équipe
+
+=== Bonnes pratiques développement
+
+**Pour les développeurs qui rejoignent l'équipe :**
+
+1. **🔐 Authentification** : Toujours vérifier les permissions avant les actions
+2. **💉 Injection** : Utiliser exclusivement Drizzle, jamais de SQL brut
+3. **🔍 Validation** : Valider TOUTES les données utilisateur avec Zod
+4. **📝 Logs** : Logger toutes les actions sensibles
+5. **🔒 Secrets** : Jamais de mots de passe/clés dans le code
+6. **⚡ Rate limits** : Penser aux limites sur les nouveaux endpoints
+7. **🛡️ Headers** : Vérifier que Helmet couvre les nouveaux endpoints
+8. **🎯 CORS** : Ne pas désactiver CORS "pour que ça marche"
+
+=== Code Review Sécurité
+
+**Questions à poser systématiquement :**
+
+- Cette fonction vérifie-t-elle les permissions ?
+- Les données utilisateur sont-elles validées ?
+- Y a-t-il des secrets/mots de passe dans le code ?
+- Cette action est-elle loggée pour l'audit ?
+- Le rate limiting est-il approprié ?
+- L'erreur révèle-t-elle des infos sensibles ?
+
+---
+
+**BlaBlaBook V2 - Architecture Sécurité Complète**
+**Stack sécurisée : Deno + Zero Trust + OWASP Top 10 + Security by Design**

@@ -1,0 +1,58 @@
+services:
+  # Service Backend - API Deno + Hono
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.dev
+    env_file: ./backend/.env
+    environment:
+      - DB_HOST=postgres
+      - DB_PORT=5432
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./backend:/app
+    depends_on:
+      - postgres
+    restart: unless-stopped
+
+  # Service Frontend - Next.js 15 + Node 22
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.dev
+    env_file: ./frontend/.env
+    # environment:
+    #   - VITE_API_URL=http://backend:3000  # Commenté : utilise localhost:3000 depuis le navigateur
+    ports:
+      - "5173:5173"
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+      - /app/.next
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+  # Service PostgreSQL
+  postgres:
+    image: postgres:17-alpine
+    env_file: ./backend/.env
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres_dev_data:/var/lib/postgresql/data
+      - ./backend/DB/BBBV2.sql:/docker-entrypoint-initdb.d/BBBV2.sql
+    restart: unless-stopped
+
+  # Interface d'administration BDD
+  adminer:
+    image: adminer:latest
+    ports:
+      - "8081:8080"
+    depends_on:
+      - postgres
+    restart: unless-stopped
+
+volumes:
+  postgres_dev_data:

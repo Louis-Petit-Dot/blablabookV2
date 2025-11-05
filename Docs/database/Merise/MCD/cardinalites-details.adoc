@@ -1,0 +1,315 @@
+= Cardinalités du MCD BlaBlaBook V2 / MCD BlaBlaBook V2 Cardinalities 📊
+:toc: left
+:toclevels: 3
+:sectanchors:
+:icons: font
+:version: 2.0
+:date: {docdate}
+
+// Navigation inter-documents
+link:../../README.adoc[📚 Documentation Hub] |
+link:../../project/CONCEPTION-BLABLABOOKV2.adoc[🏗️ Architecture] |
+link:cardinalites.adoc[📋 Summary] |
+link:../../diagrams/sequence/diag-sequence.adoc[📊 Sequence Diagrams]
+
+// Navigation langues
+<<section-fr,🇫🇷 Version Française>> | <<section-en,🇬🇧🇺🇸 English Version>>
+
+---
+
+[[section-fr]]
+== 🇫🇷 Cardinalités MCD BlaBlaBook V2
+
+<<section-en,🇬🇧🇺🇸 Switch to English>> | 🇫🇷 *Français*
+
+=== 🔗 Associations et Cardinalités
+
+
+
+=== Relations d'Autorisation (RBAC)
+
+==== AVOIR : 0-N USER ↔ 0N ROLE (via USER_ROLE)
+
+*Lecture :* Un utilisateur peut avoir 0 à N rôles, un rôle peut être attribué à 0 à N utilisateurs
+
+*Justification :*
+
+* ✅ Un utilisateur peut n'avoir aucun rôle temporairement (compte en attente)
+* ✅ Un utilisateur peut avoir plusieurs rôles (USER + MODERATOR)
+* ✅ Un rôle peut n'être attribué à personne (rôle en préparation)
+* ✅ Un rôle peut être partagé par plusieurs utilisateurs
+
+*Implémentation :* Entité d'association USER_ROLE avec PK propre
+
+
+
+
+==== DETENIR : 0-N ROLE ↔ 0N PERMISSION (via ROLE_PERMISSION)
+
+*Lecture :* Un rôle peut detenir 0 à N permissions, une permission peut être détenue par 0 à N rôles
+
+*Justification :*
+
+* ✅ Un rôle peut être créé sans permissions (configuration progressive)
+* ✅ Un rôle typique a plusieurs permissions (lecture, écriture, suppression)
+* ✅ Une permission peut n'être attribuée à aucun rôle (permission en préparation)
+* ✅ Une permission peut être partagée entre plusieurs rôles
+
+*Implémentation :* Entité d'association ROLE_PERMISSION avec PK propre
+
+
+
+
+=== Relations Métier Principale
+
+==== POSSÉDER : 0-N USER ↔ 1-1 LIBRARY
+
+*Lecture :* Un utilisateur peut ne posséder aucune bibliothèque, une bibliothèque appartient à 1 seul utilisateur
+
+*Justification :*
+
+* ✅ Chaque utilisateur n'a aucune bibliothèque personnelle à son inscription(RG1)
+* ✅ Un utilisateur peut créer plusieurs bibliothèques thématiques (ex: "Cuisine", "SF", "Adulte")
+* ✅ Une bibliothèque appartient exclusivement à un seul utilisateur
+* ✅ Chaque bibliothèque peut contenir plusieurs listes de lecture organisées
+
+
+
+
+=== Relations via READING_LIST (Entité d'Association)
+
+==== Architecture Triple FK : USER + LIBRARY + BOOK → READING_LIST
+
+* *DETENIR :* 0-N USER ↔ 1-1 READING_LIST
+* *INCLURE :* 0-N LIBRARY ↔ 1-1 READING_LIST
+* *CONTENIR :* 0-N BOOK ↔ 1-1 READING_LIST
+
+*Justification Architecture :*
+
+* ✅ *Correction défaut V1 :* Reading lists avec ownership direct USER
+* ✅ *RG2 :* Une READING_LIST lie obligatoirement 1 USER + 1 LIBRARY + 1 BOOK
+* ✅ *RG4 :* Chaque ajout de livre est tracé (propriétaire de l'entrée)
+* ✅ *RG3 :* Un livre ne peut figurer qu'une fois dans une même bibliothèque
+* ✅ *Organisation hiérarchique :* Chaque bibliothèque peut avoir plusieurs listes (ex: "Best sellers", "À lire", "Recommandés")
+
+
+
+=== Relations de Contenu
+
+==== RÉDIGER : 0-N USER ↔ 1-1 NOTICE
+
+*Lecture :* Un utilisateur peut rédiger 0 à N avis, chaque avis est rédigé par 1 seul utilisateur
+
+*Justification :*
+
+* ✅ Un utilisateur peut ne jamais écrire d'avis
+* ✅ Un utilisateur actif peut écrire plusieurs avis sur différents livres
+* ✅ Chaque avis a un auteur unique pour la responsabilité et la modération
+
+
+
+==== COMPORTER : 0-N BOOK ↔ 1-1 NOTICE
+
+*Lecture :* Un livre peut comporter 0 à N avis, chaque avis concerne 1 seul livre
+
+*Justification :*
+
+* ✅ Un livre peut ne comporter aucun avis (nouveau livre)
+* ✅ Un livre populaire peut comporter de nombreux avis
+* ✅ Chaque avis porte sur un livre spécifique
+
+
+
+
+=== Relations d'Évaluation
+
+==== ATTRIBUER : 1-1 USER ↔ 0-N RATE
+
+*Justification :*
+
+* ✅ *RG5 :* Un utilisateur ne peut attribuer qu'une note pour le même livre
+* ✅ Un livre peut avoir plusieurs notes de différents utilisateurs
+* ✅ Chaque note est attribuée par un utilisateur unique
+
+
+
+
+=== Relations Métadonnées
+
+==== ÉCRIRE : 1-N BOOK ↔ 0N AUTHOR (via BOOK_AUTHOR)
+
+*Lecture :* Un livre est écrit par au minimum 1 auteur, un auteur peut écrire 0 à N livres
+
+*Justification :*
+
+* ✅ Chaque livre doit avoir au moins un auteur
+* ✅ Un livre peut avoir plusieurs co-auteurs
+* ✅ Un auteur peut ne pas avoir de livre référencé dans le système
+* ✅ Un auteur prolifique peut avoir écrit de nombreux livres
+
+*Implémentation :* Entité d'association BOOK_AUTHOR avec PK propre
+
+
+
+==== APPARTENIR : 1-N BOOK ↔ 0-N GENRE (via BOOK_GENRE)
+
+*Lecture :* Un livre appartient au minimum à 1 genre, un genre peut catégoriser 0 à N livres
+
+*Justification :*
+
+* ✅ Chaque livre doit avoir au moins un genre pour la classification
+* ✅ Un livre peut appartenir à plusieurs genres (ex: SF + Aventure)
+* ✅ Un nouveau genre peut ne pas encore avoir de livres
+* ✅ Un genre populaire peut catégoriser de nombreux livres
+
+*Implémentation :* Entité d'association BOOK_GENRE avec PK propre
+
+
+
+
+
+
+
+
+
+[[section-en]]
+== 🇬🇧🇺🇸 MCD BlaBlaBook V2 Cardinalities
+
+<<section-fr,🇫🇷 Passer en Français>> | 🇬🇧🇺🇸 *English*
+
+=== 🔗 Relations and Cardinalities
+ 
+=== Authorization Relations (RBAC)
+
+==== HAVE : 0-N USER ↔ 0-N ROLE (via USER_ROLE)
+
+*Reading:* A user can have 0 to N roles; a role can be assigned to 0 to N users.
+
+*Rationale:*
+
+* ✅ A user may have no role temporarily (account pending)
+* ✅ A user can hold multiple roles (USER + MODERATOR)
+* ✅ A role may be assigned to no one yet (role in preparation)
+* ✅ A role can be shared by many users
+
+*Implementation:* Association entity USER_ROLE with its own PK
+
+
+
+==== HOLD : 0-N ROLE ↔ 0-N PERMISSION (via ROLE_PERMISSION)
+
+*Reading:* A role can hold 0 to N permissions; a permission can be held by 0 to N roles.
+
+*Rationale:*
+
+* ✅ A role can be created without permissions (progressive configuration)
+* ✅ A typical role has several permissions (read, write, delete)
+* ✅ A permission may be assigned to no role yet (permission in preparation)
+* ✅ A permission can be shared across multiple roles
+
+*Implementation:* Association entity ROLE_PERMISSION with its own PK
+
+
+
+=== Main Business Relations
+
+==== OWN : 0-N USER ↔ 1-1 LIBRARY
+
+*Reading:* A user can own zero libraries; a library belongs to exactly one user.
+
+*Rationale:*
+
+* ✅ A new user may have no personal library at signup (RG1)
+* ✅ A user can create several themed libraries (e.g. "Cooking", "Sci-Fi", "Adult")
+* ✅ A library belongs exclusively to a single user
+* ✅ Each library can contain multiple reading lists
+
+
+
+=== Relations via READING_LIST (Association Entity)
+
+==== Triple FK Architecture: USER + LIBRARY + BOOK → READING_LIST
+
+* *HOLD:* 0-N USER ↔ 1-1 READING_LIST
+* *INCLUDE:* 0-N LIBRARY ↔ 1-1 READING_LIST
+* *CONTAIN:* 0-N BOOK ↔ 1-1 READING_LIST
+
+*Architecture Rationale:*
+
+* ✅ *Fix from V1:* Reading lists now have explicit ownership by USER
+* ✅ *RG2:* A READING_LIST obligatorily links 1 USER + 1 LIBRARY + 1 BOOK
+* ✅ *RG4:* Each book addition is tracked (entry owner)
+* ✅ *RG3:* A book may appear only once in the same library
+* ✅ *Hierarchy:* Each library can have multiple lists (e.g. "Best sellers", "To read", "Recommended")
+
+
+
+=== Content Relations
+
+==== WRITE : 0-N USER ↔ 1-1 NOTICE
+
+*Reading:* A user can write 0 to N reviews; each review is written by exactly one user.
+
+*Rationale:*
+
+* ✅ A user may never write a review
+* ✅ An active user can write multiple reviews on different books
+* ✅ Each review has a single author for accountability and moderation
+
+
+
+==== CONTAIN : 0-N BOOK ↔ 1-1 NOTICE
+
+*Reading:* A book can have 0 to N reviews; each review concerns exactly one book.
+
+*Rationale:*
+
+* ✅ A new book may have no reviews
+* ✅ A popular book can have many reviews
+* ✅ Each review is about a specific book
+
+
+
+
+=== Rating Relations
+
+==== ASSIGN : 1-1 USER ↔ 0-N RATE
+
+*Rationale:*
+
+* ✅ *RG5:* A user can assign only one rating per same book
+* ✅ A book can receive ratings from many different users
+* ✅ Each rating is given by a single user
+
+
+
+=== Metadata Relations
+
+==== AUTHOR : 1-N BOOK ↔ 0-N AUTHOR (via BOOK_AUTHOR)
+
+*Reading:* A book is written by at least 1 author; an author can write 0 to N books.
+
+*Rationale:*
+
+* ✅ Every book must have at least one author
+* ✅ A book can have multiple co-authors
+* ✅ An author may have no books referenced in the system yet
+* ✅ A prolific author can have written many books
+
+*Implementation:* Association entity BOOK_AUTHOR with its own PK
+
+
+
+==== BELONG : 1-N BOOK ↔ 0-N GENRE (via BOOK_GENRE)
+
+*Reading:* A book belongs to at least 1 genre; a genre can categorize 0 to N books.
+
+*Rationale:*
+
+* ✅ Each book must have at least one genre for classification
+* ✅ A book can belong to several genres (e.g. Sci-Fi + Adventure)
+* ✅ A new genre may have no books yet
+* ✅ A popular genre can categorize many books
+
+*Implementation:* Association entity BOOK_GENRE with its own PK
+

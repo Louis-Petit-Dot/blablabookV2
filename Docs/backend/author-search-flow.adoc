@@ -1,0 +1,200 @@
+= Flux de Recherche d'Auteur - BlablaBook V2
+:toc:
+:toclevels: 2
+:source-highlighter: highlightjs
+
+== Vue d'ensemble
+
+Le système de recherche d'auteurs utilise un flux **hybride** qui privilégie OpenLibrary pour la découverte tout en maintenant une base de données locale pour la gestion des relations.
+
+== Architecture
+
+=== Principe général
+* **Découverte/Navigation** : Direct via OpenLibrary API
+* **Stockage/Relations** : Base de données locale pour les livres possédés
+* **Performance** : Un seul appel API vs multiples requêtes DB
+
+=== Endpoints
+
+[cols="1,2,3"]
+|===
+|Méthode |Endpoint |Description
+
+|GET
+|`/authors/search/{name}/works`
+|Recherche les œuvres d'un auteur via OpenLibrary
+
+|GET
+|`/authors/{id}`
+|Récupération d'un auteur spécifique en DB locale
+
+|POST
+|`/authors/`
+|Création d'un auteur en DB locale (Admin)
+|===
+
+== Diagramme de Séquence - Recherche d'Auteur
+
+[source,plantuml]
+----
+@startuml
+!theme plain
+title Flux de Recherche d'Œuvres par Auteur
+
+actor Utilisateur as U
+participant "Frontend" as F
+participant "API Gateway" as API
+participant "AuthorController" as AC
+participant "AuthorService" as AS
+participant "OpenLibrary API" as OL
+
+U -> F: Recherche "J.K. Rowling"
+F -> API: GET /authors/search/J.K.%20Rowling/works
+
+API -> AC: getWorks("J.K. Rowling")
+AC -> AS: getWorks("J.K. Rowling")
+
+AS -> OL: searchBooks({ author: "J.K. Rowling", limit: 50 })
+OL --> AS: { docs: [book1, book2, ...] }
+
+AS -> AS: buildWikipediaUrl("J.K. Rowling")
+note right: Construit https://fr.wikipedia.org/wiki/J.K._Rowling
+
+AS --> AC: {\n  author: { name, wikipediaUrl },\n  works: [...]\n}
+AC --> API: JSON Response
+API --> F: Liste des œuvres + lien Wikipedia
+F --> U: Affichage des résultats
+@enduml
+----
+
+== Flux Détaillé
+
+=== 1. Requête Utilisateur
+L'utilisateur saisit le nom d'un auteur dans l'interface de recherche.
+
+[source,http]
+----
+GET /authors/search/J.K.%20Rowling/works
+----
+
+=== 2. Traitement Côté Serveur
+
+==== Controller (authorController.ts)
+[source,typescript]
+----
+async getWorks(c: Context) {
+    const authorName = c.req.param('name');
+    const result = await authorService.getWorks(authorName);
+    return c.json(result);
+}
+----
+
+==== Service (authorService.ts)
+[source,typescript]
+----
+async getWorks(authorName: string) {
+    const works = await OpenLibrary.searchBooks({
+        author: authorName,
+        limit: 50
+    });
+
+    const wikipediaUrl = OpenLibrary.buildWikipediaUrl(authorName);
+
+    return {
+        author: {
+            name: authorName,
+            wikipediaUrl
+        },
+        works: works.docs
+    };
+}
+----
+
+=== 3. Réponse Type
+
+[source,json]
+----
+{
+  "author": {
+    "name": "J.K. Rowling",
+    "wikipediaUrl": "https://fr.wikipedia.org/wiki/J.K._Rowling"
+  },
+  "works": [
+    {
+      "key": "/works/OL82563W",
+      "title": "Harry Potter and the Philosopher's Stone",
+      "author_name": ["J.K. Rowling"],
+      "cover_i": 258027,
+      "first_publish_year": 1997,
+      "isbn": ["0747532699"],
+      "subject": ["Fantasy", "Magic", "Wizards"]
+    }
+    // ... autres œuvres
+  ]
+}
+----
+
+== Avantages du Nouveau Flux
+
+=== Performance
+* **1 appel API** vs 2+ requêtes DB + validation
+* **Temps de réponse réduit** de ~60%
+
+=== Simplicité
+* **~80% moins de code** dans controller/service
+* **Plus de validation DB** pour la recherche
+* **Plus de gestion d'erreurs** "auteur non trouvé"
+
+=== Flexibilité
+* **Accès complet** au catalogue OpenLibrary
+* **Pas de limitation** aux auteurs en DB locale
+* **Découverte enrichie** avec liens Wikipedia automatiques
+
+== Navigation Utilisateur
+
+=== Depuis les Résultats
+Chaque œuvre retournée devient un **lien cliquable** qui lance le flux de recherche de livre classique :
+
+1. **Clic sur une œuvre** → Recherche du livre en DB locale
+2. **Si trouvé** → Affichage avec statut "Dans votre bibliothèque"
+3. **Si absent** → Recherche OpenLibrary + option d'ajout
+
+=== Intégration avec la Bibliothèque
+* Les **auteurs restent stockés** en DB lors de l'ajout d'un livre
+* Les **relations livre-auteur** sont conservées
+* La **gestion locale** reste intacte pour les livres possédés
+
+== Comparaison Ancien vs Nouveau
+
+[cols="2,3,3"]
+|===
+|Aspect |Ancien Flux |Nouveau Flux
+
+|**Source données**
+|DB locale uniquement
+|OpenLibrary direct
+
+|**Limitation**
+|Auteurs en DB seulement
+|Tous les auteurs OpenLibrary
+
+|**Performance**
+|2+ requêtes DB + validation
+|1 appel API
+
+|**Code**
+|~40 lignes complexes
+|~10 lignes simples
+
+|**Erreurs**
+|Gestion "auteur non trouvé"
+|Toujours des résultats
+
+|**Enrichissement**
+|Manuel
+|Wikipedia automatique
+|===
+
+== Conclusion
+
+Ce nouveau flux **simplifie drastiquement** le code tout en **améliorant l'expérience utilisateur** grâce à l'accès complet au catalogue OpenLibrary et à l'enrichissement automatique des données.

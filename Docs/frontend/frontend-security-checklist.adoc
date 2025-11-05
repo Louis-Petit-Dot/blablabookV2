@@ -1,0 +1,756 @@
+= Frontend Security Checklist - BlaBlaBook V2
+:toc: left
+:toclevels: 3
+:sectanchors:
+:icons: font
+
+== 🔐 Vue d'ensemble
+
+Ce document liste **toutes les mesures de sécurité** à implémenter côté frontend Next.js.
+
+**Principe :** Frontend = 20% sécurité (configuration) + 80% UX
+
+== 📊 Priorités
+
+[cols="1,3,1,1"]
+|===
+|Priorité |Mesure |Complexité |Impact Sécurité
+
+|🔴 **P0 - Critique**
+|Axios `withCredentials: true`
+|5 min
+|BLOQUANT
+
+|🔴 **P0 - Critique**
+|Variables env `NEXT_PUBLIC_API_URL`
+|2 min
+|BLOQUANT
+
+|🟠 **P1 - Important**
+|CSP Headers `next.config.js`
+|15 min
+|Élevé
+
+|🟠 **P1 - Important**
+|Middleware protection routes
+|20 min
+|Élevé
+
+|🟠 **P1 - Important**
+|Gestion erreurs 401 (redirect login)
+|10 min
+|Élevé
+
+|🟡 **P2 - Recommandé**
+|Validation Zod formulaires
+|30 min
+|Moyen (UX)
+
+|🟡 **P2 - Recommandé**
+|CSRF token interceptor
+|15 min
+|Moyen
+
+|⚪ **P3 - Optionnel**
+|Rate limiting visuel
+|20 min
+|Faible (UX)
+
+|⚪ **P3 - Optionnel**
+|DOMPurify sanitization
+|10 min
+|Faible
+|===
+
+**Temps total estimé :** ~2h pour P0+P1+P2
+
+== 🔴 P0 - Mesures Critiques (BLOQUANT)
+
+=== 1. Axios Configuration avec `withCredentials`
+
+**Fichier :** `lib/axios.ts`
+
+**Problème :** Sans `withCredentials: true`, les cookies httpOnly ne sont PAS envoyés au backend → authentification cassée.
+
+**Solution :**
+
+[source,typescript]
+----
+// lib/axios.ts
+import axios from 'axios';
+
+const api = axios.create({
+  baseURL: process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000/api',
+  withCredentials: true, // ⚠️ CRITIQUE: Envoie cookies httpOnly
+  headers: {
+    'Content-Type': 'application/json'
+  }
+});
+
+export default api;
+----
+
+**Test :**
+[source,bash]
+----
+# Vérifier dans DevTools → Network → Request Headers
+# Doit contenir: Cookie: access_token=...
+----
+
+**Statut :** [ ] À faire
+
+---
+
+=== 2. Variables d'Environnement Sécurisées
+
+**Fichiers :** `.env.local`, `.env.production`
+
+**Problème :** URL API hardcodée = impossible de changer entre dev/prod.
+
+**Solution :**
+
+[source,bash]
+----
+# .env.local (DEV - Git ignoré)
+NEXT_PUBLIC_API_URL=http://localhost:3000/api
+
+# .env.production (PROD - Git ignoré)
+NEXT_PUBLIC_API_URL=https://api.blablabook.com
+----
+
+**Règles :**
+
+* `NEXT_PUBLIC_*` → Exposé au navigateur (OK pour URL publique)
+* Sans prefix → Serveur uniquement (secrets, clés API)
+* ❌ **JAMAIS** de secrets dans le code
+
+**Gitignore :**
+[source,gitignore]
+----
+# .gitignore (frontend)
+.env.local
+.env.production
+.env*.local
+----
+
+**Statut :** [ ] `.env.local` créé [ ] `.env.production` créé [ ] Dans `.gitignore`
+
+---
+
+== 🟠 P1 - Mesures Importantes
+
+=== 3. CSP Headers (Content Security Policy)
+
+**Fichier :** `next.config.js`
+
+**Problème :** Sans CSP, un attaquant peut injecter `<script>` malveillant.
+
+**Solution :**
+
+[source,javascript]
+----
+// next.config.js
+const securityHeaders = [
+  {
+    key: 'X-DNS-Prefetch-Control',
+    value: 'on'
+  },
+  {
+    key: 'Strict-Transport-Security',
+    value: 'max-age=63072000; includeSubDomains; preload'
+  },
+  {
+    key: 'X-Frame-Options',
+    value: 'SAMEORIGIN' // Protection clickjacking
+  },
+  {
+    key: 'X-Content-Type-Options',
+    value: 'nosniff' // Protection MIME sniffing
+  },
+  {
+    key: 'X-XSS-Protection',
+    value: '1; mode=block'
+  },
+  {
+    key: 'Referrer-Policy',
+    value: 'strict-origin-when-cross-origin'
+  },
+  {
+    key: 'Permissions-Policy',
+    value: 'camera=(), microphone=(), geolocation=()'
+  },
+  {
+    key: 'Content-Security-Policy',
+    value: `
+      default-src 'self';
+      script-src 'self' 'unsafe-eval' 'unsafe-inline';
+      style-src 'self' 'unsafe-inline';
+      img-src 'self' https://res.cloudinary.com data: blob:;
+      font-src 'self' data:;
+      connect-src 'self' ${process.env.NEXT_PUBLIC_API_URL};
+      frame-ancestors 'none';
+    `.replace(/\s{2,}/g, ' ').trim()
+  }
+];
+
+/** @type {import('next').NextConfig} */
+const nextConfig = {
+  async headers() {
+    return [
+      {
+        source: '/:path*',
+        headers: securityHeaders,
+      },
+    ];
+  },
+};
+
+module.exports = nextConfig;
+----
+
+**Protection :**
+
+* `X-Frame-Options: SAMEORIGIN` → Bloque iframe externe (clickjacking)
+* `X-Content-Type-Options: nosniff` → Bloque MIME sniffing
+* `CSP img-src` → Whitelist Cloudinary pour images
+* `CSP connect-src` → Whitelist API backend
+
+**Test :**
+[source,bash]
+----
+# Vérifier dans DevTools → Network → Response Headers
+# Doit contenir tous les headers ci-dessus
+----
+
+**Statut :** [ ] Implémenté [ ] Testé DevTools
+
+---
+
+=== 4. Middleware Protection Routes Protégées
+
+**Fichier :** `middleware.ts` (racine Next.js)
+
+**Problème :** Utilisateurs non-authentifiés peuvent accéder aux pages dashboard.
+
+**Solution :**
+
+[source,typescript]
+----
+// middleware.ts
+import { NextResponse } from 'next/server';
+import type { NextRequest } from 'next/server';
+
+export function middleware(request: NextRequest) {
+  const token = request.cookies.get('access_token');
+
+  const isAuthPage = request.nextUrl.pathname.startsWith('/login') ||
+                     request.nextUrl.pathname.startsWith('/register');
+
+  const isProtectedPage = request.nextUrl.pathname.startsWith('/dashboard') ||
+                          request.nextUrl.pathname.startsWith('/library') ||
+                          request.nextUrl.pathname.startsWith('/profile');
+
+  // Pas de token + page protégée → redirect login
+  if (!token && isProtectedPage) {
+    return NextResponse.redirect(new URL('/login', request.url));
+  }
+
+  // Token présent + page auth → redirect dashboard
+  if (token && isAuthPage) {
+    return NextResponse.redirect(new URL('/dashboard', request.url));
+  }
+
+  return NextResponse.next();
+}
+
+export const config = {
+  matcher: ['/((?!api|_next/static|_next/image|favicon.ico).*)']
+};
+----
+
+**Protection :**
+
+* Vérifie présence cookie `access_token`
+* Redirect `/login` si pas de token + page protégée
+* Redirect `/dashboard` si token présent + page auth (évite double login)
+
+**Test :**
+[source,bash]
+----
+# Sans cookie: http://localhost:3001/dashboard → redirect /login
+# Avec cookie: http://localhost:3001/login → redirect /dashboard
+----
+
+**Statut :** [ ] Implémenté [ ] Testé redirects
+
+---
+
+=== 5. Gestion Erreurs 401 (Token Expiré)
+
+**Fichier :** `lib/axios.ts`
+
+**Problème :** Token expire après 8h → l'utilisateur reste bloqué sur page erreur.
+
+**Solution :**
+
+[source,typescript]
+----
+// lib/axios.ts
+import axios from 'axios';
+
+const api = axios.create({
+  baseURL: process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000/api',
+  withCredentials: true,
+  headers: {
+    'Content-Type': 'application/json'
+  }
+});
+
+// Interceptor pour gérer token expiré
+api.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    if (error.response?.status === 401) {
+      // Token expiré ou invalide → redirect login
+      if (typeof window !== 'undefined') {
+        window.location.href = '/login';
+      }
+    }
+    return Promise.reject(error);
+  }
+);
+
+export default api;
+----
+
+**Protection :**
+
+* Détecte 401 Unauthorized
+* Redirect automatique `/login`
+* Check `typeof window` (évite erreur SSR)
+
+**Statut :** [ ] Implémenté [ ] Testé expiration token
+
+---
+
+== 🟡 P2 - Mesures Recommandées
+
+=== 6. Validation Formulaires Côté Client (Zod)
+
+**Fichiers :** `schemas/authSchema.ts`, `components/LoginForm.tsx`
+
+**Problème :** Utilisateur attend réponse backend → UX lente.
+
+**Solution :**
+
+[source,typescript]
+----
+// schemas/authSchema.ts
+import { z } from 'zod';
+
+export const loginSchema = z.object({
+  email: z.string().email('Email invalide').toLowerCase(),
+  password: z.string().min(8, 'Minimum 8 caractères')
+});
+
+export const registerSchema = z.object({
+  email: z.string().email('Email invalide').toLowerCase(),
+  username: z.string()
+    .min(3, 'Minimum 3 caractères')
+    .max(20, 'Maximum 20 caractères')
+    .regex(/^[a-zA-Z0-9_]+$/, 'Alphanumerique + underscore uniquement'),
+  password: z.string()
+    .min(8, 'Minimum 8 caractères')
+    .regex(/[A-Z]/, 'Minimum 1 majuscule')
+    .regex(/[0-9]/, 'Minimum 1 chiffre')
+    .regex(/[!@#$%^&*]/, 'Minimum 1 caractère spécial'),
+  firstname: z.string().min(2, 'Minimum 2 caractères'),
+  lastname: z.string().min(2, 'Minimum 2 caractères')
+});
+
+export type LoginFormData = z.infer<typeof loginSchema>;
+export type RegisterFormData = z.infer<typeof registerSchema>;
+----
+
+**Usage avec React Hook Form :**
+
+[source,typescript]
+----
+// components/LoginForm.tsx
+import { useForm } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
+import { loginSchema, type LoginFormData } from '@/schemas/authSchema';
+import api from '@/lib/axios';
+
+export default function LoginForm() {
+  const { register, handleSubmit, formState: { errors } } = useForm<LoginFormData>({
+    resolver: zodResolver(loginSchema)
+  });
+
+  const onSubmit = async (data: LoginFormData) => {
+    try {
+      await api.post('/users/login', data);
+      window.location.href = '/dashboard';
+    } catch (error) {
+      console.error('Login failed:', error);
+    }
+  };
+
+  return (
+    <form onSubmit={handleSubmit(onSubmit)}>
+      <input {...register('email')} type="email" />
+      {errors.email && <span>{errors.email.message}</span>}
+
+      <input {...register('password')} type="password" />
+      {errors.password && <span>{errors.password.message}</span>}
+
+      <button type="submit">Login</button>
+    </form>
+  );
+}
+----
+
+**Avantage :**
+
+* Feedback immédiat (avant appel API)
+* UX améliorée
+* Backend valide quand même (sécurité garantie)
+
+**Statut :** [ ] Schemas créés [ ] React Hook Form intégré
+
+---
+
+=== 7. CSRF Token Interceptor
+
+**Fichier :** `lib/csrf.ts`
+
+**Problème :** Requêtes POST/PUT/DELETE sans CSRF token peuvent être rejetées.
+
+**Solution :**
+
+[source,typescript]
+----
+// lib/csrf.ts
+import api from './axios';
+
+let csrfToken: string | null = null;
+
+export const getCsrfToken = async (): Promise<string> => {
+  if (csrfToken) return csrfToken;
+
+  const response = await api.get('/csrf-token');
+  csrfToken = response.data.csrfToken;
+  return csrfToken;
+};
+
+// Ajouter automatiquement CSRF token aux requêtes mutantes
+api.interceptors.request.use(async (config) => {
+  if (['post', 'put', 'delete', 'patch'].includes(config.method || '')) {
+    const token = await getCsrfToken();
+    config.headers['X-CSRF-Token'] = token;
+  }
+  return config;
+});
+----
+
+**Usage :**
+
+[source,typescript]
+----
+// Automatique, rien à faire dans les composants
+await api.post('/users/login', data); // CSRF ajouté automatiquement
+----
+
+**Statut :** [ ] Implémenté [ ] Testé requêtes POST
+
+---
+
+== ⚪ P3 - Mesures Optionnelles
+
+=== 8. Rate Limiting Visuel (UX)
+
+**Fichier :** `hooks/useRateLimit.ts`
+
+**Problème :** Utilisateur peut spammer le bouton login.
+
+**Solution :**
+
+[source,typescript]
+----
+// hooks/useRateLimit.ts
+import { useState, useEffect } from 'react';
+
+export const useRateLimit = (maxAttempts = 3, windowMs = 60000) => {
+  const [attempts, setAttempts] = useState(0);
+  const [isBlocked, setIsBlocked] = useState(false);
+  const [remainingTime, setRemainingTime] = useState(0);
+
+  useEffect(() => {
+    if (isBlocked && remainingTime > 0) {
+      const timer = setTimeout(() => {
+        setRemainingTime((prev) => prev - 1000);
+      }, 1000);
+      return () => clearTimeout(timer);
+    } else if (remainingTime <= 0 && isBlocked) {
+      setIsBlocked(false);
+      setAttempts(0);
+    }
+  }, [isBlocked, remainingTime]);
+
+  const recordAttempt = () => {
+    const newAttempts = attempts + 1;
+    setAttempts(newAttempts);
+
+    if (newAttempts >= maxAttempts) {
+      setIsBlocked(true);
+      setRemainingTime(windowMs);
+    }
+  };
+
+  const reset = () => {
+    setAttempts(0);
+    setIsBlocked(false);
+    setRemainingTime(0);
+  };
+
+  return { isBlocked, remainingTime, recordAttempt, reset, attempts };
+};
+----
+
+**Usage :**
+
+[source,typescript]
+----
+// components/LoginForm.tsx
+const { isBlocked, remainingTime, recordAttempt, reset } = useRateLimit(3, 60000);
+
+const onSubmit = async (data) => {
+  if (isBlocked) return;
+
+  try {
+    await api.post('/users/login', data);
+    reset(); // Succès → reset compteur
+  } catch (error) {
+    recordAttempt(); // Échec → increment
+  }
+};
+
+return (
+  <>
+    <button disabled={isBlocked}>
+      {isBlocked ? `Retry in ${remainingTime / 1000}s` : 'Login'}
+    </button>
+  </>
+);
+----
+
+**Statut :** [ ] Hook créé [ ] Intégré formulaire
+
+---
+
+=== 9. DOMPurify Sanitization (Affichage User Content)
+
+**Fichier :** `components/ReviewCard.tsx` (exemple)
+
+**Problème :** Si tu affiches du contenu user avec `dangerouslySetInnerHTML`.
+
+**Solution :**
+
+[source,typescript]
+----
+// Installation
+npm install isomorphic-dompurify
+
+// components/ReviewCard.tsx
+import DOMPurify from 'isomorphic-dompurify';
+
+export default function ReviewCard({ review }) {
+  const sanitizedContent = DOMPurify.sanitize(review.content, {
+    ALLOWED_TAGS: ['b', 'i', 'em', 'strong', 'p', 'br'],
+    ALLOWED_ATTR: []
+  });
+
+  return (
+    <div dangerouslySetInnerHTML={{ __html: sanitizedContent }} />
+  );
+}
+----
+
+**NOTE :** Seulement si tu utilises `dangerouslySetInnerHTML`. Si tu affiches du texte brut (`{review.content}`), pas nécessaire.
+
+**Statut :** [ ] Nécessaire ? [ ] Implémenté si oui
+
+---
+
+== 📦 Dépendances NPM
+
+[source,bash]
+----
+# Obligatoires
+npm install axios
+npm install next
+
+# Validation (P2)
+npm install zod
+npm install react-hook-form @hookform/resolvers
+
+# Sanitization (P3 - optionnel)
+npm install isomorphic-dompurify
+----
+
+== 📂 Structure Fichiers Frontend
+
+[source,plaintext]
+----
+frontend/
+├── .env.local                    # ✅ Variables dev (Git ignored)
+├── .env.production               # ✅ Variables prod (Git ignored)
+├── .gitignore                    # ✅ Ignorer .env*
+├── next.config.js                # ✅ CSP Headers
+├── middleware.ts                 # ✅ Protection routes
+├── lib/
+│   ├── axios.ts                  # ✅ Axios config + interceptors
+│   └── csrf.ts                   # 🟡 CSRF token helper
+├── schemas/
+│   └── authSchema.ts             # 🟡 Validation Zod
+├── hooks/
+│   └── useRateLimit.ts           # ⚪ Rate limit visuel
+└── components/
+    └── LoginForm.tsx             # Usage React Hook Form
+----
+
+== 🧪 Tests Sécurité Frontend
+
+=== Test 1: Cookies envoyés avec `withCredentials`
+
+[source,bash]
+----
+# DevTools → Network → Sélectionner requête API
+# Request Headers → Doit contenir:
+Cookie: access_token=eyJhbGc...
+----
+
+**Résultat attendu :** ✅ Cookie présent
+
+---
+
+=== Test 2: CSP Headers actifs
+
+[source,bash]
+----
+# DevTools → Network → Sélectionner page HTML
+# Response Headers → Doit contenir:
+Content-Security-Policy: default-src 'self'; ...
+X-Frame-Options: SAMEORIGIN
+X-Content-Type-Options: nosniff
+----
+
+**Résultat attendu :** ✅ Tous les headers présents
+
+---
+
+=== Test 3: Protection routes middleware
+
+[source,bash]
+----
+# Supprimer cookie access_token dans DevTools
+# Naviguer vers: http://localhost:3001/dashboard
+# Résultat: Redirect vers /login
+
+# Se login
+# Naviguer vers: http://localhost:3001/login
+# Résultat: Redirect vers /dashboard
+----
+
+**Résultat attendu :** ✅ Redirects fonctionnent
+
+---
+
+=== Test 4: Gestion 401 (Token expiré)
+
+[source,bash]
+----
+# Modifier cookie access_token → valeur invalide
+# Faire une requête API (ex: GET /api/users/me)
+# Résultat: Redirect automatique vers /login
+----
+
+**Résultat attendu :** ✅ Redirect automatique
+
+---
+
+== 📊 Checklist Finale
+
+=== 🔴 P0 - Critique (BLOQUANT)
+- [ ] Axios `withCredentials: true` implémenté
+- [ ] `.env.local` avec `NEXT_PUBLIC_API_URL` créé
+- [ ] `.env.production` avec `NEXT_PUBLIC_API_URL` créé
+- [ ] `.env*` dans `.gitignore`
+- [ ] Testé: Cookie envoyé dans requêtes (DevTools)
+
+=== 🟠 P1 - Important
+- [ ] `next.config.js` avec CSP Headers
+- [ ] `middleware.ts` protection routes protégées
+- [ ] Gestion erreurs 401 dans Axios interceptor
+- [ ] Testé: Headers CSP (DevTools)
+- [ ] Testé: Redirects middleware
+
+=== 🟡 P2 - Recommandé
+- [ ] Schemas Zod validation client (`schemas/authSchema.ts`)
+- [ ] React Hook Form intégré
+- [ ] CSRF token interceptor (`lib/csrf.ts`)
+- [ ] Testé: Validation formulaire
+
+=== ⚪ P3 - Optionnel
+- [ ] Hook `useRateLimit` (rate limiting visuel)
+- [ ] DOMPurify (si `dangerouslySetInnerHTML` utilisé)
+
+=== 📦 Installation
+- [ ] `npm install axios zod react-hook-form @hookform/resolvers`
+- [ ] `npm install isomorphic-dompurify` (si P3)
+
+== 🎯 Estimation Temps
+
+[cols="2,1,1"]
+|===
+|Phase |Temps |Cumulé
+
+|P0 (Critique)
+|15 min
+|15 min
+
+|P1 (Important)
+|45 min
+|1h
+
+|P2 (Recommandé)
+|45 min
+|1h45
+
+|P3 (Optionnel)
+|30 min
+|2h15
+
+|Tests
+|15 min
+|2h30
+|===
+
+**Total estimé :** 2h30 pour sécurité frontend complète
+
+== 🔗 Ressources
+
+=== Documentation
+* Next.js Security: https://nextjs.org/docs/app/building-your-application/configuring/content-security-policy
+* OWASP Cheat Sheet: https://cheatsheetseries.owasp.org/cheatsheets/Nodejs_Security_Cheat_Sheet.html
+* CSP Generator: https://report-uri.com/home/generate
+
+=== Outils Test
+* Security Headers Test: https://securityheaders.com/
+* CSP Evaluator: https://csp-evaluator.withgoogle.com/
+
+---
+
+_Document créé: {docdate}_
+_Version: 1.0_
+_Projet: BlaBlaBook V2_

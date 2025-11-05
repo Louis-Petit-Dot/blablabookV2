@@ -1,0 +1,411 @@
+= Rédaction Avis avec Spoiler + Visibilité
+:toc:
+:toc-title: Sommaire
+:sectnums:
+:icons: font
+
+== Vue d'ensemble
+
+Diagramme d'activité pour la rédaction d'avis sur les livres avec gestion des spoilers et contrôle de visibilité dans BlaBlaBook V2.
+
+**NOTE:** Ce diagramme est synchronisé avec le code backend actuel (reviewController, reviewService, modèle REVIEW).
+
+== Flux Rédaction Avis
+
+[plantuml, redaction-avis, png]
+----
+@startuml
+start
+
+:Utilisateur connecté sélectionne livre;
+
+if (A déjà rédigé avis pour ce livre ?) then (oui)
+  :Afficher avis existant;
+  :Proposer modifier ou supprimer;
+  note right: Contrainte unique (id_user, id_book)\nUn seul avis par user+livre
+
+  if (Action choisie ?) then (modifier)
+    :Charger contenu avis existant;
+    :Pré-remplir formulaire;
+  else (supprimer)
+    :Confirmation suppression;
+    :Supprimer avis + données associées;
+    :Message "Review deleted successfully";
+    stop
+  endif
+
+else (non)
+  :Nouveau formulaire avis;
+endif
+
+:Formulaire rédaction avis;
+:Saisir title (max 50 caractères);
+:Rédiger comment (texte);
+
+if (Contenu contient spoiler ?) then (oui)
+  :Cocher case "is_spoiler = true";
+  :Avertissement spoiler ajouté;
+  note right: Masquage automatique pour autres utilisateurs
+
+else (non)
+  :Avis sans spoiler (is_spoiler = false);
+endif
+
+if (Souhaite avis public ?) then (oui)
+  :Cocher case "is_public = true";
+  :Avis visible par tous;
+
+else (non)
+  :Avis privé (is_public = false);
+  :Visible uniquement par l'auteur;
+  note right: Pas d'anonymat explicite\nis_public contrôle la visibilité
+endif
+
+:Prévisualiser avis avant publication;
+
+if (Validation avis ?) then (confirmer)
+
+  :Sauvegarder en base de données;
+  :Créer/Modifier entrée REVIEW;
+  :Lier à BOOK et USER;
+  :published_at = NOW();
+  :created_at / updated_at mis à jour;
+
+  :Message "Review created/updated successfully";
+
+else (annuler)
+  :Formulaire fermé sans sauvegarde;
+  note right: Pas de brouillon local persisté\nDans la version actuelle
+endif
+
+stop
+@enduml
+----
+
+== Scénarios Utilisateur
+
+=== Scénario nominal - Création avis
+
+**Acteur :** Utilisateur connecté ayant lu un livre
+**Objectif :** Publier un avis sur le livre
+
+[cols="1,3"]
+|===
+|Étape |Action
+
+|1 |Utilisateur sélectionne livre
+|2 |Système vérifie si avis existe déjà (contrainte unique)
+|3 |Affichage formulaire vierge
+|4 |Saisie title (max 50 caractères, requis)
+|5 |Rédaction comment (texte, optionnel)
+|6 |Choix is_spoiler (boolean, default false)
+|7 |Choix is_public (boolean, default false)
+|8 |Prévisualisation avis
+|9 |Confirmation publication
+|10 |Création REVIEW avec created_at, updated_at, published_at
+|11 |Message "Review created successfully"
+|===
+
+**Résultat :** Avis publié, visible selon is_public.
+
+=== Scénario nominal - Modification avis
+
+**Acteur :** Auteur d'un avis existant
+**Objectif :** Modifier son avis
+
+[cols="1,3"]
+|===
+|Étape |Action
+
+|1 |Utilisateur sélectionne livre avec avis existant
+|2 |Système charge avis via (id_user, id_book)
+|3 |Pré-remplissage formulaire avec données existantes
+|4 |Modifications title, comment, is_spoiler, is_public
+|5 |Confirmation modification
+|6 |UPDATE REVIEW avec updated_at = NOW()
+|7 |Message "Review updated successfully"
+|===
+
+**Résultat :** Avis modifié, updated_at mis à jour.
+
+=== Scénario nominal - Suppression avis
+
+**Acteur :** Auteur d'un avis
+**Objectif :** Supprimer son avis
+
+[cols="1,3"]
+|===
+|Étape |Action
+
+|1 |Utilisateur accède à son avis
+|2 |Clic "Supprimer avis"
+|3 |Confirmation suppression
+|4 |DELETE FROM REVIEW WHERE id_review = ...
+|5 |Message "Review deleted successfully"
+|===
+
+**Résultat :** Avis supprimé définitivement.
+
+=== Scénario alternatif - Avis déjà existant
+
+**Déclencheur :** Tentative création second avis sur même livre
+
+[cols="1,3"]
+|===
+|Étape |Action
+
+|1-2 |Sélection livre, tentative création
+|3 |Système détecte contrainte unique (id_user, id_book)
+|4 |Affichage avis existant au lieu de formulaire vierge
+|5 |Proposition modification ou suppression
+|===
+
+**Résultat :** Pas de duplication, redirection vers avis existant.
+
+=== Scénario d'exception - Avis privé avec spoiler
+
+**Déclencheur :** Création avis privé avec spoiler
+
+[cols="1,3"]
+|===
+|Étape |Action
+
+|1-6 |Création avis avec is_public = false, is_spoiler = true
+|7 |Système accepte (pas de contrainte conflictuelle)
+|8 |Avis créé, visible uniquement par auteur
+|9 |Spoiler masqué même pour l'auteur en mode affichage
+|===
+
+**Résultat :** Avis privé avec spoiler, cohérence métier.
+
+== Modèle de données
+
+=== Table REVIEW
+
+```typescript
+{
+  id_review: uuid (PK),
+  id_user: uuid (FK → USER, cascade delete),
+  id_book: uuid (FK → BOOK, restrict delete),
+  title: varchar(50) NOT NULL,
+  comment: text,
+  is_public: boolean NOT NULL DEFAULT false,
+  is_spoiler: boolean NOT NULL DEFAULT false,
+  created_at: timestamp NOT NULL,
+  updated_at: timestamp NOT NULL,
+  published_at: timestamp,
+
+  CONSTRAINT unique_user_book: UNIQUE (id_user, id_book)
+}
+```
+
+**Contraintes :**
+- **Unique (id_user, id_book)** : Un seul avis par user+livre
+- **CASCADE DELETE user** : Suppression avis si user supprimé
+- **RESTRICT DELETE book** : Impossible supprimer livre avec avis
+
+**Pas de champs :**
+- ❌ `is_anonymous` (non implémenté, c'est is_public qui gère)
+- ❌ `draft` (pas de brouillon persisté)
+
+=== Champs détaillés
+
+**title :**
+- Varchar(50) NOT NULL
+- Titre court de l'avis
+- Requis pour création
+
+**comment :**
+- Type `text` (illimité)
+- Optionnel
+- Corps de l'avis
+
+**is_public :**
+- Boolean NOT NULL DEFAULT false
+- `true` : Avis visible par tous
+- `false` : Avis visible uniquement par l'auteur
+- **Remplace le concept d'anonymat**
+
+**is_spoiler :**
+- Boolean NOT NULL DEFAULT false
+- `true` : Contenu masqué avec avertissement
+- `false` : Contenu affiché normalement
+- Indépendant de is_public
+
+**published_at :**
+- Timestamp
+- Rempli lors de la création/publication
+- Permet tracking moment publication
+
+== Gestion des spoilers
+
+=== Affichage frontend
+
+**Avis avec is_spoiler = true :**
+- Contenu (comment) masqué par défaut
+- Affichage avertissement "⚠️ Cet avis contient des spoilers"
+- Bouton "Afficher les spoilers" pour révéler
+- Masquage automatique pour protection lecteurs
+
+**Avis avec is_spoiler = false :**
+- Affichage normal du contenu
+- Pas de masquage
+
+=== Logique de masquage
+
+```typescript
+if (review.is_spoiler) {
+  // Masquer comment
+  // Afficher avertissement
+  // Fournir bouton révélation
+} else {
+  // Afficher comment normalement
+}
+```
+
+**Note :** Le masquage est géré côté frontend, pas côté backend.
+
+== Contrôle de visibilité
+
+=== Avis publics (is_public = true)
+
+**Visible par :**
+- Tous les utilisateurs (connectés ou non)
+- L'auteur de l'avis
+
+**Règles :**
+- Affiché sur page détails du livre
+- Inclus dans statistiques publiques
+- Spoilers masqués si is_spoiler = true
+
+=== Avis privés (is_public = false)
+
+**Visible par :**
+- L'auteur de l'avis uniquement
+
+**Règles :**
+- Non affiché sur page détails publique
+- Exclu des statistiques publiques
+- Visible uniquement dans espace personnel
+
+=== Permissions modification/suppression
+
+**Autorisé si :**
+- Auteur de l'avis (`id_user = current_user`)
+
+**Interdit :**
+- Modification/suppression avis d'autrui
+- Même admin ne peut modifier (RGPD)
+
+== Messages utilisateur
+
+=== Succès
+- "Review created successfully"
+- "Review updated successfully"
+- "Review deleted successfully"
+
+=== Erreurs métier
+- "You have already reviewed this book" (contrainte unique)
+- "Title is required" (validation)
+- "Title cannot exceed 50 characters"
+- "You can only modify your own reviews"
+
+=== Erreurs techniques
+- "Book not found"
+- "Review not found"
+- "User not authenticated"
+
+== Différences avec le design initial
+
+**Fonctionnalités RETIRÉES :**
+- ❌ Anonymat explicite (champ `is_anonymous`)
+- ❌ Brouillon sauvegardé localement (pas de persistence)
+- ❌ Partage sur réseaux sociaux (non implémenté backend)
+- ❌ Recalcul moyenne livre automatique (non implémenté)
+- ❌ Distinction "Notice" vs "Review" (table unique REVIEW)
+
+**Fonctionnalités RÉELLES :**
+- ✅ is_public contrôle la visibilité (public/privé)
+- ✅ is_spoiler contrôle le masquage contenu
+- ✅ Contrainte unique (id_user, id_book) : un avis par livre
+- ✅ CASCADE DELETE user (suppression avis avec user)
+- ✅ RESTRICT DELETE book (protection livre avec avis)
+- ✅ published_at tracking moment publication
+- ✅ updated_at tracking dernière modification
+
+**Architecture :**
+- Pas de table RATE séparée (gestion notes à part)
+- Pas de moyenne automatique sur BOOK
+- Pas de cache avis (seulement user roles/permissions)
+
+== Règles métier
+
+=== Validation création
+
+**title :**
+- Requis
+- Max 50 caractères
+- Trim espaces
+
+**comment :**
+- Optionnel
+- Type text (illimité)
+- Peut contenir markdown (si implémenté frontend)
+
+**is_spoiler :**
+- Boolean, default false
+- Indépendant de is_public
+
+**is_public :**
+- Boolean, default false
+- Privé par défaut (protection vie privée)
+
+=== Contraintes unicité
+
+**Contrainte (id_user, id_book) :**
+- Un utilisateur ne peut créer qu'un seul avis par livre
+- Modification autorisée sur avis existant
+- Erreur si tentative création doublon
+
+=== Cascade behaviors
+
+**Suppression USER :**
+- CASCADE DELETE : Tous ses avis supprimés automatiquement
+- Cohérent avec RGPD (droit à l'oubli)
+
+**Suppression BOOK :**
+- RESTRICT DELETE : Impossible si avis existants
+- Protection données utilisateurs
+- Nécessite suppression manuelle avis d'abord
+
+== Points d'attention UX
+
+**Formulaire simple :**
+- Title court (50 caractères) pour résumé
+- Comment long pour détails
+- Checkboxes is_spoiler et is_public claires
+
+**Visibilité par défaut privée :**
+- Protection vie privée
+- Utilisateur doit explicitement rendre public
+- Conforme RGPD
+
+**Gestion spoilers transparente :**
+- Avertissement visible
+- Masquage automatique côté frontend
+- Révélation sur demande utilisateur
+
+**Modification/suppression faciles :**
+- Accès direct depuis page livre
+- Pré-remplissage formulaire modification
+- Confirmation suppression
+
+**Évolution future possible :**
+- Ajout notes (1-5 étoiles) dans REVIEW
+- Brouillon persisté en BDD
+- Export avis (PDF, JSON)
+- Partage réseaux sociaux
+- Système de likes/réactions
+- Modération admin pour avis publics
+- Mise en avant "Avis vérifiés"
+- Statistiques personnelles (nombre avis, livres notés)

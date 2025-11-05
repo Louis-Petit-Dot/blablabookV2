@@ -1,0 +1,305 @@
+= BookReadingListService Workflow Documentation
+:doctype: article
+:toc: left
+:toclevels: 3
+:sectlinks:
+:sectanchors:
+:source-highlighter: highlight.js
+
+== Vue d'ensemble
+
+Le `bookReadingListService` gère l'ajout et la suppression de livres dans les listes de lecture personnelles des utilisateurs. Il intègre un système de permissions sophistiqué basé sur la propriété et la visibilité des listes, avec contrôle d'accès rigoureux.
+
+== Architecture des permissions
+
+=== Concept de contrôle d'accès
+
+Le service applique des règles d'accès strictes :
+
+* **Propriétaire** : Accès complet (lecture/écriture)
+* **Liste publique** : Accès lecture pour tous les utilisateurs
+* **Liste privée** : Accès exclusif au propriétaire
+* **Validation préalable** : Toutes les opérations requièrent validation d'accès
+
+=== Règles de modification
+
+* **Écriture** : Seul le propriétaire peut modifier (ajouter/supprimer)
+* **Lecture** : Propriétaire + utilisateurs pour les listes publiques
+* **Validation** : EntityValidator contrôle tous les accès
+
+== Méthodes du service
+
+=== getListBooks(listId: string, userId: string)
+
+**But :** Récupère tous les livres d'une liste de lecture avec contrôle d'accès.
+
+**Workflow :**
+```
+1. Validation liste (EntityValidator.validateReadingList)
+2. Vérification accès lecture (EntityValidator.validateReadingListAccess)
+3. JOIN BookReadingList + Book
+4. Tri par date d'ajout (created_at)
+5. Retour : liste + livres avec métadonnées d'ajout
+```
+
+**Données retournées :**
+```typescript
+{
+  reading_list: {
+    id_list, list_name, description,
+    is_public, is_system, id_user
+  },
+  books: [
+    {
+      id_book, title, isbn,
+      created_at // Date d'ajout à la liste
+    }
+  ]
+}
+```
+
+**Contrôle d'accès :**
+- Propriétaire → Accès garanti
+- Liste publique → Accès autorisé
+- Liste privée d'autrui → Accès refusé
+
+=== addBookToList(data: {id_book, id_list, user_id})
+
+**But :** Ajoute un livre à une liste de lecture spécifique.
+
+**Workflow :**
+```
+1. Validation livre (EntityValidator.validateBook)
+2. Validation liste (EntityValidator.validateReadingList)
+3. Vérification accès en écriture (requireWrite: true)
+4. Contrôle doublon : livre déjà dans la liste ?
+5. Création association BookReadingList
+6. Retour : association + livre + liste
+```
+
+**Contrôles appliqués :**
+- Livre existe et accessible
+- Liste appartient à l'utilisateur
+- Pas de doublon dans la liste
+- Droits d'écriture confirmés
+
+**Protection contre les doublons :**
+```sql
+SELECT * FROM BookReadingList
+WHERE id_book = ? AND id_list = ?
+LIMIT 1
+```
+
+=== removeBookFromList(data: {id_book, id_list, user_id})
+
+**But :** Supprime un livre d'une liste de lecture.
+
+**Workflow :**
+```
+1. Validation livre (EntityValidator.validateBook)
+2. Validation liste (EntityValidator.validateReadingList)
+3. Vérification accès en écriture
+4. Contrôle existence : livre présent dans la liste ?
+5. Suppression association (DELETE hard)
+6. Retour association supprimée
+```
+
+**Contrôles de sécurité :**
+- Seul le propriétaire peut supprimer
+- Vérification préalable de l'existence
+- Suppression physique (hard delete)
+
+## Cas d'usage typiques
+
+=== Ajout d'un livre à une liste personnelle
+
+```typescript
+// Utilisateur ajoute livre à sa liste "À lire"
+await bookReadingListService.addBookToList({
+  id_book: "uuid-dune",
+  id_list: "uuid-liste-a-lire",
+  user_id: "uuid-user"
+});
+```
+
+**Vérifications automatiques :**
+- Le livre "Dune" existe
+- La liste "À lire" appartient à l'utilisateur
+- "Dune" n'est pas déjà dans cette liste
+
+=== Consultation d'une liste publique
+
+```typescript
+// Consultation d'une liste publique partagée
+const result = await bookReadingListService.getListBooks(
+  "uuid-liste-publique",
+  "uuid-autre-user"
+);
+
+// Accès autorisé si :
+// - Liste marquée is_public = true
+// - OU utilisateur = propriétaire
+```
+
+=== Suppression d'un livre d'une liste
+
+```typescript
+// Propriétaire retire un livre de sa liste
+await bookReadingListService.removeBookFromList({
+  id_book: "uuid-livre-lu",
+  id_list: "uuid-ma-liste",
+  user_id: "uuid-proprietaire"
+});
+```
+
+== Intégrations avec autres services
+
+=== Avec EntityValidator
+
+```typescript
+// Validations systématiques
+const book = await EntityValidator.validateBook(id_book);
+const readingList = await EntityValidator.validateReadingList(id_list);
+EntityValidator.validateReadingListAccess(readingList, user_id, true); // requireWrite
+```
+
+**Types de validation :**
+- Existence des entités (livre, liste)
+- Contrôle d'accès (lecture/écriture)
+- Vérification de propriété
+
+=== Avec BookLibraryService
+
+```typescript
+// Via addBookWithOptionalLists()
+for (const listId of reading_list_ids) {
+  try {
+    await bookReadingListService.addBookToList({
+      id_book, id_list: listId, user_id
+    });
+    addedToLists.push(result);
+  } catch (error) {
+    console.error(`Failed to add book to list ${listId}:`, error);
+    // Continue avec les autres listes
+  }
+}
+```
+
+**Stratégie de résilience :**
+- Échecs individuels n'interrompent pas le processus global
+- Logging des erreurs pour diagnostic
+- Retour des succès partiels
+
+== Gestion des erreurs
+
+=== Erreurs d'entités
+
+- `"Book not found."` - Livre inexistant
+- `"Reading list not found."` - Liste inexistante ou supprimée
+- `"User not found."` - Utilisateur invalide
+
+=== Erreurs d'accès
+
+- `"Access denied to this reading list."` - Liste inaccessible (privée)
+- `"You need write access to this reading list."` - Pas propriétaire
+- `"Only the owner can modify this reading list."` - Droits insuffisants
+
+=== Erreurs de logique métier
+
+- `"A book with this reading list already exists."` - Doublon détecté
+- `"Book not found in this reading list."` - Suppression impossible
+
+=== Patterns de gestion
+
+```typescript
+// Validation précoce
+const book = await EntityValidator.validateBook(id_book);
+const readingList = await EntityValidator.validateReadingList(id_list);
+
+// Contrôle d'accès strict
+EntityValidator.validateReadingListAccess(readingList, user_id, requireWrite);
+
+// Vérification métier spécifique
+if (existingAssociation.length > 0) {
+  throw new Error('A book with this reading list already exists.');
+}
+```
+
+== Optimisations et bonnes pratiques
+
+=== Performance
+
+- **Validation précoce** : EntityValidator avant opérations coûteuses
+- **Requêtes optimisées** : SELECT explicites avec conditions précises
+- **Tri au niveau base** : ORDER BY created_at pour l'historique d'ajout
+- **LIMIT pour vérifications** : LIMIT 1 pour les contrôles d'existence
+
+=== Sécurité
+
+- **Contrôle d'accès systématique** : Validation pour chaque opération
+- **Validation des entrées** : Toutes les données contrôlées avant traitement
+- **Principes du moindre privilège** : Accès limité selon les droits utilisateur
+- **Audit trail** : Dates d'ajout conservées pour traçabilité
+
+=== Maintenabilité
+
+- **Séparation des responsabilités** :
+  - Service → Logique métier des associations
+  - EntityValidator → Contrôles d'accès et validation
+  - Models → Structure de données
+- **Messages d'erreur explicites** : Diagnostic facilité
+- **Patterns cohérents** : Validation → Contrôle → Action → Retour
+
+=== Exemple de flux d'erreur géré
+
+```typescript
+// Dans bookLibraryService.addBookWithOptionalLists()
+for (const listId of reading_list_ids || []) {
+  try {
+    const listResult = await bookReadingListService.addBookToList({
+      id_book, id_list: listId, user_id
+    });
+    addedToLists.push(listResult);
+  } catch (error) {
+    // Log mais ne fail pas le processus principal
+    console.error(`Failed to add book to list ${listId}:`, error);
+    // L'ajout à la bibliothèque principale continue
+  }
+}
+```
+
+**Justification :** Permet l'ajout principal à la bibliothèque même si certaines listes échouent, maximisant la réussite de l'opération utilisateur.
+
+== Diagramme de flux - Gestion des permissions
+
+[mermaid]
+----
+flowchart TD
+    A[Demande d'accès à une liste] --> B{Liste existe ?}
+    B -->|Non| C[Erreur: Reading list not found]
+    B -->|Oui| D{User = Propriétaire ?}
+    D -->|Oui| E[Accès total autorisé]
+    D -->|Non| F{Liste publique ?}
+    F -->|Oui| G{Accès lecture ou écriture ?}
+    F -->|Non| H[Erreur: Access denied]
+    G -->|Lecture| I[Accès lecture autorisé]
+    G -->|Écriture| J[Erreur: Write access denied]
+
+    E --> K[Opération réalisée]
+    I --> L{Opération = lecture ?}
+    L -->|Oui| K
+    L -->|Non| M[Erreur: Need write access]
+----
+
+== Résumé
+
+Le service bookReadingListService est le **gestionnaire d'associations livre-liste** de l'API BlaBlaBook V2. Il gère **3 opérations principales** avec :
+
+- **Contrôle d'accès rigoureux** : Validation systématique des permissions lecture/écriture
+- **Gestion des doublons** : Prévention des associations multiples livre-liste
+- **Intégration EntityValidator** : Validation cohérente avec le système global
+- **Suppression physique** : Hard delete des associations pour simplicité
+- **Tri chronologique** : Historique d'ajout via created_at
+- **Patterns de résilience** : Gestion gracieuse des échecs dans les workflows complexes
+
+**Il assure l'organisation personnalisée et sécurisée des livres en listes de lecture.**

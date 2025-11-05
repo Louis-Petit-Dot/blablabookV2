@@ -1,0 +1,303 @@
+= Service Images - BlaBlaBook V2
+:toc:
+:toc-title: Sommaire
+:sectnums:
+:icons: font
+:version: 2.0
+:date: {docdate}
+
+// Navigation inter-documents
+link:../README.adoc[📚 Documentation Hub] |
+link:../project/CONCEPTION-BLABLABOOKV2.adoc[🏗️ Architecture] |
+link:../database/BBBV2.sql[🗄️ Database Schema] |
+link:../database/dictionnaire-donnees.adoc[📋 Data Dictionary]
+
+---
+
+== Contexte et enjeux
+
+BlaBlaBook V2 nécessite la gestion de deux types d'images principales :
+
+* **Couvertures de livres** : Récupérées depuis OpenLibrary API
+* **Avatars utilisateurs** : Upload par les utilisateurs
+
+Le choix du service d'images impacte directement :
+
+* Les **performances** de l'application
+* La **scalabilité** technique
+* Le **budget** du projet
+* La **complexité** de développement
+
+== Comparaison des solutions
+
+=== Solution locale (Sharp + Multer)
+
+==== Avantages
+* **Contrôle total** du pipeline d'images
+* **Coût fixe** : Uniquement le stockage serveur
+* **Confidentialité** : Données internes
+* **Performance locale** : Pas de latence réseau pour le traitement
+* **Customisation** : Logic métier spécifique possible
+
+==== Inconvénients
+* **Complexité technique** : Configuration Sharp.js, formats multiples, cache
+* **Maintenance continue** : Monitoring, backup, mises à jour
+* **Scalabilité manuelle** : Provisioning serveur nécessaire
+* **Pas de CDN intégré** : Performance mondiale limitée
+* **Temps de développement** : Focus détourné des features métier
+* **Gestion des formats** : WebP, AVIF, compression optimale
+* **Backup et réplication** : Infrastructure supplémentaire
+
+=== Solution externe (Cloudinary)
+
+==== Avantages
+* **Zero maintenance** : Infrastructure gérée automatiquement
+* **CDN global intégré** : Livraison ultra-rapide mondiale
+* **Transformations automatiques** : Formats modernes (WebP, AVIF)
+* **Optimisation intelligente** : Compression adaptative
+* **Backup inclus** : Réplication automatique multi-zone
+* **APIs complètes** : Upload, manipulation, recherche
+* **Scalabilité infinie** : Pas de limite technique
+* **Support professionnel** : Documentation, forums, tickets
+
+==== Inconvénients
+* **Dépendance externe** : Panne potentielle du service
+* **Vendor lock-in partiel** : Migration nécessaire si changement
+* **Coût récurrent** : Au-delà du plan gratuit
+
+== Analyse technique pour BlaBlaBook
+
+=== Volumétrie réaliste
+
+Contrairement à un service d'images généraliste, BlaBlaBook a une particularité importante :
+
+[IMPORTANT]
+====
+**Stockage intelligent** : Seuls les livres ajoutés en bibliothèque, notés ou commentés sont persistés en base. Pas de pré-chargement massif d'OpenLibrary.
+====
+
+**Calculs réalistes :**
+[cols="2,3,2"]
+|===
+|**Métrique** |**Estimation** |**Justification**
+
+|Utilisateurs cibles
+|1000-5000 users actifs
+|Phase validation + croissance initiale
+
+|Livres par utilisateur
+|50-100 livres en bibliothèque
+|Données moyennes lecteurs actifs
+
+|Livres uniques total
+|10-20k livres
+|Beaucoup de doublons entre utilisateurs
+
+|Taille couverture optimisée
+|20-60KB (WebP)
+|256x256 à 800x600 compressé
+
+|**Stockage total nécessaire**
+|**1.2GB maximum**
+|20k livres × 60KB
+|===
+
+=== Plan gratuit Cloudinary - Analyse détaillée
+
+**Limites du plan gratuit (permanent) :**
+* **25 crédits mensuels** (1 crédit = 1GB stockage OU 1GB bande passante OU 1000 transformations)
+* **3 utilisateurs** par compte
+* **CDN haute performance inclus**
+* **Transformations illimitées** en types
+* **Support communautaire**
+
+**Répartition optimale pour BlaBlaBook :**
+[source]
+----
+20GB stockage (20 crédits) = 333k couvertures possibles
+5GB bande passante (5 crédits) = ~10k vues/mois
+Transformations incluses dans les crédits
+----
+
+**Capacité réelle :**
+* **Stockage utilisé** : 1.2GB sur 20GB disponibles
+* **Marge de croissance** : 18.8GB restants
+* **Années d'autonomie** : 5-10 ans dans le plan gratuit
+
+== Décision technique justifiée
+
+=== Choix retenu : Cloudinary (Plan gratuit)
+
+**Justifications techniques :**
+
+1. **Adéquation parfaite** : Les besoins BlaBlaBook correspondent exactement aux limites généreuses du plan gratuit
+
+2. **CDN inclus** : Valeur ajoutée énorme pour la performance mondiale sans coût supplémentaire
+
+3. **Focus métier** : Permet de concentrer le développement sur les fonctionnalités BlaBlaBook plutôt que sur l'infrastructure d'images
+
+4. **Optimisations automatiques** : WebP, compression intelligente, responsive images sans configuration
+
+5. **Scalabilité progressive** : Migration possible vers un plan payant ou service local quand nécessaire
+
+**Éléments déterminants :**
+
+[cols="2,3"]
+|===
+|**Critère** |**Cloudinary**
+
+|Coût initial
+|✅ 0€ (plan gratuit permanent)
+
+|Complexité développement
+|✅ Très faible (APIs simples)
+
+|Performance
+|✅ CDN mondial inclus
+
+|Maintenance
+|✅ Zero maintenance
+
+|Capacité
+|✅ Largement suffisant (20GB vs 1.2GB nécessaire)
+
+|Backup/Sécurité
+|✅ Professionnel inclus
+|===
+
+=== Architecture technique retenue
+
+[source,mermaid]
+----
+graph TB
+    A[User Upload Avatar] --> B[Deno/Hono API]
+    C[OpenLibrary Cover] --> B
+    B --> D[Cloudinary Upload API]
+    D --> E[Cloudinary Storage + CDN]
+    E --> F[Client Apps]
+
+    G[Database] --> H[URL References Only]
+    H --> I[Cloudinary URLs]
+----
+
+**Flux d'images optimisé :**
+
+1. **Upload avatar** : Client → API Deno → Cloudinary → CDN
+2. **Livre temporaire** : OpenLibrary URL directe → Client (resize CSS)
+3. **Livre confirmé** : Upload Cloudinary → CDN optimisé
+4. **Affichage uniforme** : CSS resize pour toutes les sources
+5. **Storage DB** : URLs mixtes selon statut livre (temporary vs confirmed)
+
+==== Gestion éco-responsable des images temporaires
+
+**Problématique :** Éviter le gaspillage de ressources pour les livres temporaires (supprimés après 72h).
+
+**Solution retenue :** Lazy upload avec resize CSS intelligent
+
+[cols="2,3,2"]
+|===
+|**Type de livre** |**Source image** |**Traitement**
+
+|**Temporaire** (is_temporary = true)
+|OpenLibrary URL directe (taille L)
+|Resize CSS côté client
+
+|**Confirmé** (is_temporary = false)
+|Cloudinary CDN optimisé
+|Transformations automatiques
+|===
+
+==== Tailles OpenLibrary et stratégie resize
+
+**Tailles disponibles OpenLibrary :**
+* **S (Small)** : ~110×110px
+* **M (Medium)** : ~160×160px
+* **L (Large)** : ~500×500px
+
+**Choix technique :** Toujours utiliser la **taille L** pour éviter la pixellisation
+
+[IMPORTANT]
+====
+**Règle d'or resize :** Toujours réduire depuis une image plus grande plutôt que d'agrandir une petite image.
+
+* ✅ **Correct** : 500px → 256px (qualité préservée)
+* ❌ **Incorrect** : 110px → 256px (pixellisation)
+====
+
+**Implémentation :**
+[source,typescript]
+----
+// Toujours récupérer la taille L d'OpenLibrary
+const coverUrl = `https://covers.openlibrary.org/b/isbn/${isbn}-L.jpg`
+----
+
+[source,css]
+----
+/* Toutes les tailles depuis L (500px source) */
+.book-cover-small {
+  width: 128px;  /* 500px → 128px */
+  height: 128px;
+  object-fit: cover;
+}
+
+.book-cover-medium {
+  width: 256px;  /* 500px → 256px */
+  height: 256px;
+  object-fit: cover;
+}
+
+.book-cover-large {
+  width: 400px;  /* 500px → 400px */
+  height: 400px;
+  object-fit: cover;
+}
+----
+
+**Avantages de cette approche :**
+
+* ✅ **Qualité optimale** : Pas de pixellisation par agrandissement
+* ✅ **Simplicité** : Une seule source (taille L) pour tous les formats
+* ✅ **Flexibilité** : Adaptation responsive sans perte de qualité
+* ✅ **Performance** : CSS resize très rapide côté navigateur
+* ✅ **Éco-conception** : Pas d'upload inutile pour les livres temporaires
+* ✅ **Budget préservé** : Économie des crédits Cloudinary gratuits
+
+=== Migration future
+
+**Stratégie de sortie** (si nécessaire) :
+
+1. **Backup préventif** : Export périodique des images via Cloudinary API
+2. **URLs abstraites** : Interface dans le code pour changer de provider
+3. **Migration progressive** : Par batch d'images
+4. **Hybride possible** : Cloudinary + stockage local selon les besoins
+
+== Alternatives écartées
+
+=== Sharp + Multer (Solution locale)
+
+**Raisons du rejet :**
+* **Surcoût développement** : 2-3 semaines de dev infrastructure vs fonctionnalités
+* **Complexité maintenance** : Monitoring, backup, optimisations
+* **Performance moindre** : Pas de CDN intégré
+* **Prématuré** : YAGNI (You Aren't Gonna Need It) pour un MVP
+
+=== Services concurrents
+
+**ImageKit, Uploadcare, Sirv :**
+* Plans gratuits plus limités
+* Écosystème moins mature
+* Documentation moins complète
+
+== Conclusion
+
+Le choix de **Cloudinary (plan gratuit)** est optimal pour BlaBlaBook V2 car :
+
+1. **Adéquation parfaite** entre besoins et limites gratuites
+2. **Valeur technique énorme** (CDN + optimisations) sans coût
+3. **Réduction drastique** de la complexité technique
+4. **Focus préservé** sur les fonctionnalités métier BlaBlaBook
+5. **Évolutivité** garantie vers solutions payantes si croissance
+
+Cette décision permet de livrer un MVP performant rapidement tout en gardant des options d'évolution futures.
+
+---

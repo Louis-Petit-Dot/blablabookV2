@@ -1,0 +1,32 @@
+@use '../../../styles/variables' as *;
+
+.readingListPage {
+    min-height: 100vh;
+    background: var(--bg-primary);
+}
+
+.header {
+    padding: 1rem;
+    border-bottom: 1px solid var(--bg-tertiary);
+    background: var(--bg-secondary);
+
+    @include tablet {
+        padding: 1.5rem 2rem;
+    }
+}
+
+.error {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 1.5rem;
+    padding: 3rem 1rem;
+    text-align: center;
+
+    p {
+        font-family: $font-base;
+        font-size: 1.125rem;
+        color: var(--text-primary);
+    }
+}

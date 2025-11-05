@@ -1,0 +1,532 @@
+= BlaBlaBook V2 - Business Requirements / Spécifications Métier
+:toc: left
+:toclevels: 3
+:sectanchors:
+:icons: font
+:version: 2.0
+:date: {docdate}
+
+// Navigation inter-documents
+link:../README.adoc[📚 Documentation Hub] |
+link:technical-architecture.adoc[🏗️ Architecture] |
+link:api-specifications.adoc[🛣️ API] |
+link:risk-analysis.adoc[⚠️ Risks]
+
+// Navigation langues
+<<section-fr,🇫🇷 Version Française>> | <<section-en,🇬🇧🇺🇸 English Version>>
+
+---
+
+[[section-fr]]
+== 🇫🇷 Spécifications Métier
+
+<<section-en,🇬🇧🇺🇸 Switch to English>> | 🇫🇷 *Français*
+
+=== 🎯 Présentation du Projet
+
+**BlaBlaBook V2** est une plateforme web moderne pensée pour tous les passionnés de lecture. Elle permet aux utilisateurs de créer et gérer leur bibliothèque personnelle, suivre leurs lectures, découvrir de nouveaux ouvrages et partager leurs avis avec d'autres lecteurs.
+
+**Objectifs :**
+* Favoriser l'échange autour des livres
+* Créer une communauté active de lecteurs
+* Rendre la gestion de ses lectures simple et agréable
+
+**Migration V1 → V2 :**
+Cette V2 représente une réécriture complète avec une stack technique moderne pour corriger les limitations de l'architecture V1.
+
+=== 🌟 Fonctionnalités par Version
+
+==== MVP (Minimum Viable Product) - V2.0
+
+**Fonctionnalités essentielles :**
+
+* **Page d'accueil** : Présentation BlaBlaBook + livres aléatoires pour découverte
+* **Authentification sécurisée** : Inscription/connexion avec JWT stateless
+* **Bibliothèque personnelle** :
+  - Ajouter des livres à sa collection
+  - Organiser par statuts (lu, à lire, en cours)
+  - Retirer des livres sans suppression globale
+* **Recherche optimisée** : Moteur de recherche dans API Open Library
+* **Détails de livre** : Page complète avec informations, résumé, métadonnées
+
+==== Version 2.1 - Améliorations Rapides
+
+**Expérience utilisateur enrichie :**
+
+* **Système de notation/avis** : Notes 1-5 étoiles + commentaires texte
+* **Statistiques personnelles** :
+  - Nombre de livres lus par mois/année
+  - Genres préférés avec graphiques
+  - Progression de lecture
+* **Recherche avancée** : Filtres par genre, note moyenne, date publication
+* **Moteur de recherche dynamique** : Suggestions temps réel, autocomplétion
+
+**Conformité et administration :**
+
+* **Export de données RGPD** : Téléchargement complet des données utilisateur
+* **Droit à l'oubli** : Suppression compte + données associées
+* **Mentions légales** : Politique de confidentialité complète
+* **Modération admin** : Outils de gestion des contenus inappropriés
+
+=== 👥 Cible Utilisateurs
+
+==== Cible Principale
+
+**Lecteurs occasionnels/débutants :**
+* **Besoins** : Suivre facilement leurs lectures, découvrir livres populaires
+* **Attentes** : Interface simple, recommandations, organisation sans complexité
+
+**Lecteurs réguliers/passionnés :**
+* **Besoins** : Gérer collection large, retrouver livres lus, partager avis
+* **Attentes** : Organisation précise, espace commentaires, découverte communautaire
+
+**Communauté de lecteurs :**
+* **Besoins** : Partager, discuter, recommandations mutuelles
+* **Attentes** : Plateforme sociale dédiée, moins impersonnelle que Amazon/Goodreads
+
+=== 📱 Navigateurs Compatibles
+
+**Support prioritaire :**
+* Chrome 90+
+* Firefox 88+
+* Safari 14+
+* Edge 90+
+
+NOTE: Internet Explorer non supporté (conformément aux standards modernes)
+
+=== 🔍 Optimisation pour les Moteurs de Recherche (SEO)
+
+**Stratégie SEO pour BlaBlaBook V2 :**
+
+BlaBlaBook applique les bonnes pratiques SEO pour maximiser sa visibilité dans les moteurs de recherche et améliorer l'acquisition d'utilisateurs organiques.
+
+**Optimisations techniques :**
+
+[cols="2,3"]
+|===
+|Aspect SEO |Implémentation V2
+
+|**Meta tags optimisées**
+|Titre, description, keywords dynamiques par page, Open Graph, Twitter Cards
+
+|**Structure HTML sémantique**
+|Balises `<h1>-<h6>` hiérarchisées, `<article>`, `<section>` pour le contenu
+
+|**URLs conviviales**
+|Structure claire : `/livre/[titre-auteur]`, `/utilisateur/[username]/bibliotheque`
+
+|**Performance Web Core Vitals**
+|LCP <2.5s, FID <100ms, CLS <0.1 grâce à l'architecture Deno optimisée
+
+|**Schema.org microdata**
+|Balisage structuré pour livres (Book), avis (Review), auteurs (Person)
+
+|**Sitemap XML**
+|Génération automatique avec pages publiques, mise à jour dynamique
+
+|**Robots.txt optimisé**
+|Autorisation crawl pages publiques, exclusion zones privées utilisateurs
+|===
+
+**Contenu et stratégie éditoriale :**
+
+* **Pages de destination SEO** :
+  - `/livres/genre/[genre]` - Pages catégories avec livres populaires
+  - `/auteurs/[nom-auteur]` - Fiches auteurs avec bibliographie
+  - `/top-livres-2024` - Classements et tendances littéraires
+
+* **Contenu généré par utilisateurs** :
+  - Avis et critiques publiques indexables
+  - Listes de lecture partagées avec descriptions riches
+  - Profils publics d'utilisateurs actifs
+
+* **Blog intégré** (V2.2) :
+  - Articles sur tendances littéraires, conseils lecture
+  - Interviews d'auteurs, actualités du livre
+  - Optimisation mots-clés longue traîne : "meilleurs livres science-fiction 2024"
+
+**Mesures et suivi :**
+
+* **Google Analytics 4** : Suivi comportement utilisateurs, acquisition
+* **Google Search Console** : Monitoring indexation, erreurs, performance
+* **Lighthouse CI** : Tests automatisés performance et SEO à chaque déploiement
+
+**Ciblage géographique :**
+
+* **France prioritaire** : Optimisation `.fr`, contenu français, auteurs francophones
+* **International** : Balises `hreflang` pour versions linguistiques futures
+
+=== 👥 User Stories
+
+==== 🚀 Rôle : Visiteur (non connecté)
+
+[cols="1,3,2"]
+|===
+|ID |En tant que visiteur, je souhaite... |Afin de...
+
+|**US-V01**
+|Voir une page d'accueil avec présentation BlaBlaBook + livres aléatoires
+|Découvrir l'application et m'inciter à m'inscrire
+
+|**US-V02**
+|M'inscrire avec email et mot de passe sécurisé
+|Créer un compte et accéder aux fonctionnalités
+
+|**US-V03**
+|Me connecter avec mes identifiants
+|Accéder à mon compte existant
+
+|**US-V04**
+|Rechercher des livres sans inscription
+|Découvrir de nouveaux titres avant de m'engager
+
+|**US-V05**
+|Accéder aux détails d'un livre (titre, auteur, résumé)
+|Évaluer si le livre m'intéresse
+|===
+
+==== 📚 Rôle : Utilisateur connecté
+
+[cols="1,3,2"]
+|===
+|ID |En tant qu'utilisateur, je souhaite... |Afin de...
+
+|**US-U01**
+|Accéder à ma bibliothèque personnelle
+|Voir mes livres organisés par statut
+
+|**US-U02**
+|Ajouter un livre à ma liste (lu/à lire)
+|Gérer ma collection personnelle
+
+|**US-U03**
+|Retirer un livre de ma liste
+|Mettre à jour ma bibliothèque
+
+|**US-U04**
+|Me déconnecter de manière sécurisée
+|Protéger mes données personnelles
+
+|**US-U05**
+|Modifier mes informations de profil
+|Maintenir mes données à jour
+
+|**US-U06**
+|Noter et commenter un livre
+|Partager mon opinion avec la communauté
+
+|**US-U07**
+|Consulter mes statistiques de lecture
+|Analyser mes habitudes et progression
+
+|**US-U08**
+|Récupérer l'historique de ma bibliothèque et mes données personnelles
+|Garder une sauvegarde ou changer de service
+
+|**US-U09**
+|Supprimer mon compte et toutes mes données
+|Exercer mon droit à l'oubli
+
+|**US-U10**
+|Rendre ma bibliothèque publique (entièrement ou partiellement)
+|Partager mes lectures avec d'autres
+
+|**US-U11**
+|Participer à un forum de discussion sur les livres
+|Échanger des idées avec la communauté
+
+|**US-U12**
+|Discuter en chat direct avec d'autres utilisateurs
+|Avoir des interactions en temps réel sur des livres
+
+|**US-U13**
+|Créer ou rejoindre des groupes de lecture thématiques
+|Partager des expériences collectives
+|===
+
+==== 👑 Rôle : Administrateur
+
+[cols="1,3,2"]
+|===
+|ID |En tant qu'administrateur, je souhaite... |Afin de...
+
+|**US-A01**
+|Me connecter avec permissions administrateur
+|Gérer la plateforme de manière sécurisée
+
+|**US-A02**
+|Modérer les avis et commentaires inappropriés
+|Maintenir un environnement respectueux
+
+|**US-A03**
+|Accéder aux statistiques globales de la plateforme
+|Analyser l'usage et proposer améliorations
+
+|**US-A04**
+|Gérer les comptes utilisateurs (suspension/suppression)
+|Assurer la sécurité de la plateforme
+
+|**US-A05**
+|Traiter les demandes RGPD (export/suppression données)
+|Respecter la réglementation européenne
+|===
+
+---
+
+[[section-en]]
+== 🇬🇧🇺🇸 Business Requirements
+
+🇬🇧🇺🇸 *English* | <<section-fr,🇫🇷 Passer au Français>>
+
+=== 🎯 Project Overview
+
+**BlaBlaBook V2** is a modern web platform designed for all reading enthusiasts. It allows users to create and manage their personal library, track their readings, discover new books, and share their reviews with other readers.
+
+**Goals:**
+* Foster book discussions and exchanges
+* Create an active reading community
+* Make reading management simple and enjoyable
+
+**V1 → V2 Migration:**
+This V2 represents a complete rewrite with a modern technical stack to address V1 architecture limitations.
+
+=== 🌟 Features by Version
+
+==== MVP (Minimum Viable Product) - V2.0
+
+**Core features:**
+
+* **Homepage** : BlaBlaBook presentation + random books for discovery
+* **Secure authentication** : Registration/login with stateless JWT
+* **Personal library** :
+  - Add books to personal collection
+  - Organize by reading status (read, to-read, currently reading)
+  - Remove books without global deletion
+* **Optimized search** : Search engine using Open Library API
+* **Book details** : Complete page with information, summary, metadata
+
+==== Version 2.1 - Quick Improvements
+
+**Enhanced user experience:**
+
+* **Rating/Review system** : 1-5 star ratings + text comments
+* **Personal statistics** :
+  - Books read per month/year
+  - Favorite genres with charts
+  - Reading progress tracking
+* **Advanced search** : Filters by genre, average rating, publication date
+* **Dynamic search engine** : Real-time suggestions, autocompletion
+
+**Compliance and administration:**
+
+* **GDPR data export** : Complete user data download
+* **Right to be forgotten** : Account + associated data deletion
+* **Legal notices** : Complete privacy policy
+* **Admin moderation** : Tools for inappropriate content management
+
+=== 👥 Target Users
+
+==== Primary Target
+
+**Casual/Beginning readers:**
+* **Needs** : Easily track readings, discover popular books
+* **Expectations** : Simple interface, recommendations, uncomplicated organization
+
+**Regular/Passionate readers:**
+* **Needs** : Manage large collections, find read books, share opinions
+* **Expectations** : Precise organization, comment spaces, community discovery
+
+**Reading community:**
+* **Needs** : Share, discuss, mutual recommendations
+* **Expectations** : Dedicated social platform, less impersonal than Amazon/Goodreads
+
+=== 📱 Browser Compatibility
+
+**Priority support:**
+* Chrome 90+
+* Firefox 88+
+* Safari 14+
+* Edge 90+
+
+NOTE: Internet Explorer not supported (following modern web standards)
+
+=== 🔍 Search Engine Optimization (SEO)
+
+**SEO strategy for BlaBlaBook V2:**
+
+BlaBlaBook applies SEO best practices to maximize visibility in search engines and improve organic user acquisition.
+
+**Technical optimizations:**
+
+[cols="2,3"]
+|===
+|SEO Aspect |V2 Implementation
+
+|**Optimized meta tags**
+|Dynamic title, description, keywords per page, Open Graph, Twitter Cards
+
+|**Semantic HTML structure**
+|Hierarchical `<h1>-<h6>` tags, `<article>`, `<section>` for content
+
+|**SEO-friendly URLs**
+|Clean structure: `/book/[title-author]`, `/user/[username]/library`
+
+|**Web Core Vitals performance**
+|LCP <2.5s, FID <100ms, CLS <0.1 thanks to optimized Deno architecture
+
+|**Schema.org microdata**
+|Structured markup for books (Book), reviews (Review), authors (Person)
+
+|**XML sitemap**
+|Automatic generation with public pages, dynamic updates
+
+|**Optimized robots.txt**
+|Allow crawling of public pages, exclude private user areas
+|===
+
+**Content and editorial strategy:**
+
+* **SEO landing pages**:
+  - `/books/genre/[genre]` - Category pages with popular books
+  - `/authors/[author-name]` - Author profiles with bibliography
+  - `/top-books-2024` - Rankings and literary trends
+
+* **User-generated content**:
+  - Public reviews and critiques that can be indexed
+  - Shared reading lists with rich descriptions
+  - Public profiles of active users
+
+* **Integrated blog** (V2.2):
+  - Articles on literary trends, reading advice
+  - Author interviews, book news
+  - Long-tail keyword optimization: "best science fiction books 2024"
+
+**Measurement and tracking:**
+
+* **Google Analytics 4**: User behavior tracking, acquisition
+* **Google Search Console**: Indexing monitoring, errors, performance
+* **Lighthouse CI**: Automated performance and SEO tests on each deployment
+
+**Geographic targeting:**
+
+* **France priority**: `.fr` optimization, French content, francophone authors
+* **International**: `hreflang` tags for future language versions
+
+=== 👥 User Stories
+
+==== 🚀 Role: Visitor (not logged in)
+
+[cols="1,3,2"]
+|===
+|ID |As a visitor, I want to... |So that I can...
+
+|**US-V01**
+|See a homepage with BlaBlaBook presentation + random books
+|Discover the application and be encouraged to register
+
+|**US-V02**
+|Register with secure email and password
+|Create an account and access features
+
+|**US-V03**
+|Login with my credentials
+|Access my existing account
+
+|**US-V04**
+|Search for books without registration
+|Discover new titles before committing
+
+|**US-V05**
+|Access book details (title, author, summary)
+|Evaluate if the book interests me
+|===
+
+==== 📚 Role: Logged-in User
+
+[cols="1,3,2"]
+|===
+|ID |As a user, I want to... |So that I can...
+
+|**US-U01**
+|Access my personal library
+|See my books organized by status
+
+|**US-U02**
+|Add a book to my list (read/to-read)
+|Manage my personal collection
+
+|**US-U03**
+|Remove a book from my list
+|Update my library
+
+|**US-U04**
+|Logout securely
+|Protect my personal data
+
+|**US-U05**
+|Modify my profile information
+|Keep my data up to date
+
+|**US-U06**
+|Rate and comment on a book
+|Share my opinion with the community
+
+|**US-U07**
+|View my reading statistics
+|Analyze my habits and progress
+
+|**US-U08**
+|Export my library history and personal data
+|Keep a backup or change services
+
+|**US-U09**
+|Delete my account and all my data
+|Exercise my right to be forgotten
+
+|**US-U10**
+|Make my library public (entirely or partially)
+|Share my readings with others
+
+|**US-U11**
+|Participate in a book discussion forum
+|Exchange ideas with the community
+
+|**US-U12**
+|Chat directly with other users
+|Have real-time interactions about books
+
+|**US-U13**
+|Create or join themed reading groups
+|Share collective experiences
+|===
+
+==== 👑 Role: Administrator
+
+[cols="1,3,2"]
+|===
+|ID |As an administrator, I want to... |So that I can...
+
+|**US-A01**
+|Login with administrator permissions
+|Manage the platform securely
+
+|**US-A02**
+|Moderate inappropriate reviews and comments
+|Maintain a respectful environment
+
+|**US-A03**
+|Access global platform statistics
+|Analyze usage and propose improvements
+
+|**US-A04**
+|Manage user accounts (suspension/deletion)
+|Ensure platform security
+
+|**US-A05**
+|Process GDPR requests (data export/deletion)
+|Comply with European regulations
+|===
+
+---
+
+*Document créé le {14/09/2025} - Version {V1} - Generated on {2025/09/14} - Version {V1}*

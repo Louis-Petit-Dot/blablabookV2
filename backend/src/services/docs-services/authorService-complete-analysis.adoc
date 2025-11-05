@@ -1,0 +1,331 @@
+= Service AuthorService (Version Simplifiée) - Analyse Complète
+:toc:
+:toclevels: 3
+
+== Vue d'ensemble
+
+Le service authorService gère toutes les opérations liées aux auteurs dans l'API BlaBlaBook V2. Il s'occupe de la création, de la consultation et de la gestion des informations d'auteurs, tout en offrant une intégration avec l'API OpenLibrary pour enrichir les données disponibles.
+
+NOTE: Ce service utilise `.select()` **sans projections explicites** car la table Author ne contient **aucune donnée sensible**. Toutes les informations (nom, bio, Wikipedia URL) sont publiques et peuvent être exposées sans risque de sécurité. L'utilisation de `.select().from(Author)` est donc appropriée et optimale pour ce cas d'usage.
+
+== Fonctions principales
+
+=== getAll
+**Objectif:** Récupérer la liste complète de tous les auteurs enregistrés
+**Quand:** Utilisé pour afficher le catalogue d'auteurs ou dans les interfaces d'administration
+**Pourquoi important:** Permet la navigation et la découverte d'auteurs dans la bibliothèque
+
+=== getById
+**Objectif:** Récupérer les informations détaillées d'un auteur spécifique
+**Quand:** Utilisé pour afficher la page profil d'un auteur
+**Pourquoi important:** Fournit les données nécessaires pour l'affichage des détails d'un auteur
+
+=== create
+**Objectif:** Créer un nouvel auteur dans la base de données
+**Quand:** Utilisé lors de l'ajout d'un nouvel auteur au catalogue
+**Pourquoi important:** Enrichit la base d'auteurs disponibles pour l'association avec les livres
+
+=== getWorks
+**Objectif:** Récupérer les œuvres d'un auteur via l'API OpenLibrary
+**Quand:** Utilisé pour découvrir les livres d'un auteur depuis des sources externes
+**Pourquoi important:** Enrichit l'expérience utilisateur avec des données complètes
+
+=== delete
+**Objectif:** Supprimer définitivement un auteur de la base de données
+**Quand:** Utilisé par les administrateurs pour nettoyer la base d'auteurs
+**Pourquoi important:** Maintient la qualité et la pertinence du catalogue d'auteurs
+
+=== isValidWikipediaUrl
+**Objectif:** Valider le format d'une URL Wikipedia
+**Quand:** Utilisé lors de la validation d'URLs Wikipedia pour les auteurs
+**Pourquoi important:** Assure l'intégrité des liens externes fournis
+
+== Fonctionnement du service authorService
+
+=== Rôle de gestionnaire de catalogue d'auteurs
+Le service authorService fonctionne comme une bibliothèque de références biographiques :
+
+1. **Répertoire des créateurs** : Il maintient un catalogue de tous les auteurs connus
+2. **Validation d'unicité** : Il s'assure qu'aucun auteur n'est dupliqué par nom
+3. **Enrichissement externe** : Il utilise OpenLibrary pour découvrir de nouvelles œuvres
+4. **Curation du contenu** : Il permet la gestion et la suppression d'auteurs obsolètes
+5. **Validation des liens** : Il vérifie la validité des références Wikipedia
+
+=== Intégration avec OpenLibrary
+Le service intègre l'API OpenLibrary pour :
+- **Recherche d'œuvres** : Découverte des livres d'un auteur depuis la base OpenLibrary
+- **Enrichissement des données** : Ajout d'informations externes aux auteurs locaux
+- **URLs Wikipedia** : Génération automatique de liens vers les pages Wikipedia
+
+=== Système de validation intégré
+Le service applique plusieurs niveaux de validation :
+- **Validation d'entité** : Vérification que l'auteur existe via EntityValidator
+- **Validation d'unicité** : Prévention des doublons par nom d'auteur
+- **Validation d'URL** : Contrôle de la validité des liens Wikipedia
+
+== Opérations détaillées
+
+=== Consultation des auteurs (getAll / getById)
+
+**Fonctionnement en mots simples :**
+Ces fonctions agissent comme un annuaire d'auteurs qui permet de consulter le répertoire complet ou de rechercher un créateur spécifique.
+
+**Processus de récupération :**
+1. **getAll** : Collecte tous les auteurs sans filtrage
+2. **getById** : Valide l'existence puis retourne l'auteur spécifique
+3. **Enrichissement des données** : Calcule automatiquement le nombre total
+4. **Format standardisé** : Retourne les données dans une structure cohérente
+
+**Données retournées :**
+- Liste complète des auteurs ou auteur spécifique
+- Compteur total pour les statistiques
+- Informations biographiques disponibles
+
+=== Création d'auteur (create)
+
+**Fonctionnement en mots simples :**
+Cette fonction agit comme un bureau d'enregistrement qui ajoute un nouvel auteur au catalogue après vérification.
+
+**Processus de validation :**
+1. **Vérification d'unicité** : Recherche si un auteur avec ce nom existe déjà
+2. **Prévention des doublons** : Refuse la création si le nom est déjà pris
+3. **Insertion sécurisée** : Crée le nouvel auteur en base de données
+4. **Retour des données** : Fournit l'auteur créé avec son ID généré
+
+**Protection contre les doublons :**
+Le système empêche la création d'auteurs avec des noms identiques, maintenant ainsi l'unicité et évitant la confusion dans le catalogue.
+
+=== Découverte d'œuvres (getWorks)
+
+**Fonctionnement en mots simples :**
+Cette fonction agit comme un explorateur littéraire qui recherche toutes les œuvres d'un auteur dans les bases de données externes.
+
+**Processus d'enrichissement :**
+1. **Recherche OpenLibrary** : Interroge l'API avec le nom de l'auteur
+2. **Limitation des résultats** : Récupère jusqu'à 50 œuvres pour éviter la surcharge
+3. **Génération de liens** : Crée automatiquement l'URL Wikipedia de l'auteur
+4. **Structuration des données** : Organise les résultats avec l'auteur et ses œuvres
+
+**Enrichissement externe :**
+Cette fonction permet de découvrir des livres qui ne sont pas encore dans la base locale, offrant une vision complète de la production littéraire de l'auteur.
+
+=== Suppression d'auteur (delete)
+
+**Fonctionnement en mots simples :**
+Cette fonction agit comme un service d'archivage qui retire définitivement un auteur du catalogue.
+
+**Processus de suppression :**
+1. **Suppression physique** : Retire complètement l'auteur de la base
+2. **Récupération des données** : Retourne l'auteur supprimé pour confirmation
+3. **Nettoyage immédiat** : Libère l'espace et permet la recréation éventuelle
+
+**Suppression physique vs logique :**
+Contrairement aux utilisateurs, les auteurs sont supprimés physiquement car ils sont principalement des données de référence sans impact critique sur l'intégrité système.
+
+=== Validation Wikipedia (isValidWikipediaUrl)
+
+**Fonctionnement en mots simples :**
+Cette fonction agit comme un contrôleur de qualité qui vérifie que les liens Wikipedia fournis sont valides et correctement formatés.
+
+**Processus de validation :**
+1. **Vérification du protocole** : Accepte HTTP et HTTPS
+2. **Validation du domaine** : Confirme que c'est bien un domaine Wikipedia
+3. **Contrôle de la langue** : Accepte les codes de langue de 2-3 caractères
+4. **Format standard** : S'assure que l'URL respecte la structure Wikipedia
+
+== Validation et contrôles qualité
+
+=== EntityValidator integration
+Le service s'appuie sur EntityValidator pour :
+- **validateAuthor** : Confirmer l'existence de l'auteur demandé
+- **Gestion cohérente** : Messages d'erreur standardisés avec les autres services
+- **Validation automatique** : Intégration transparente dans les opérations
+
+=== Contrôles métier spécifiques
+Le service applique ses propres règles :
+- **Unicité par nom** : Prévention des doublons d'auteurs
+- **Validation d'URL** : Contrôle de la qualité des liens Wikipedia
+- **Limite de résultats** : Maximum 50 œuvres par recherche OpenLibrary
+
+=== Intégration OpenLibrary
+La connexion avec l'API externe inclut :
+- **Gestion des erreurs** : Récupération gracieuse en cas d'indisponibilité
+- **Structuration des données** : Normalisation des réponses de l'API
+- **Enrichissement automatique** : Ajout d'URLs Wikipedia complémentaires
+
+== Gestion des erreurs spécialisées
+
+=== Erreurs de duplication
+- **Auteur déjà existant** : "A author with this name already exists."
+- **Validation préalable** : Vérification avant insertion pour éviter les conflits
+- **Message explicite** : Information claire sur la cause du rejet
+
+=== Erreurs de validation
+- **Auteur inexistant** : Gérée par EntityValidator avec message standardisé
+- **URL invalide** : Validation silencieuse avec retour booléen
+- **API externe** : Gestion des erreurs de communication avec OpenLibrary
+
+=== Gestion des cas limites
+- **Auteur sans œuvres** : Retour d'une liste vide sans erreur
+- **API indisponible** : Récupération gracieuse avec données partielles
+- **Noms d'auteurs complexes** : Support des caractères internationaux
+
+== Performance et optimisation
+
+=== Requêtes optimisées
+- **Sélections ciblées** : Utilisation de LIMIT pour les vérifications d'unicité
+- **Index sur nom** : Recommandé pour les recherches par nom d'auteur
+- **Jointures minimales** : Pas de JOIN complexes dans ce service
+
+=== Gestion des API externes
+- **Limite de résultats** : 50 œuvres maximum par requête OpenLibrary
+- **Cache potentiel** : Possibilité d'ajouter une mise en cache des résultats
+- **Timeout approprié** : Protection contre les API lentes
+
+=== Optimisation mémoire
+- **Réutilisation de connexions** : Partage de la connexion base de données
+- **Nettoyage automatique** : Libération des ressources après traitement
+- **Limitation des données** : Pas de chargement massif sans pagination
+
+== Interaction avec d'autres services
+
+=== Dépendances directes
+- **EntityValidator** : Validation de l'existence des auteurs
+- **OpenLibrary API** : Enrichissement des données d'œuvres
+- **Database connection** : Opérations CRUD via Drizzle ORM
+
+=== Services connexes
+- **bookService** : Association des auteurs avec les livres
+- **authorBookService** : Gestion des relations auteur-livre
+- **genreService** : Catégorisation des œuvres par auteur
+
+=== Impact sur d'autres fonctionnalités
+- **Recherche** : Les auteurs alimentent les fonctionnalités de recherche
+- **Recommandations** : Base pour des suggestions par auteur préféré
+- **Statistiques** : Métriques de popularité et de production littéraire
+
+== Exemple de flux complet
+
+=== Scénario : Découverte des œuvres d'un auteur nouvellement ajouté
+
+**Situation de départ :**
+Un bibliothécaire vient d'ajouter "Elena Ferrante" comme nouvel auteur et souhaite découvrir toutes ses œuvres disponibles.
+
+**Traitement par le service :**
+1. **Vérification d'unicité** : Confirme qu'aucun auteur "Elena Ferrante" n'existe
+2. **Création de l'auteur** : Insère le nouvel auteur dans la base locale
+3. **Recherche d'œuvres** : Interroge OpenLibrary pour trouver ses livres
+4. **Enrichissement des données** : Génère l'URL Wikipedia automatiquement
+5. **Structuration du retour** : Combine l'auteur et ses œuvres découvertes
+
+**Enrichissement automatique :**
+Le service découvre automatiquement les 4 tomes de "L'Amie prodigieuse" et d'autres œuvres, enrichissant immédiatement le catalogue disponible.
+
+**Résultat :**
+L'utilisateur obtient un auteur complet avec accès immédiat à toute sa bibliographie via les sources externes.
+
+== Diagramme de séquence - Workflow AuthorService
+
+[mermaid]
+----
+sequenceDiagram
+    participant Controller
+    participant AuthorService
+    participant EntityValidator
+    participant Database
+    participant OpenLibrary
+    participant Wikipedia
+
+    Note over Controller, Wikipedia: Exemple: Création d'un nouvel auteur
+
+    Controller->>AuthorService: create(authorData)
+    AuthorService->>Database: SELECT FROM authors WHERE author_name = ?
+    Database-->>AuthorService: existingAuthor || []
+
+    alt Si auteur déjà existant
+        AuthorService-->>Controller: throw Error("A author with this name already exists.")
+    else Auteur unique
+        AuthorService->>Database: INSERT INTO authors VALUES(authorData)
+        Database-->>AuthorService: newAuthor avec id_author généré
+        AuthorService-->>Controller: {author: newAuthor}
+    end
+
+    Note over Controller, Wikipedia: Exemple: Consultation d'un auteur par ID
+
+    Controller->>AuthorService: getById(authorId)
+    AuthorService->>EntityValidator: validateAuthor(authorId)
+    EntityValidator->>Database: SELECT FROM authors WHERE id_author = ?
+    Database-->>EntityValidator: authorData || null
+
+    alt Si auteur inexistant
+        EntityValidator-->>AuthorService: throw Error("Author not found")
+    else Auteur trouvé
+        EntityValidator-->>AuthorService: authorData
+        AuthorService-->>Controller: {author: authorData}
+    end
+
+    Note over Controller, Wikipedia: Exemple: Découverte des œuvres d'un auteur
+
+    Controller->>AuthorService: getWorks(authorName)
+    AuthorService->>OpenLibrary: searchBooks({author: authorName, limit: 50})
+    OpenLibrary->>OpenLibrary: Rechercher dans la base OpenLibrary
+
+    alt Si API indisponible
+        OpenLibrary-->>AuthorService: Error ou timeout
+        AuthorService-->>Controller: {author: {name, wikipediaUrl}, works: []}
+    else Recherche réussie
+        OpenLibrary-->>AuthorService: {docs: [...works]}
+        AuthorService->>AuthorService: buildWikipediaUrl(authorName)
+        AuthorService->>AuthorService: Construire l'URL Wikipedia
+        AuthorService-->>Controller: {author: {name, wikipediaUrl}, works: works.docs}
+    end
+
+    Note over Controller, Wikipedia: Exemple: Validation d'URL Wikipedia
+
+    Controller->>AuthorService: isValidWikipediaUrl(url)
+    AuthorService->>AuthorService: Test regex: ^https?://[a-z]{2,3}.wikipedia.org/.*$
+
+    alt Si URL invalide
+        AuthorService-->>Controller: false
+    else URL valide
+        AuthorService-->>Controller: true
+    end
+
+    Note over Controller, Wikipedia: Exemple: Suppression d'un auteur
+
+    Controller->>AuthorService: delete(authorId)
+    AuthorService->>Database: DELETE FROM authors WHERE id_author = authorId RETURNING *
+    Database-->>AuthorService: deletedAuthor || []
+
+    alt Si auteur introuvable
+        AuthorService-->>Controller: {author: null}
+    else Suppression réussie
+        AuthorService-->>Controller: {author: deletedAuthor}
+    end
+
+    Note over Controller, Wikipedia: Exemple: Récupération de tous les auteurs
+
+    Controller->>AuthorService: getAll()
+    AuthorService->>Database: SELECT * FROM authors
+    Database-->>AuthorService: authors[]
+    AuthorService->>AuthorService: Calculer authors.length
+    AuthorService-->>Controller: {authors: authors[], total_authors: count}
+----
+
+== Résumé
+
+Le service authorService est le **gestionnaire de catalogue d'auteurs** de l'API BlaBlaBook V2. Il gère **6 opérations principales** avec :
+- **Validation d'unicité** : Prévention des doublons par nom d'auteur
+- **Intégration OpenLibrary** : Enrichissement avec des données externes d'œuvres
+- **Validation Wikipedia** : Contrôle de la qualité des liens de référence
+- **Suppression physique** : Nettoyage définitif du catalogue
+- **EntityValidator** : Validation cohérente avec le reste du système
+- **Gestion d'erreurs** : Messages explicites pour les cas de conflit
+
+**Points clés d'optimisation :**
+- ✅ `.select()` complet approprié (pas de données sensibles)
+- ✅ `LIMIT 1` pour les vérifications d'unicité
+- ✅ `.returning()` complet pour les opérations de création
+- ✅ Pas de projections explicites nécessaires pour ce cas d'usage
+
+**Il assure la qualité, l'unicité et l'enrichissement du catalogue d'auteurs de la plateforme.**

@@ -1,0 +1,36 @@
+// ============================================
+// THEME - LIGHT & DARK MODE
+// ============================================
+
+:root {
+  // Light mode (par défaut)
+  --bg-primary: #FEFBF6;      // $bg-white
+  --bg-secondary: #E8DFD0;    // $bg-beige
+  --bg-tertiary:  #F2E5D0;   // $bg-cream
+
+  --text-primary: #8B5E50;    // $text-dark
+  --text-secondary: #2b3149;  // $text-gray
+  --text-tertiary: #3b2f29;   // $text-light
+  --text-quaternary: #6B6560;  // $text-lighter
+
+  --success: #5E8B7E;
+  --error: #A55B5B;
+  --warning: #D4A574;
+  --info: #7891A8;
+}
+
+// Dark mode
+html.dark {
+  --bg-primary: #2b3149;      // Noir principal (ancien text-dark)
+  --bg-secondary: #3b2f29;    // Noir légèrement plus clair
+  --bg-tertiary: #3A3632;     // Gris foncé
+
+  --text-primary: #F2E5D0;    // Blanc cassé (ancien bg-white)
+  --text-secondary: #E8DFD0;  // Crème clair
+  --text-tertiary: #B8AFA5;   // Gris moyen
+  
+  --success: #6BA595;         // Vert sauge plus clair
+  --error: #C17070;           // Rouge plus doux
+  --warning: #E0B685;
+  --info: #7891A8;           // Or plus clair
+}

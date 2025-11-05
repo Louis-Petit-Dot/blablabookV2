@@ -1,0 +1,51 @@
+# Tests
+tests/
+*.test.ts
+coverage/
+
+# Documentation
+Docs/
+*.md
+*.adoc
+
+# Git
+.git/
+.gitignore
+.gitattributes
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+.editorconfig
+
+# Logs
+*.log
+logs/
+
+# Environment variables (secrets)
+.env
+.env.*
+!.env.example
+
+# Cache Deno
+.deno/
+
+# Temporary files
+*.tmp
+.DS_Store
+Thumbs.db
+
+# Database dumps and migrations
+*.sql
+DB/
+
+# Docker files (not needed in image)
+Dockerfile*
+docker-compose*.yml
+.dockerignore
+
+# Build artifacts
+dist/
+build/

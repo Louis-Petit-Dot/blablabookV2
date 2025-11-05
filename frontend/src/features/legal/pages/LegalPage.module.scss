@@ -1,0 +1,86 @@
+@use '../../../styles/variables' as *;
+
+.legalContainer {
+  max-width: 900px;
+  margin: 0 auto;
+  padding: 3rem 1.5rem;
+  min-height: 80vh;
+
+  h1 {
+    font-family: $font-heading;
+    font-size: 2rem;
+    color: $brown;
+    margin-bottom: 3rem;
+    text-align: center;
+  }
+
+  .warning {
+    
+    color: $error;
+    font-size: 0.7rem;
+    font-weight: bold;
+    text-align: center;
+    margin-bottom: 2rem;
+
+    
+  }
+}
+
+.section {
+  margin-bottom: 4rem;
+  padding-bottom: 2rem;
+  border-bottom: 1px solid $bg-cream;
+
+  &:last-of-type {
+    border-bottom: none;
+  }
+
+  h2 {
+    font-family: $font-heading;
+    font-size: 1.75rem;
+    color: $primary;
+    margin-bottom: 1.5rem;
+  }
+
+  h3 {
+    font-family: $font-heading;
+    font-size: 1.25rem;
+    color: $brown;
+    margin-top: 1.5rem;
+    margin-bottom: 0.75rem;
+  }
+
+  p {
+    line-height: 1.7;
+    color: $text-gray;
+    margin-bottom: 1rem;
+  }
+
+  ul {
+    margin: 1rem 0 1.5rem 2rem;
+    line-height: 1.7;
+
+    li {
+      margin-bottom: 0.5rem;
+      color: $text-gray;
+    }
+  }
+
+  a {
+    color: $primary;
+    text-decoration: none;
+
+    &:hover {
+      text-decoration: underline;
+    }
+  }
+}
+
+.legalDate {
+  margin-top: 3rem;
+  padding-top: 2rem;
+  border-top: 1px solid $bg-cream;
+  font-style: italic;
+  color: $text-light;
+  text-align: center;
+}

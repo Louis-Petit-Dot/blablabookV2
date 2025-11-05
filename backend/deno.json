@@ -1,0 +1,39 @@
+{
+    "name": "@blablabookv2/backend",
+    "version": "1.0.0",
+    "exports": "./src/index.ts",
+    "tasks": {
+    "dev": "deno run --allow-net --allow-env --allow-read --allow-ffi --unstable-kv --watch src/index.ts",
+    "start": "deno run --allow-net --allow-env --allow-read --allow-ffi --unstable-kv src/index.ts",
+    "test": "deno test --allow-all",
+    "test:unit": "deno test --allow-all --ignore=tests/integration.test.ts",
+    "test:integration": "deno test --allow-all tests/integration.test.ts",
+    "db:drop": "deno run --allow-net --allow-env --allow-read scripts/drop-db.ts",
+    "db:seed": "deno run --allow-net --allow-env --allow-read scripts/seed-db.ts",
+    "db:reset": "deno run --allow-net --allow-env --allow-read scripts/reset-db.ts",
+    "security:audit": "deno info --json | jq '.modules[] | select(.specifier | contains(\"npm:\")) | .specifier'",
+    "security:check": "deno check --remote src/**/*.ts"
+    },
+    "imports": {
+    "argon2": "npm:argon2@^0.44.0",
+    "hono": "jsr:@hono/hono",
+    "@std/dotenv": "jsr:@std/dotenv",
+    "@std/assert": "jsr:@std/assert@^1.0.14",
+    "drizzle-orm": "npm:drizzle-orm@^0.38.0",
+    "drizzle-orm/node-postgres": "npm:drizzle-orm@^0.38.0/node-postgres",
+    "drizzle-orm/pg-core": "npm:drizzle-orm@^0.38.0/pg-core",
+    "drizzle-kit": "npm:drizzle-kit@^0.27.2",
+    "drizzle-zod": "npm:drizzle-zod@^0.8.3",
+    "zod": "npm:zod@^3.22.0",
+    "jsonwebtoken": "npm:jsonwebtoken@^9.0.2",
+    "pg": "npm:pg@^8.13.1",
+    "@types/pg": "npm:@types/pg@^8.11.10",
+    "axios": "https://esm.sh/axios?target=deno",
+    "cloudinary": "npm:cloudinary@^2.7.0"
+    },
+    "nodeModulesDir": "auto",
+    "compilerOptions": {
+    "lib": ["deno.ns", "dom"],
+    "strict": true
+    }
+} 

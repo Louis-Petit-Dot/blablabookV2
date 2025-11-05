@@ -1,0 +1,659 @@
+= Service UserRoleService - Analyse Complète (Version Views SQL)
+:toc:
+:toclevels: 3
+
+== Vue d'ensemble
+
+Le service userRoleService gère les associations entre utilisateurs et rôles dans l'API BlaBlaBook V2. Il constitue le pont opérationnel du système RBAC, permettant l'assignation, la consultation et la révocation des rôles utilisateurs, avec des protections spéciales pour les rôles critiques du système.
+
+**Architecture simplifiée avec Views SQL** : Le service utilise maintenant des vues SQL (`UserRoleView`, `RolePermissionView`) pour éviter les jointures complexes côté application, des helpers internes pour éviter la duplication de code, et une validation centralisée via `EntityValidator`.
+
+== Fonctions principales
+
+=== getRoleByName
+**Objectif:** Récupérer un rôle par son nom (utilitaire)
+**Quand:** Utilisé pour rechercher des rôles système par nom
+**Pourquoi important:** Facilite la recherche de rôles sans connaître leur ID
+
+=== getUserRoles
+**Objectif:** Récupérer tous les rôles d'un utilisateur avec historique d'assignation
+**Quand:** Utilisé pour afficher les rôles et permissions d'un utilisateur
+**Pourquoi important:** Permet la consultation des droits actuels et l'audit des assignations
+**Optimisation:** Utilise `UserRoleView` pour éviter les JOINs manuels
+
+=== getRoleUsers
+**Objectif:** Récupérer tous les utilisateurs d'un rôle spécifique
+**Quand:** Utilisé pour lister les membres d'un rôle donné
+**Pourquoi important:** Facilite la gestion des équipes et l'audit des permissions
+**Optimisation:** Utilise `UserRoleView` avec filtrage sur `id_role`
+
+=== assignRole
+**Objectif:** Assigner un rôle à un utilisateur avec traçabilité
+**Quand:** Utilisé pour donner de nouveaux droits à un utilisateur
+**Pourquoi important:** Permet l'évolution des permissions selon les responsabilités
+**Optimisation:** Validations parallèles avec `Promise.all`
+
+=== removeRole
+**Objectif:** Révoquer un rôle d'un utilisateur avec protections système
+**Quand:** Utilisé pour retirer des droits ou changer de fonction
+**Pourquoi important:** Maintient la sécurité en adaptant les permissions
+**Optimisation:** Helper interne `protectCriticalRoles` pour la logique de protection
+
+=== getUserPermissions
+**Objectif:** Récupérer toutes les permissions effectives d'un utilisateur
+**Quand:** Utilisé pour contrôle d'accès et audit complet
+**Pourquoi important:** Fournit la vue consolidée des droits réels
+**Optimisation:** Utilise `RolePermissionView` + agrégation avec `for` loops au lieu de `reduce`
+
+=== makeAdmin
+**Objectif:** Promouvoir un utilisateur au rôle ADMIN
+**Quand:** Utilisé pour donner des droits administratifs
+**Pourquoi important:** Raccourci pour l'assignation du rôle critique ADMIN
+
+== Fonctionnement du service userRoleService
+
+=== Rôle de gestionnaire d'assignations RBAC
+Le service userRoleService fonctionne comme l'orchestrateur des droits utilisateurs :
+
+1. **Assignations individuelles** : Attribution précise de rôles aux utilisateurs
+2. **Traçabilité complète** : Enregistrement de qui assigne quoi et quand
+3. **Protections système** : Sauvegarde des rôles critiques (USER, ADMIN)
+4. **Consolidation des permissions** : Vue unifiée des droits effectifs
+5. **Helpers internes** : Factorisation du code pour éviter la duplication
+
+=== Architecture avec Views SQL
+
+Le service s'appuie sur deux vues SQL optimisées :
+
+**UserRoleView** : Simplifie les requêtes de consultation
+```sql
+SELECT
+  u.id_user, u.username, u.firstname, u.lastname, u.email,
+  r.id_role, r.role_name, r.description AS role_description,
+  ur.assigned_at, ur.assigned_by,
+  assigner.username AS assigner_username,
+  assigner.firstname AS assigner_firstname,
+  assigner.lastname AS assigner_lastname
+FROM USER_ROLE ur
+INNER JOIN USER u ON ur.id_user = u.id_user
+INNER JOIN ROLE r ON ur.id_role = r.id_role
+LEFT JOIN USER assigner ON ur.assigned_by = assigner.id_user
+WHERE u.deleted_at IS NULL
+```
+
+**RolePermissionView** : Simplifie la récupération des permissions
+```sql
+SELECT
+  u.id_user, u.username, u.firstname, u.lastname,
+  r.id_role, r.role_name, ur.assigned_at,
+  p.id_permission, p.label, p.action, p.resource
+FROM USER_ROLE ur
+INNER JOIN USER u ON ur.id_user = u.id_user
+INNER JOIN ROLE r ON ur.id_role = r.id_role
+INNER JOIN ROLE_PERMISSION rp ON r.id_role = rp.id_role
+INNER JOIN PERMISSION p ON rp.id_permission = p.id_permission
+WHERE u.deleted_at IS NULL
+```
+
+=== Helpers internes
+
+Le service utilise un objet `helpers` pour factoriser le code commun :
+
+```javascript
+const helpers = {
+    async findRole(roleId: string) { ... },
+    async findUser(userId: string) { ... },
+    async getUserRole(userId: string, roleId: string) { ... },
+    async protectCriticalRoles(roleId: string, operation: 'remove') { ... }
+};
+```
+
+=== Système de protections
+Le service implémente des garde-fous critiques :
+- **Rôle USER obligatoire** : Impossible à retirer (rôle de base)
+- **Protection ADMIN** : Empêche la suppression du dernier administrateur
+- **Validation des entités** : Vérification d'existence avant opérations via helpers
+- **Prévention des doublons** : Contrôle des assignations multiples
+
+== Opérations détaillées
+
+=== Recherche de rôle par nom (getRoleByName)
+
+**Fonctionnement simplifié :**
+Requête directe sur la table `Role` avec un `LIMIT 1` pour performance.
+
+**Code :**
+```javascript
+async getRoleByName(roleName: string) {
+    const [role] = await db.select().from(Role)
+        .where(eq(Role.role_name, roleName)).limit(1);
+    return role || null;
+}
+```
+
+**Usage typique :**
+Recherche des rôles système ("USER", "ADMIN") pour assignations automatiques.
+
+=== Consultation des rôles utilisateur (getUserRoles)
+
+**Fonctionnement simplifié avec UserRoleView :**
+1. **Validation utilisateur** : `EntityValidator.validateUser(userId)` (validation seule)
+2. **Requête sur la vue** : `SELECT FROM UserRoleView WHERE id_user = ?`
+3. **Extraction des infos user** : Depuis la première ligne de la vue
+4. **Retour structuré** : `{user, roles}`
+
+**Code :**
+```javascript
+async getUserRoles(userId: string) {
+    await EntityValidator.validateUser(userId);
+
+    const userRoles = await db.select()
+        .from(UserRoleView)
+        .where(eq(UserRoleView.id_user, userId));
+
+    const user = userRoles[0] ? {
+        id_user: userRoles[0].id_user,
+        username: userRoles[0].username,
+        firstname: userRoles[0].firstname,
+        lastname: userRoles[0].lastname
+    } : null;
+
+    return { user, roles: userRoles };
+}
+```
+
+**Avantages :**
+- Pas de JOIN manuel côté application
+- Données pré-agrégées par la vue SQL
+- Code plus lisible et maintenable
+
+=== Consultation des utilisateurs d'un rôle (getRoleUsers)
+
+**Fonctionnement simplifié avec UserRoleView :**
+1. **Validation rôle** : Requête directe sur table `Role`
+2. **Requête sur la vue** : `SELECT FROM UserRoleView WHERE id_role = ?`
+3. **Retour structuré** : `{role, users, total_users}`
+
+**Code :**
+```javascript
+async getRoleUsers(roleId: string) {
+    const [role] = await db.select().from(Role)
+        .where(eq(Role.id_role, roleId)).limit(1);
+    if (!role) return null;
+
+    const roleUsers = await db.select()
+        .from(UserRoleView)
+        .where(eq(UserRoleView.id_role, roleId));
+
+    return {
+        role,
+        users: roleUsers,
+        total_users: roleUsers.length
+    };
+}
+```
+
+=== Assignation de rôle (assignRole)
+
+**Fonctionnement optimisé avec helpers :**
+1. **Validations parallèles** : `Promise.all` pour valider utilisateur cible, rôle et assigneur
+2. **Contrôle de doublon** : Helper `getUserRole` pour vérifier l'existence
+3. **Création tracée** : INSERT avec `assigned_by` pour audit
+4. **Retour enrichi** : Association créée + entités complètes
+
+**Code :**
+```javascript
+async assignRole(idUser: string, idRole: string, assignedBy: string) {
+    const [targetUser, role, _assigningUser] = await Promise.all([
+        helpers.findUser(idUser),
+        helpers.findRole(idRole),
+        helpers.findUser(assignedBy)
+    ]);
+
+    const existing = await helpers.getUserRole(idUser, idRole);
+    if (existing) throw new Error('User already has this role.');
+
+    const [userRole] = await db.insert(UserRole)
+        .values({ id_user: idUser, id_role: idRole, assigned_by: assignedBy })
+        .returning();
+
+    return {
+        user_role: userRole,
+        user: targetUser,
+        role: role
+    };
+}
+```
+
+**Optimisations :**
+- Validations en parallèle avec `Promise.all` pour réduire le temps d'exécution
+- Helpers réutilisables pour éviter la duplication de code
+
+**Invalidation du cache (NEW - 2025-10-02) :**
+
+IMPORTANT: La fonction `assignRole` invalide automatiquement le cache Deno KV de l'utilisateur apres l'assignation pour garantir la coherence des donnees.
+
+```javascript
+const [userRole] = await db.insert(UserRole)
+    .values({ id_user: idUser, id_role: idRole, assigned_by: assignedBy })
+    .returning();
+
+// Invalider le cache de l'utilisateur
+await cacheService.invalidateUser(idUser);
+```
+
+**Pourquoi c'est critique :**
+- Sans invalidation : User garde anciens roles en cache pendant 5 minutes
+- Avec invalidation : Prochain login recupere roles a jour depuis BDD
+- Garantit coherence donnees vs performance
+
+**Impact :**
+- Cache roles et permissions supprime pour cet utilisateur
+- Prochain appel `getUserRoles()` ou `getUserPermissions()` fera un cache MISS
+- Reconstruction du cache avec nouvelles donnees
+
+Voir `cache-complete-analysis.adoc` pour details techniques du systeme de cache.
+
+=== Révocation de rôle (removeRole)
+
+**Fonctionnement sécurisé avec helper de protection :**
+1. **Vérification d'existence** : Helper `getUserRole`
+2. **Protection des rôles critiques** : Helper `protectCriticalRoles`
+3. **Suppression sécurisée** : DELETE avec RETURNING
+
+**Code :**
+```javascript
+async removeRole(idUser: string, idRole: string) {
+    const existing = await helpers.getUserRole(idUser, idRole);
+    if (!existing) return null;
+
+    await helpers.protectCriticalRoles(idRole, 'remove');
+
+    const [removed] = await db.delete(UserRole)
+        .where(and(eq(UserRole.id_user, idUser), eq(UserRole.id_role, idRole)))
+        .returning();
+
+    return removed;
+}
+```
+
+**Invalidation du cache (NEW - 2025-10-02) :**
+
+IMPORTANT: La fonction `removeRole` invalide egalement le cache Deno KV apres la revocation du role.
+
+```javascript
+const [removed] = await db.delete(UserRole)
+    .where(and(eq(UserRole.id_user, idUser), eq(UserRole.id_role, idRole)))
+    .returning();
+
+// Invalider le cache de l'utilisateur
+await cacheService.invalidateUser(idUser);
+
+return removed;
+```
+
+**Coherence avec assignRole :**
+- Meme logique d'invalidation que pour l'assignation
+- Garantit que les suppressions de roles sont prises en compte immediatement
+- Cache reconstruit au prochain login avec roles mis a jour
+
+Voir `cache-complete-analysis.adoc` pour details techniques du systeme de cache.
+
+**Helper de protection :**
+```javascript
+async protectCriticalRoles(roleId: string, operation: 'remove') {
+    const role = await this.findRole(roleId);
+
+    if (role.role_name === 'USER') {
+        throw new Error('Cannot remove the basic USER role');
+    }
+
+    if (role.role_name === 'ADMIN' && operation === 'remove') {
+        const [{ count: adminCount }] = await db.select({ count: count() })
+            .from(UserRole)
+            .innerJoin(User, eq(UserRole.id_user, User.id_user))
+            .where(and(eq(UserRole.id_role, roleId), isNull(User.deleted_at)));
+
+        if (adminCount <= 1) {
+            throw new Error('Cannot remove the last admin');
+        }
+    }
+    return role;
+}
+```
+
+=== Consultation des permissions effectives (getUserPermissions)
+
+**Fonctionnement optimisé avec RolePermissionView :**
+1. **Validation utilisateur** : `EntityValidator.validateUser(userId)`
+2. **Requête sur la vue** : `SELECT FROM RolePermissionView WHERE id_user = ?`
+3. **Agrégation par rôle** : Boucle `for` au lieu de `reduce()` pour performance
+4. **Déduplication** : Filtrage des permissions identiques
+5. **Retour structuré** : `{user, permissions_by_role, all_permissions, total_permissions}`
+
+**Code :**
+```javascript
+async getUserPermissions(userId: string) {
+    await EntityValidator.validateUser(userId);
+
+    const userPermissions = await db.select()
+        .from(RolePermissionView)
+        .where(eq(RolePermissionView.id_user, userId));
+
+    // Grouper par rôle (optimisé avec for loops)
+    const permissionsByRole: Record<string, {...}> = {};
+    for (let i = 0; i < userPermissions.length; i++) {
+        const item = userPermissions[i];
+        const roleKey = `${item.id_role}_${item.role_name}`;
+        if (!permissionsByRole[roleKey]) {
+            permissionsByRole[roleKey] = {
+                role_id: item.id_role,
+                role_name: item.role_name,
+                assigned_at: item.assigned_at,
+                permissions: []
+            };
+        }
+        permissionsByRole[roleKey].permissions.push({
+            id: item.id_permission,
+            label: item.label,
+            action: item.action,
+            resource: item.resource
+        });
+    }
+
+    // Déduplication des permissions
+    const allPermissions = userPermissions
+        .filter((perm, index, self) =>
+            index === self.findIndex(p => p.id_permission === perm.id_permission))
+        .map(({id_permission: id, label, action, resource}) =>
+            ({id, label, action, resource}));
+
+    const userInfo = userPermissions[0] ? {
+        id_user: userPermissions[0].id_user,
+        username: userPermissions[0].username,
+        firstname: userPermissions[0].firstname,
+        lastname: userPermissions[0].lastname
+    } : null;
+
+    return {
+        user: userInfo,
+        permissions_by_role: Object.values(permissionsByRole),
+        all_permissions: allPermissions,
+        total_permissions: allPermissions.length
+    };
+}
+```
+
+**Optimisations :**
+- Vue SQL pour éviter les JOINs multiples
+- Boucle `for` au lieu de `reduce()` pour meilleures performances
+- Déduplication avec `findIndex` optimisé
+
+=== Promotion administrateur (makeAdmin)
+
+**Fonctionnement simplifié :**
+Raccourci pour assigner le rôle ADMIN avec validation automatique.
+
+**Code :**
+```javascript
+async makeAdmin(userId: string, assignedBy: string) {
+    await EntityValidator.validateUser(userId);
+
+    const adminRole = await this.getRoleByName('ADMIN');
+    if (!adminRole) throw new Error('ADMIN role not found');
+
+    const existing = await helpers.getUserRole(userId, adminRole.id_role);
+    if (existing) throw new Error('User is already admin');
+
+    return await this.assignRole(userId, adminRole.id_role, assignedBy);
+}
+```
+
+== Validation et contrôles qualité
+
+=== Validation des entités via helpers
+Le service utilise des helpers dédiés pour la validation :
+- **helpers.findUser** : Vérifie l'existence et `deleted_at IS NULL`
+- **helpers.findRole** : Vérifie l'existence du rôle
+- **helpers.getUserRole** : Vérifie l'existence d'une assignation
+
+=== EntityValidator integration
+Le service s'appuie sur EntityValidator pour :
+- **validateUser** : Confirmation de l'existence des utilisateurs (validation seule)
+- **Gestion cohérente** : Messages d'erreur standardisés
+- **Validation automatique** : Intégration transparente
+
+=== Protections système critiques
+Le service protège l'intégrité du système :
+- **Rôle USER obligatoire** : Maintien du rôle de base pour tous
+- **Dernier ADMIN** : Protection contre la suppression du dernier administrateur via `COUNT(*)`
+- **Comptes supprimés** : Exclusion automatique via les vues SQL et helpers
+
+== Gestion des erreurs spécialisées
+
+=== Erreurs de validation d'entités
+- **Utilisateur inexistant** : "User not found" (depuis helper)
+- **Rôle inexistant** : "Role not found" (depuis helper)
+- **Validation préalable** : Contrôles via helpers avant opérations
+
+=== Erreurs de protection système
+- **Rôle USER obligatoire** : "Cannot remove the basic USER role"
+- **Dernier administrateur** : "Cannot remove the last admin"
+- **Validation préalable** : Helper `protectCriticalRoles` centralise la logique
+
+=== Erreurs de duplication
+- **Assignation existante** : "User already has this role."
+- **Admin déjà assigné** : "User is already admin"
+- **Vérification préalable** : Helper `getUserRole` pour détecter les doublons
+
+=== Gestion des cas limites
+- **Utilisateur sans rôles** : Gestion gracieuse avec `user: null`
+- **Rôle sans membres** : Retour de listes vides sans erreur
+- **Validation côté base** : Les vues SQL excluent automatiquement les données supprimées
+
+== Performance et optimisation
+
+=== Requêtes optimisées avec Views SQL
+- **UserRoleView** : Évite les JOINs manuels User + Role + Assigner
+- **RolePermissionView** : Évite les JOINs multiples pour les permissions
+- **Filtrage précoce** : Conditions WHERE dans les vues SQL (deleted_at IS NULL)
+- **LIMIT stratégique** : LIMIT 1 pour les vérifications d'existence
+
+=== Optimisations côté application
+- **Helpers réutilisables** : Évite la duplication de code et améliore la maintenabilité
+- **Promise.all** : Validations parallèles dans `assignRole`
+- **Boucles for** : Au lieu de `reduce()` pour meilleures performances dans `getUserPermissions`
+- **Déduplication optimisée** : `findIndex` pour performance
+
+=== Index recommandés
+- **(id_user, id_role)** : Index composite sur UserRole
+- **id_user** : Index sur UserRoleView et RolePermissionView
+- **id_role** : Index sur UserRoleView
+- **deleted_at** : Index partiel sur User pour filtrage
+
+== Interaction avec d'autres services
+
+=== Dépendances directes
+- **EntityValidator** : Validation des utilisateurs (validation seule)
+- **UserRole model** : Gestion des associations
+- **Role model** : Informations des rôles
+- **User model** : Données des utilisateurs et assigneurs
+- **UserRoleView** : Vue SQL pour consultation des rôles
+- **RolePermissionView** : Vue SQL pour consultation des permissions
+
+=== Services connexes
+- **roleService** : Gestion des rôles et permissions
+- **permissionService** : Consultation des permissions disponibles
+- **userService** : Gestion des comptes utilisateurs
+
+=== Impact sur d'autres fonctionnalités
+- **Authentification** : Base pour l'autorisation des actions
+- **Interface admin** : Gestion des droits utilisateurs
+- **Audit système** : Traçabilité des changements de permissions
+- **Sécurité** : Contrôle d'accès granulaire aux ressources
+
+== Exemple de flux complet
+
+=== Scénario : Promotion d'un utilisateur au rôle "Modérateur" avec audit complet
+
+**Situation de départ :**
+Un administrateur souhaite promouvoir Alice au rôle "Modérateur" et consulter ensuite ses nouvelles permissions.
+
+**Traitement par le service :**
+
+1. **Assignation du rôle** :
+   ```javascript
+   await userRoleService.assignRole(
+     "alice-id",
+     "moderator-role-id",
+     "admin-id"
+   );
+   ```
+   - Validation : Alice existe et est active ✓ (helper findUser)
+   - Validation : Rôle Modérateur existe ✓ (helper findRole)
+   - Validation : Admin assigneur existe ✓ (helper findUser)
+   - Pas de doublon ✓ (helper getUserRole)
+   - Création avec traçabilité complète
+
+2. **Consultation des nouveaux rôles** :
+   ```javascript
+   const userRoles = await userRoleService.getUserRoles("alice-id");
+   ```
+   - Requête sur UserRoleView : Retour USER + MODERATOR
+   - Détails de l'assigneur pour chaque rôle
+   - Dates d'assignation pour audit
+
+3. **Vérification des permissions effectives** :
+   ```javascript
+   const permissions = await userRoleService.getUserPermissions("alice-id");
+   ```
+   - Requête sur RolePermissionView
+   - Consolidation des permissions USER + MODERATOR
+   - Vue par rôle + liste globale dédupliquée
+   - Statistiques : total_permissions augmenté
+
+**Évolution des droits :**
+- Avant : Permissions utilisateur de base uniquement
+- Après : Permissions utilisateur + permissions modérateur
+- Traçabilité : Qui, quand visible dans l'audit trail
+
+**Résultat :**
+Alice dispose maintenant des droits de modération avec un audit trail complet, grâce aux vues SQL optimisées et aux helpers réutilisables.
+
+== Diagramme de séquence - Workflow UserRoleService
+
+[mermaid]
+----
+sequenceDiagram
+    participant Controller
+    participant UserRoleService
+    participant Helpers
+    participant EntityValidator
+    participant Database
+    participant Views as SQL Views
+
+    Note over Controller, Views: Exemple: Assignation d'un rôle avec traçabilité
+
+    Controller->>UserRoleService: assignRole(userId, roleId, assignedBy)
+
+    par Validation avec helpers (Promise.all)
+        UserRoleService->>Helpers: findUser(userId)
+        Helpers->>Database: SELECT FROM users WHERE id_user = ? AND deleted_at IS NULL
+        Database-->>Helpers: targetUser
+        Helpers-->>UserRoleService: targetUser
+    and Validation rôle
+        UserRoleService->>Helpers: findRole(roleId)
+        Helpers->>Database: SELECT FROM roles WHERE id_role = ?
+        Database-->>Helpers: role
+        Helpers-->>UserRoleService: role
+    and Validation assigneur
+        UserRoleService->>Helpers: findUser(assignedBy)
+        Helpers->>Database: SELECT FROM users WHERE id_user = ? AND deleted_at IS NULL
+        Database-->>Helpers: assigningUser
+        Helpers-->>UserRoleService: assigningUser
+    end
+
+    UserRoleService->>Helpers: getUserRole(userId, roleId)
+    Helpers->>Database: SELECT FROM user_roles WHERE id_user = ? AND id_role = ?
+    Database-->>Helpers: existingAssignment
+    Helpers-->>UserRoleService: existingAssignment
+
+    alt Si assignation existe
+        UserRoleService-->>Controller: throw Error("User already has this role.")
+    else Assignation unique
+        UserRoleService->>Database: INSERT INTO user_roles VALUES({id_user, id_role, assigned_by}) RETURNING
+        Database-->>UserRoleService: newUserRole
+        UserRoleService-->>Controller: {user_role, user, role}
+    end
+
+    Note over Controller, Views: Exemple: Consultation avec UserRoleView
+
+    Controller->>UserRoleService: getUserRoles(userId)
+    UserRoleService->>EntityValidator: validateUser(userId)
+    EntityValidator-->>UserRoleService: validation OK
+
+    UserRoleService->>Views: SELECT FROM UserRoleView WHERE id_user = ?
+    Views-->>UserRoleService: userRoles[] (avec infos user, role, assigner)
+
+    UserRoleService->>UserRoleService: Extract user info from first row
+    UserRoleService-->>Controller: {user, roles}
+
+    Note over Controller, Views: Exemple: Permissions avec RolePermissionView
+
+    Controller->>UserRoleService: getUserPermissions(userId)
+    UserRoleService->>EntityValidator: validateUser(userId)
+    EntityValidator-->>UserRoleService: validation OK
+
+    UserRoleService->>Views: SELECT FROM RolePermissionView WHERE id_user = ?
+    Views-->>UserRoleService: userPermissions[]
+
+    UserRoleService->>UserRoleService: Group by role (for loop) + deduplicate
+    UserRoleService-->>Controller: {user, permissions_by_role, all_permissions, total}
+
+    Note over Controller, Views: Exemple: Suppression avec protections
+
+    Controller->>UserRoleService: removeRole(userId, roleId)
+    UserRoleService->>Helpers: getUserRole(userId, roleId)
+    Helpers-->>UserRoleService: existingUserRole
+
+    alt Si assignation inexistante
+        UserRoleService-->>Controller: null
+    else Assignation trouvée
+        UserRoleService->>Helpers: protectCriticalRoles(roleId, 'remove')
+        Helpers->>Database: SELECT FROM roles WHERE id_role = ?
+        Database-->>Helpers: role
+
+        alt Si rôle USER
+            Helpers-->>UserRoleService: throw Error("Cannot remove the basic USER role")
+        else Si rôle ADMIN
+            Helpers->>Database: SELECT COUNT(*) FROM user_roles JOIN users WHERE...
+            Database-->>Helpers: {count: 2}
+
+            alt Si dernier admin
+                Helpers-->>UserRoleService: throw Error("Cannot remove the last admin")
+            else Suppression autorisée
+                UserRoleService->>Database: DELETE FROM user_roles RETURNING
+                Database-->>UserRoleService: removedUserRole
+                UserRoleService-->>Controller: removedUserRole
+            end
+        else Rôle standard
+            UserRoleService->>Database: DELETE FROM user_roles RETURNING
+            Database-->>UserRoleService: removedUserRole
+            UserRoleService-->>Controller: removedUserRole
+        end
+    end
+----
+
+== Résumé
+
+Le service userRoleService est le **gestionnaire opérationnel du RBAC** de l'API BlaBlaBook V2. Il gère **7 opérations principales** avec :
+- **Views SQL optimisées** : `UserRoleView` et `RolePermissionView` pour éviter les JOINs manuels
+- **Helpers réutilisables** : Factorisation du code pour `findUser`, `findRole`, `getUserRole`, `protectCriticalRoles`
+- **Validations parallèles** : `Promise.all` dans `assignRole` pour meilleures performances
+- **Assignations tracées** : Enregistrement de qui assigne quoi et quand avec audit complet
+- **Protections système critiques** : Sauvegarde du rôle USER et du dernier administrateur
+- **Consolidation des permissions** : Vue unifiée des droits effectifs par utilisateur avec `RolePermissionView`
+- **Validation centralisée** : Utilisation de `EntityValidator` pour cohérence
+- **Optimisations performance** : Boucles `for` au lieu de `reduce()`, LIMIT 1, index sur les vues
+
+**Architecture modernisée : Le service tire parti des vues SQL pour simplifier le code, améliorer les performances et faciliter la maintenance, tout en conservant une traçabilité complète et des protections système robustes.**

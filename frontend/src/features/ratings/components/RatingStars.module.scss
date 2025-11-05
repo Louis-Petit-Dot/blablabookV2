@@ -1,0 +1,125 @@
+/* RatingStars.module.scss
+    - Classes principales :
+        .ratingStars            conteneur
+        .interactive            conteneur quand l'utilisateur peut interagir (cursor pointer, hover)
+        .star                  chaque étoile (button)
+        .star--filled          étoile complètement remplie
+        .star--half            étoile à moitié remplie
+        .S / .M / .L           tailles
+*/
+
+:root {
+  /* Couleurs — ajuste selon ton thème */
+  --star-filled: #ffb020; /* couleur étoile pleine */
+  --star-empty: #e6e6e6;  /* couleur étoile vide / fond */
+  --star-hover: #ffc556;  /* couleur au hover */
+    --focus-ring: rgba(99, 102, 241, 0.24);
+    --transition-fast: 150ms;
+    --gap: 6px;
+    --star-size-S: 16px;
+    --star-size-M: 22px;
+    --star-size-L: 30px;
+}
+
+.ratingStars {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--gap);
+    user-select: none;
+
+  /* si interactive : cursor + hover effects */
+    &.interactive {
+    .star {
+        cursor: pointer;
+      /* Hover effects are handled in the component logic; no CSS rules needed here. */
+    }
+    }
+
+  /* sizes */
+    &.S { font-size: var(--star-size-S); }
+    &.M { font-size: var(--star-size-M); }
+    &.L { font-size: var(--star-size-L); }
+}
+
+/* each star is a button element for keyboard accessibility */
+.star {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    padding: 0;
+    margin: 0;
+    border: 0;
+    background: transparent;
+    line-height: 1;
+    font-family: inherit;
+    font-weight: 700;
+  /* we render the star glyph twice: empty underneath, filled above clipped */
+  color: var(--star-empty); /* base (empty star) - visible via ::before */
+    transition: transform var(--transition-fast) ease, color var(--transition-fast) ease;
+    -webkit-tap-highlight-color: transparent;
+
+  /* base star glyph */
+    &::before {
+    content: '★';
+    display: block;
+    color: var(--star-empty);
+    width: 100%;
+    height: 100%;
+    text-align: center;
+    font-size: 1em;
+    line-height: 1;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    }
+
+  /* overlay filled star clipped by width (to support half star) */
+    &::after {
+    content: '★';
+    position: absolute;
+    left: 0;
+    top: 0;
+    color: var(--star-filled);
+    width: 0%;
+    height: 100%;
+    overflow: hidden;
+    text-align: center;
+    font-size: 1em;
+    line-height: 1;
+    transition: width var(--transition-fast) ease, color var(--transition-fast) ease;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    pointer-events: none;
+    }
+
+  /* Filled star (100%) */
+    &.star--filled::after {
+    width: 100%;
+    }
+
+  /* Half-filled star (50%) */
+    &.star--half::after {
+    width: 50%;
+    }
+
+  /* small hover "pop" for interactive */
+    &.interactive &,
+    .interactive & {
+    &:hover {
+        transform: translateY(-2px) scale(1.03);
+    }
+    }
+
+  /* focus-visible for keyboard users */
+    &:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 4px var(--focus-ring);
+    border-radius: 4px;
+    }
+
+  /* disabled / readonly */
+    &.readonly {
+    cursor: default;
+    opacity: 1;
+    pointer-events: none;
+    }
+}

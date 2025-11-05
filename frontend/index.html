@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+    <!-- DNS Prefetch & Preconnect pour améliorer la latence réseau -->
+    <link rel="dns-prefetch" href="//localhost:3000" />
+    <link rel="preconnect" href="http://localhost:3000" crossorigin />
+
+    <link rel="icon" type="image/png" sizes="32x32" href="/pictures/favicon/favicon-32x32.png" />
+
+    <!-- Preload de l'image hero pour améliorer le LCP -->
+    <link rel="preload" as="image" href="/pictures/livre-coeur-L.webp" fetchpriority="high" />
+
+    <!-- Preload font critique -->
+    <link rel="preload" href="/fonts/Inter/Inter-400.woff2" as="font" type="font/woff2" crossorigin fetchpriority="high" />
+
+    <title>BlaBlaBook V2</title>
+</head>
+
+        <body>
+
+            <div id="root"></div>
+
+        <script type="module" src="/src/main.tsx"></script>
+
+        </body>
+</html>

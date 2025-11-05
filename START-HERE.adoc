@@ -1,0 +1,815 @@
+= 🚀 BlaBlaBook V2 - Developer Onboarding Guide
+:toc: left
+:toclevels: 3
+:sectanchors:
+:icons: font
+:version: 2.0
+
+// Navigation langues
+<<section-fr,🇫🇷 Version Française>> | <<section-en,🇬🇧🇺🇸 English Version>>
+
+---
+
+[[section-fr]]
+== 🇫🇷 Guide d'Accueil Développeur
+
+<<section-en,🇬🇧🇺🇸 Switch to English>> | 🇫🇷 *Français*
+
+=== 👋 Bienvenue dans l'équipe BlaBlaBook V2 !
+
+Ce guide vous aidera à démarrer rapidement sur le projet.
+
+=== 📖 Qu'est-ce que BlaBlaBook V2 ?
+
+**BlaBlaBook** est une plateforme communautaire de gestion et partage de bibliothèques personnelles de livres.
+
+**Architecture :**
+
+* 🎨 **Frontend** : SPA (Single Page Application) React 19
+* ⚙️ **Backend** : API REST stateless avec Deno/Hono
+* 🗄️ **Base de données** : PostgreSQL 17
+* 📦 **Mono-repo** : Frontend et Backend dans le même dépôt
+
+**Structure du projet :**
+----
+blablabookV2/
+├── frontend/          # SPA React 19 + Vite
+├── backend/           # API Deno + Hono + Drizzle
+├── Docs/              # Documentation technique complète
+├── docker-compose.*.yml  # Configurations Docker
+└── START-HERE.adoc    # 👈 Vous êtes ici !
+----
+
+=== 🛠️ Stack Technique
+
+[cols="2,3,2"]
+|===
+|Composant |Technologie |Version
+
+|**Frontend**
+|React + Vite + React Router
+|19.1.1 / 6.3.6 / 7.9.3
+
+|**Backend**
+|Deno + Hono + Drizzle ORM
+|2.5.2 / 4.x / 0.38.0
+
+|**Base de données**
+|PostgreSQL
+|17
+
+|**Container**
+|Docker + Docker Compose
+|Latest
+
+|**Validation**
+|Zod (shared schemas)
+|3.x
+
+|**Authentication**
+|JWT (httpOnly cookies)
+|Stateless
+
+|**Images**
+|Cloudinary CDN
+|Free tier
+
+|**Cache/Storage**
+|Deno KV (native)
+|Built-in
+
+|**Book Data API**
+|OpenLibrary API
+|Free (public)
+|===
+
+=== ⚡ Démarrage Rapide
+
+==== Prérequis
+
+* Docker & Docker Compose installés
+* Git
+* (Optionnel) Deno 2.5+ pour développement backend local
+* (Optionnel) Node.js 22+ pour développement frontend local
+
+==== 🐳 Lancement avec Docker (Recommandé)
+
+**Mode développement (hot reload activé) :**
+
+[source,bash]
+----
+# Démarrer tous les services en développement
+docker compose -f docker-compose.dev.yml up
+
+# Backend API disponible sur : http://localhost:3000
+# Frontend SPA disponible sur : http://localhost:5173
+# PostgreSQL disponible sur : localhost:5432
+# Adminer (DB GUI) disponible sur : http://localhost:8080
+----
+
+**Mode production (build optimisé) :**
+
+[source,bash]
+----
+# Démarrer en mode production
+docker compose -f docker-compose.prod.yml up -d
+
+# Frontend disponible sur : http://localhost:4173
+# Backend API disponible sur : http://localhost:3000
+----
+
+**Mode test (CI/CD) :**
+
+[source,bash]
+----
+# Lancer les tests
+docker compose -f docker-compose.test.yml up --abort-on-container-exit
+----
+
+==== 🔧 Développement Local (Sans Docker)
+
+**Backend (API Deno) :**
+
+[source,bash]
+----
+cd backend
+
+# Installer Deno (si pas déjà fait)
+curl -fsSL https://deno.land/install.sh | sh
+
+# Créer fichier .env à partir du template
+cp .env.example .env
+
+# Lancer en mode développement (watch mode)
+deno task dev
+
+# Autres commandes utiles
+deno task db:push          # Pousser schema Drizzle vers PostgreSQL
+deno task db:studio        # Ouvrir Drizzle Studio (GUI)
+deno task test             # Lancer les tests
+deno task lint             # Linter le code
+----
+
+**Frontend (SPA React) :**
+
+[source,bash]
+----
+cd frontend
+
+# Installer les dépendances
+npm install
+
+# Créer fichier .env à partir du template
+cp .env.example .env
+
+# Lancer en mode développement (hot reload)
+npm run dev
+
+# Autres commandes utiles
+npm run build              # Build production
+npm run preview            # Preview du build production
+npm run test               # Lancer les tests Vitest
+npm run lint               # Linter le code
+npm run type-check         # Vérifier les types TypeScript
+----
+
+=== 📁 Structure du Code
+
+==== Backend (Deno + Hono)
+
+----
+backend/
+├── src/
+│   ├── controllers/       # Contrôleurs HTTP (logique endpoints)
+│   ├── services/          # Logique métier
+│   ├── middleware/        # Middlewares (auth, RBAC, validation)
+│   ├── models/            # Schémas Drizzle ORM
+│   ├── routes/            # Définition des routes API
+│   ├── utils/             # Utilitaires (JWT, hash, validators)
+│   └── main.ts            # Point d'entrée application
+├── drizzle/               # Migrations Drizzle
+├── tests/                 # Tests unitaires et intégration
+├── deno.json              # Configuration Deno
+└── drizzle.config.ts      # Configuration Drizzle ORM
+----
+
+**📚 Documentation Backend :**
+
+* link:Docs/cdc/api-specifications.adoc[🛣️ Spécifications API REST complètes]
+* link:Docs/backend/author-search-flow.adoc[👤 Workflow recherche auteurs]
+* link:Docs/backend/genre-search-flow.adoc[📚 Workflow recherche genres]
+* link:Docs/database/dictionnaire-donnees.adoc[📖 Dictionnaire de données]
+* link:Docs/architecture/security-architecture.adoc[🔒 Architecture sécurité (JWT, RBAC, OWASP)]
+
+==== Frontend (React 19 + Vite)
+
+----
+frontend/
+├── src/
+│   ├── components/        # Composants React réutilisables
+│   │   ├── common/        # Composants génériques (Button, Card...)
+│   │   ├── layout/        # Layout (Header, Footer, Sidebar)
+│   │   └── features/      # Composants métier (BookCard, ReviewForm...)
+│   ├── pages/             # Pages React Router
+│   ├── hooks/             # Hooks personnalisés
+│   ├── services/          # Services API (fetch wrappers)
+│   ├── contexts/          # Contexts React (Auth, Theme...)
+│   ├── utils/             # Utilitaires frontend
+│   ├── types/             # Types TypeScript partagés
+│   ├── App.tsx            # Composant racine
+│   └── main.tsx           # Point d'entrée
+├── public/                # Assets statiques
+└── vite.config.ts         # Configuration Vite
+----
+
+**📚 Documentation Frontend :**
+
+* link:Docs/frontend/react-architecture-complete.adoc[⚛️ Architecture React complète]
+* link:Docs/frontend/react-routerV7.adoc[🛣️ React Router v7 (routing, loaders, actions)]
+* link:Docs/frontend/react-explique-simplement.adoc[📖 React expliqué simplement (pédagogique)]
+* link:Docs/frontend/frontend-security-checklist.adoc[🔒 Checklist sécurité frontend]
+* link:Docs/design/charte-graphique-blablabook.adoc[🎨 Charte graphique et design system]
+
+=== 📚 OpenLibrary Integration
+
+**Source de données livres :**
+
+BlaBlaBook utilise l'**OpenLibrary API** (gratuite et publique) pour récupérer les métadonnées des livres.
+
+**Fonctionnalités :**
+* Recherche par ISBN, titre, auteur
+* Récupération métadonnées (titre, auteur, année, résumé)
+* Couvertures de livres (tailles S/M/L)
+* Système de cache intelligent (trending books cachés 1h)
+
+**URLs API :**
+* Recherche : `https://openlibrary.org/api/books`
+* Couvertures : `https://covers.openlibrary.org/b/isbn/{isbn}-L.jpg`
+
+**Workflow d'import :**
+1. **Livre temporaire** : URL OpenLibrary directe (supprimé après 72h si non utilisé)
+2. **Livre confirmé** : Upload vers Cloudinary pour optimisation CDN
+
+**📚 Documentation OpenLibrary :**
+
+* link:Docs/diagrams/activity/recherche-ajout-livre.adoc[🔍 Workflow recherche/ajout livre]
+* link:Docs/diagrams/workflow-service-images.adoc[🖼️ Gestion images (OpenLibrary + Cloudinary)]
+
+=== 🗄️ Base de Données
+
+**Schémas et modélisation :**
+
+* **ORM** : Drizzle ORM (type-safe, performant)
+* **Migrations** : Gérées par Drizzle Kit
+* **Modélisation** : Merise (MCD, MLD, MPD) + ERD
+
+**📚 Documentation Base de données :**
+
+* link:Docs/database/dictionnaire-donnees.adoc[📖 Dictionnaire de données complet]
+* link:Docs/database/ERD/ERD-BBBV2.adoc[📊 Diagramme ERD (Entity Relationship)]
+* link:Docs/database/Merise/MCD/cardinalites-details.adoc[🔗 Cardinalités Merise détaillées]
+
+**Connexion PostgreSQL locale :**
+
+[source,bash]
+----
+# Via Docker Compose (recommandé)
+# PostgreSQL démarre automatiquement sur port 5432
+
+# Connexion directe (psql)
+psql -h localhost -U blablabook -d blablabookv2
+
+# Via Adminer (interface web)
+# URL : http://localhost:8080
+# Système : PostgreSQL
+# Serveur : postgres
+# Utilisateur : blablabook
+# Base : blablabookv2
+----
+
+=== 🔐 Authentification & Sécurité
+
+**Système d'authentification :**
+
+* **JWT stateless** : Access token unique (8h) - Pas de refresh token
+* **httpOnly cookies** : Token inaccessible depuis JavaScript
+* **RBAC** : Role-Based Access Control (USER, ADMIN)
+* **Deno KV** : Cache rôles/permissions + lockout (15 min après 5 tentatives)
+* **Zero Trust** : Validation permissions à chaque requête
+
+**📚 Documentation Sécurité :**
+
+* link:Docs/architecture/security-architecture.adoc[🔒 Architecture sécurité complète]
+* link:Docs/cdc/risk-analysis.adoc[⚠️ Analyse risques & OWASP Top 10]
+* link:Docs/diagrams/activity/authentification-workflow.adoc[🔐 Workflow authentification (login/register/lockout)]
+
+=== 🎨 Design & UX
+
+**Design System :**
+
+* **Palette de couleurs** : Tons bruns/beige (thème livre/bibliothèque)
+* **Typography** : Polices lisibles et chaleureuses
+* **Composants** : Système cohérent de composants réutilisables
+
+**📚 Documentation Design :**
+
+* link:Docs/design/charte-graphique-blablabook.adoc[🎨 Charte graphique complète]
+* link:Docs/design/maquettes/[🖼️ Maquettes UI/UX]
+
+=== 📊 Diagrammes UML
+
+**Diagrammes disponibles :**
+
+* link:Docs/diagrams/activity/authentification-workflow.adoc[🔐 Diagramme activité : Authentification]
+* link:Docs/diagrams/activity/recherche-ajout-livre.adoc[🔍 Diagramme activité : Recherche/Ajout livre]
+* link:Docs/diagrams/activity/gestion-listes-lecture.adoc[📚 Diagramme activité : Gestion listes lecture]
+* link:Docs/diagrams/activity/redaction-avis-spoiler.adoc[✍️ Diagramme activité : Rédaction avis avec spoilers]
+* link:Docs/diagrams/sequence/diag-sequence.adoc[⏱️ Diagrammes de séquence (12 workflows complets)]
+* link:Docs/diagrams/use-cases/use-cases-BBBV2.adoc[👥 Use Cases BlaBlaBook V2]
+
+=== 🧪 Tests
+
+**Framework de tests :**
+
+* **Backend** : Deno Test (natif)
+* **Frontend** : Vitest + React Testing Library
+
+**Lancer les tests :**
+
+[source,bash]
+----
+# Backend (Deno Test)
+cd backend
+deno task test              # Tous les tests
+deno task test:watch        # Mode watch
+
+# Frontend (Vitest)
+cd frontend
+npm run test                # Tous les tests
+npm run test:watch          # Mode watch
+npm run test:coverage       # Avec couverture
+----
+
+**📚 Documentation Tests :**
+
+* link:Docs/cdc/test-strategy.adoc[🧪 Stratégie de tests (unitaires, intégration, E2E)]
+
+=== 🐳 Docker & Déploiement
+
+**Environnements disponibles :**
+
+* `docker-compose.dev.yml` : Développement (hot reload)
+* `docker-compose.prod.yml` : Production (build optimisé)
+* `docker-compose.test.yml` : Tests CI/CD
+
+**📚 Documentation Déploiement :**
+
+* link:Docs/deployment/README.adoc[🚀 Guide de déploiement complet]
+* link:Docs/architecture/docker-explications.adoc[🐳 Explications infrastructure Docker]
+
+=== 📝 Conventions de Code
+
+**Standards du projet :**
+
+* **Code source** : 100% anglais (variables, fonctions, noms de fichiers)
+* **Commentaires** : Français, première personne, sans accents
+* **Commits** : Convention Conventional Commits (anglais)
+* **Formatage** : Prettier + ESLint (auto-formatage)
+
+**📚 Documentation Conventions :**
+
+* link:Docs/development/coding-conventions.adoc[📝 Conventions de code complètes]
+* link:Docs/development/configuration-guide.adoc[⚙️ Guide de configuration]
+
+=== 🔗 Liens Utiles
+
+**Pour démarrer :**
+
+1. link:Docs/README.adoc[📚 Hub de documentation complet]
+2. link:Docs/cdc/business-requirements.adoc[📋 Spécifications métier]
+3. link:Docs/cdc/technical-architecture.adoc[🏗️ Architecture technique V2]
+4. link:Docs/development/coding-conventions.adoc[📝 Conventions de code]
+
+**Pour le développement backend :**
+
+* link:Docs/cdc/api-specifications.adoc[🛣️ Routes API REST]
+* link:Docs/database/dictionnaire-donnees.adoc[📖 Schéma base de données]
+* link:Docs/architecture/security-architecture.adoc[🔒 Sécurité (JWT, RBAC, OWASP)]
+
+**Pour le développement frontend :**
+
+* link:Docs/frontend/react-architecture-complete.adoc[⚛️ Architecture React]
+* link:Docs/frontend/frontend-security-checklist.adoc[🔒 Sécurité frontend]
+* link:Docs/design/charte-graphique-blablabook.adoc[🎨 Design system]
+
+=== 🆘 Besoin d'Aide ?
+
+* **Documentation complète** : link:Docs/README.adoc[📚 Documentation Hub]
+* **Questions techniques** : Voir link:Docs/development/coding-conventions.adoc[Conventions de code]
+* **Problèmes de déploiement** : Consulter link:Docs/deployment/README.adoc[Guide de déploiement]
+
+---
+
+[[section-en]]
+== 🇬🇧🇺🇸 Developer Onboarding Guide
+
+🇬🇧🇺🇸 *English* | <<section-fr,🇫🇷 Passer au Français>>
+
+=== 👋 Welcome to the BlaBlaBook V2 Team!
+
+This guide will help you get started quickly on the project.
+
+=== 📖 What is BlaBlaBook V2?
+
+**BlaBlaBook** is a community platform for managing and sharing personal book libraries.
+
+**Architecture:**
+
+* 🎨 **Frontend**: React 19 SPA (Single Page Application)
+* ⚙️ **Backend**: Stateless REST API with Deno/Hono
+* 🗄️ **Database**: PostgreSQL 17
+* 📦 **Mono-repo**: Frontend and Backend in the same repository
+
+**Project structure:**
+----
+blablabookV2/
+├── frontend/          # React 19 SPA + Vite
+├── backend/           # Deno API + Hono + Drizzle
+├── Docs/              # Complete technical documentation
+├── docker-compose.*.yml  # Docker configurations
+└── START-HERE.adoc    # 👈 You are here!
+----
+
+=== 🛠️ Tech Stack
+
+[cols="2,3,2"]
+|===
+|Component |Technology |Version
+
+|**Frontend**
+|React + Vite + React Router
+|19.1.1 / 6.3.6 / 7.9.3
+
+|**Backend**
+|Deno + Hono + Drizzle ORM
+|2.5.2 / 4.x / 0.38.0
+
+|**Database**
+|PostgreSQL
+|17
+
+|**Container**
+|Docker + Docker Compose
+|Latest
+
+|**Validation**
+|Zod (shared schemas)
+|3.x
+
+|**Authentication**
+|JWT (httpOnly cookies)
+|Stateless
+
+|**Images**
+|Cloudinary CDN
+|Free tier
+
+|**Cache/Storage**
+|Deno KV (native)
+|Built-in
+
+|**Book Data API**
+|OpenLibrary API
+|Free (public)
+|===
+
+=== ⚡ Quick Start
+
+==== Prerequisites
+
+* Docker & Docker Compose installed
+* Git
+* (Optional) Deno 2.5+ for local backend development
+* (Optional) Node.js 22+ for local frontend development
+
+==== 🐳 Launch with Docker (Recommended)
+
+**Development mode (hot reload enabled):**
+
+[source,bash]
+----
+# Start all services in development mode
+docker compose -f docker-compose.dev.yml up
+
+# Backend API available at: http://localhost:3000
+# Frontend SPA available at: http://localhost:5173
+# PostgreSQL available at: localhost:5432
+# Adminer (DB GUI) available at: http://localhost:8080
+----
+
+**Production mode (optimized build):**
+
+[source,bash]
+----
+# Start in production mode
+docker compose -f docker-compose.prod.yml up -d
+
+# Frontend available at: http://localhost:4173
+# Backend API available at: http://localhost:3000
+----
+
+**Test mode (CI/CD):**
+
+[source,bash]
+----
+# Run tests
+docker compose -f docker-compose.test.yml up --abort-on-container-exit
+----
+
+==== 🔧 Local Development (Without Docker)
+
+**Backend (Deno API):**
+
+[source,bash]
+----
+cd backend
+
+# Install Deno (if not already installed)
+curl -fsSL https://deno.land/install.sh | sh
+
+# Create .env file from template
+cp .env.example .env
+
+# Start in development mode (watch mode)
+deno task dev
+
+# Other useful commands
+deno task db:push          # Push Drizzle schema to PostgreSQL
+deno task db:studio        # Open Drizzle Studio (GUI)
+deno task test             # Run tests
+deno task lint             # Lint code
+----
+
+**Frontend (React SPA):**
+
+[source,bash]
+----
+cd frontend
+
+# Install dependencies
+npm install
+
+# Create .env file from template
+cp .env.example .env
+
+# Start in development mode (hot reload)
+npm run dev
+
+# Other useful commands
+npm run build              # Production build
+npm run preview            # Preview production build
+npm run test               # Run Vitest tests
+npm run lint               # Lint code
+npm run type-check         # Check TypeScript types
+----
+
+=== 📁 Code Structure
+
+==== Backend (Deno + Hono)
+
+----
+backend/
+├── src/
+│   ├── controllers/       # HTTP controllers (endpoint logic)
+│   ├── services/          # Business logic
+│   ├── middleware/        # Middlewares (auth, RBAC, validation)
+│   ├── models/            # Drizzle ORM schemas
+│   ├── routes/            # API route definitions
+│   ├── utils/             # Utilities (JWT, hash, validators)
+│   └── main.ts            # Application entry point
+├── drizzle/               # Drizzle migrations
+├── tests/                 # Unit and integration tests
+├── deno.json              # Deno configuration
+└── drizzle.config.ts      # Drizzle ORM configuration
+----
+
+**📚 Backend Documentation:**
+
+* link:Docs/cdc/api-specifications.adoc[🛣️ Complete REST API specifications]
+* link:Docs/backend/author-search-flow.adoc[👤 Author search workflow]
+* link:Docs/backend/genre-search-flow.adoc[📚 Genre search workflow]
+* link:Docs/database/dictionnaire-donnees.adoc[📖 Data dictionary]
+* link:Docs/architecture/security-architecture.adoc[🔒 Security architecture (JWT, RBAC, OWASP)]
+
+==== Frontend (React 19 + Vite)
+
+----
+frontend/
+├── src/
+│   ├── components/        # Reusable React components
+│   │   ├── common/        # Generic components (Button, Card...)
+│   │   ├── layout/        # Layout (Header, Footer, Sidebar)
+│   │   └── features/      # Business components (BookCard, ReviewForm...)
+│   ├── pages/             # React Router pages
+│   ├── hooks/             # Custom hooks
+│   ├── services/          # API services (fetch wrappers)
+│   ├── contexts/          # React contexts (Auth, Theme...)
+│   ├── utils/             # Frontend utilities
+│   ├── types/             # Shared TypeScript types
+│   ├── App.tsx            # Root component
+│   └── main.tsx           # Entry point
+├── public/                # Static assets
+└── vite.config.ts         # Vite configuration
+----
+
+**📚 Frontend Documentation:**
+
+* link:Docs/frontend/react-architecture-complete.adoc[⚛️ Complete React architecture]
+* link:Docs/frontend/react-routerV7.adoc[🛣️ React Router v7 (routing, loaders, actions)]
+* link:Docs/frontend/react-explique-simplement.adoc[📖 React explained simply (pedagogical)]
+* link:Docs/frontend/frontend-security-checklist.adoc[🔒 Frontend security checklist]
+* link:Docs/design/charte-graphique-blablabook.adoc[🎨 Brand guidelines and design system]
+
+=== 📚 OpenLibrary Integration
+
+**Book data source:**
+
+BlaBlaBook uses the **OpenLibrary API** (free and public) to retrieve book metadata.
+
+**Features:**
+* Search by ISBN, title, author
+* Retrieve metadata (title, author, year, summary)
+* Book covers (sizes S/M/L)
+* Smart cache system (trending books cached 1h)
+
+**API URLs:**
+* Search: `https://openlibrary.org/api/books`
+* Covers: `https://covers.openlibrary.org/b/isbn/{isbn}-L.jpg`
+
+**Import workflow:**
+1. **Temporary book**: Direct OpenLibrary URL (deleted after 72h if not used)
+2. **Confirmed book**: Upload to Cloudinary for CDN optimization
+
+**📚 OpenLibrary Documentation:**
+
+* link:Docs/diagrams/activity/recherche-ajout-livre.adoc[🔍 Book search/add workflow]
+* link:Docs/diagrams/workflow-service-images.adoc[🖼️ Image management (OpenLibrary + Cloudinary)]
+
+=== 🗄️ Database
+
+**Schemas and modeling:**
+
+* **ORM**: Drizzle ORM (type-safe, performant)
+* **Migrations**: Managed by Drizzle Kit
+* **Modeling**: Merise (MCD, MLD, MPD) + ERD
+
+**📚 Database Documentation:**
+
+* link:Docs/database/dictionnaire-donnees.adoc[📖 Complete data dictionary]
+* link:Docs/database/ERD/ERD-BBBV2.adoc[📊 ERD diagram (Entity Relationship)]
+* link:Docs/database/Merise/MCD/cardinalites-details.adoc[🔗 Detailed Merise cardinalities]
+
+**Local PostgreSQL connection:**
+
+[source,bash]
+----
+# Via Docker Compose (recommended)
+# PostgreSQL starts automatically on port 5432
+
+# Direct connection (psql)
+psql -h localhost -U blablabook -d blablabookv2
+
+# Via Adminer (web interface)
+# URL: http://localhost:8080
+# System: PostgreSQL
+# Server: postgres
+# User: blablabook
+# Database: blablabookv2
+----
+
+=== 🔐 Authentication & Security
+
+**Authentication system:**
+
+* **Stateless JWT**: Single access token (8h) - No refresh token
+* **httpOnly cookies**: Token inaccessible from JavaScript
+* **RBAC**: Role-Based Access Control (USER, ADMIN)
+* **Deno KV**: Roles/permissions cache + lockout (15 min after 5 attempts)
+* **Zero Trust**: Permission validation on every request
+
+**📚 Security Documentation:**
+
+* link:Docs/architecture/security-architecture.adoc[🔒 Complete security architecture]
+* link:Docs/cdc/risk-analysis.adoc[⚠️ Risk analysis & OWASP Top 10]
+* link:Docs/diagrams/activity/authentification-workflow.adoc[🔐 Authentication workflow (login/register/lockout)]
+
+=== 🎨 Design & UX
+
+**Design System:**
+
+* **Color palette**: Brown/beige tones (book/library theme)
+* **Typography**: Readable and warm fonts
+* **Components**: Consistent system of reusable components
+
+**📚 Design Documentation:**
+
+* link:Docs/design/charte-graphique-blablabook.adoc[🎨 Complete brand guidelines]
+* link:Docs/design/maquettes/[🖼️ UI/UX mockups]
+
+=== 📊 UML Diagrams
+
+**Available diagrams:**
+
+* link:Docs/diagrams/activity/authentification-workflow.adoc[🔐 Activity diagram: Authentication]
+* link:Docs/diagrams/activity/recherche-ajout-livre.adoc[🔍 Activity diagram: Book search/add]
+* link:Docs/diagrams/activity/gestion-listes-lecture.adoc[📚 Activity diagram: Reading list management]
+* link:Docs/diagrams/activity/redaction-avis-spoiler.adoc[✍️ Activity diagram: Review writing with spoilers]
+* link:Docs/diagrams/sequence/diag-sequence.adoc[⏱️ Sequence diagrams (12 complete workflows)]
+* link:Docs/diagrams/use-cases/use-cases-BBBV2.adoc[👥 BlaBlaBook V2 Use Cases]
+
+=== 🧪 Tests
+
+**Test frameworks:**
+
+* **Backend**: Deno Test (native)
+* **Frontend**: Vitest + React Testing Library
+
+**Run tests:**
+
+[source,bash]
+----
+# Backend (Deno Test)
+cd backend
+deno task test              # All tests
+deno task test:watch        # Watch mode
+
+# Frontend (Vitest)
+cd frontend
+npm run test                # All tests
+npm run test:watch          # Watch mode
+npm run test:coverage       # With coverage
+----
+
+**📚 Testing Documentation:**
+
+* link:Docs/cdc/test-strategy.adoc[🧪 Test strategy (unit, integration, E2E)]
+
+=== 🐳 Docker & Deployment
+
+**Available environments:**
+
+* `docker-compose.dev.yml`: Development (hot reload)
+* `docker-compose.prod.yml`: Production (optimized build)
+* `docker-compose.test.yml`: CI/CD tests
+
+**📚 Deployment Documentation:**
+
+* link:Docs/deployment/README.adoc[🚀 Complete deployment guide]
+* link:Docs/architecture/docker-explications.adoc[🐳 Docker infrastructure explanations]
+
+=== 📝 Code Conventions
+
+**Project standards:**
+
+* **Source code**: 100% English (variables, functions, file names)
+* **Comments**: French, first person, no accents
+* **Commits**: Conventional Commits (English)
+* **Formatting**: Prettier + ESLint (auto-format)
+
+**📚 Conventions Documentation:**
+
+* link:Docs/development/coding-conventions.adoc[📝 Complete coding conventions]
+* link:Docs/development/configuration-guide.adoc[⚙️ Configuration guide]
+
+=== 🔗 Useful Links
+
+**To get started:**
+
+1. link:Docs/README.adoc[📚 Complete documentation hub]
+2. link:Docs/cdc/business-requirements.adoc[📋 Business requirements]
+3. link:Docs/cdc/technical-architecture.adoc[🏗️ V2 technical architecture]
+4. link:Docs/development/coding-conventions.adoc[📝 Coding conventions]
+
+**For backend development:**
+
+* link:Docs/cdc/api-specifications.adoc[🛣️ REST API routes]
+* link:Docs/database/dictionnaire-donnees.adoc[📖 Database schema]
+* link:Docs/architecture/security-architecture.adoc[🔒 Security (JWT, RBAC, OWASP)]
+
+**For frontend development:**
+
+* link:Docs/frontend/react-architecture-complete.adoc[⚛️ React architecture]
+* link:Docs/frontend/frontend-security-checklist.adoc[🔒 Frontend security]
+* link:Docs/design/charte-graphique-blablabook.adoc[🎨 Design system]
+
+=== 🆘 Need Help?
+
+* **Complete documentation**: link:Docs/README.adoc[📚 Documentation Hub]
+* **Technical questions**: See link:Docs/development/coding-conventions.adoc[Coding conventions]
+* **Deployment issues**: Check link:Docs/deployment/README.adoc[Deployment guide]
+
+---
+
+*Document updated on 2025-10-21 - BlaBlaBook V2*
+
+🚀 *Happy coding! Bon développement !*

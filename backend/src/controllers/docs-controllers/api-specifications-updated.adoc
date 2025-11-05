@@ -1,0 +1,1054 @@
+= BlaBlaBook V2 - API Specifications / Spécifications API (MISE À JOUR)
+:toc: left
+:toclevels: 3
+:sectanchors:
+:icons: font
+:version: 2.1
+:date: {docdate}
+
+// Navigation inter-documents
+link:../README.adoc[📚 Documentation Hub] |
+link:business-requirements.adoc[📋 Business] |
+link:technical-architecture.adoc[🏗️ Architecture] |
+link:risk-analysis.adoc[⚠️ Risks]
+
+// Navigation langues
+<<section-fr,🇫🇷 Version Française>> | <<section-en,🇬🇧🇺🇸 English Version>>
+
+---
+
+[[section-fr]]
+== 🇫🇷 Spécifications API
+
+<<section-en,🇬🇧🇺🇸 Switch to English>> | 🇫🇷 *Français*
+
+=== 🛣️ Routes de l'Application
+
+==== Authentification JWT
+
+[cols="1,2,2,3"]
+|===
+|Méthode |Route |Description |Données
+
+|POST
+|`/api/auth/register`
+|Inscription utilisateur
+|`{ firstname, lastname, username, email, password }`
+
+|POST
+|`/api/auth/login`
+|Connexion utilisateur
+|`{ email, password }` OU `{ username, password }`
+
+|POST
+|`/api/auth/logout`
+|Déconnexion (suppression cookie)
+|`Authorization: Bearer <token>`
+|===
+
+**Réponses JWT :**
+```json
+// POST /api/auth/login - Succès
+{
+  "message": "Login successful",
+  "token": "eyJ0eXAiOiJKV1Q...",
+  "user": {
+    "id": "uuid",
+    "username": "john_doe",
+    "email": "john@example.com",
+    "firstname": "John",
+    "lastname": "Doe"
+  }
+}
+```
+
+==== Gestion Utilisateur
+
+[cols="1,2,2,3"]
+|===
+|Méthode |Route |Description |Données
+
+|GET
+|`/api/users`
+|Liste tous les utilisateurs
+|`Authorization: Bearer <token>`
+
+|GET
+|`/api/users/:id`
+|Récupérer un utilisateur
+|Param: `id`
+
+|PUT
+|`/api/users/:id`
+|Modifier un utilisateur
+|`{ firstname?, lastname?, username?, email? }`
+
+|PUT
+|`/api/users/:id/password`
+|Modifier mot de passe
+|`{ current_password, new_password }`
+
+|DELETE
+|`/api/users/:id`
+|Supprimer un utilisateur
+|Param: `id`
+|===
+
+*Note:* Les routes RGPD (`/api/user/export`, `/api/user/account`) ne sont pas encore implémentées.
+
+==== Livres
+
+[cols="1,2,2,3"]
+|===
+|Méthode |Route |Description |Données
+
+|GET
+|`/api/books/search`
+|Rechercher des livres via Open Library
+|Query: `q` (terme de recherche)
+
+|GET
+|`/api/books/:id`
+|Détails d'un livre
+|Param: `id` (ID Open Library ou UUID local)
+
+|GET
+|`/api/books`
+|Liste tous les livres
+|Query: `limit?` (défaut: 50)
+
+|GET
+|`/api/books/trending`
+|Livres tendances
+|Query: `limit?` (défaut: 20)
+
+|GET
+|`/api/books/:userId/books`
+|Tous les livres d'un utilisateur
+|Param: `userId`
+
+|POST
+|`/api/books`
+|Créer un livre depuis Open Library
+|`{ key, title, author_name?, first_publish_year?, cover_i?, ... }`
+
+|DELETE
+|`/api/books/:id`
+|Supprimer un livre (et cascades)
+|Param: `id`
+|===
+
+**Exemple réponse recherche :**
+```json
+// GET /api/books/search?q=dune
+{
+  "results": [
+    {
+      "key": "/works/OL123456W",
+      "title": "Dune",
+      "author_name": ["Frank Herbert"],
+      "first_publish_year": 1965,
+      "cover_i": 123456
+    }
+  ]
+}
+```
+
+==== Bibliothèques Personnelles
+
+[cols="1,2,2,3"]
+|===
+|Méthode |Route |Description |Données
+
+|GET
+|`/api/libraries`
+|Bibliothèques d'un utilisateur
+|Query: `user_id` (requis)
+
+|GET
+|`/api/libraries/:id`
+|Détails d'une bibliothèque
+|Param: `id`
+
+|POST
+|`/api/libraries`
+|Créer une bibliothèque
+|`{ lib_name, id_user }`
+
+|PUT
+|`/api/libraries/:id`
+|Modifier une bibliothèque
+|`{ lib_name? }`
+
+|PUT
+|`/api/libraries/:id/visibility`
+|Basculer visibilité publique/privée
+|Authentification requise
+
+|DELETE
+|`/api/libraries/:id`
+|Supprimer une bibliothèque
+|`{ user_id }` dans le body
+|===
+
+==== Listes de Lecture
+
+[cols="1,2,2,3"]
+|===
+|Méthode |Route |Description |Données
+
+|GET
+|`/api/reading-lists/accessible`
+|Listes accessibles (publiques + propres)
+|Authentification requise
+
+|GET
+|`/api/reading-lists/users/:id`
+|Listes d'un utilisateur spécifique
+|Param: `id` (user_id)
+
+|GET
+|`/api/reading-lists/:id`
+|Détails d'une liste
+|Param: `id`
+
+|POST
+|`/api/reading-lists`
+|Créer une liste
+|`{ list_name, id_library, is_public? }`
+
+|PUT
+|`/api/reading-lists/:id`
+|Modifier une liste
+|`{ list_name?, is_public? }`
+
+|DELETE
+|`/api/reading-lists/:id`
+|Supprimer une liste
+|Param: `id`
+|===
+
+*Note:* Les routes pour ajouter/retirer des livres d'une liste ne sont pas implémentées dans le controller actuel.
+
+==== Avis (Reviews)
+
+[cols="1,2,2,3"]
+|===
+|Méthode |Route |Description |Données
+
+|GET
+|`/api/reviews`
+|Tous les avis
+|Aucune
+
+|GET
+|`/api/users/:userId/reviews`
+|Avis d'un utilisateur
+|Param: `userId`
+
+|GET
+|`/api/books/:id/reviews`
+|Avis d'un livre
+|Param: `id` (book_id)
+
+|POST
+|`/api/reviews`
+|Créer un avis
+|`{ id_book, title, comment?, is_public?, is_spoiler? }`
+
+|PUT
+|`/api/reviews/:id`
+|Modifier son avis
+|`{ title?, comment?, is_public?, is_spoiler? }`
+
+|DELETE
+|`/api/reviews/:id`
+|Supprimer son avis
+|Param: `id`
+|===
+
+**Exemple réponse avis :**
+```json
+// GET /api/books/uuid/reviews
+{
+  "book": {
+    "id_book": "uuid",
+    "title": "Dune"
+  },
+  "reviews": [
+    {
+      "id_review": "uuid",
+      "title": "Chef d'œuvre de la SF",
+      "comment": "Excellent livre de science-fiction !",
+      "is_public": true,
+      "is_spoiler": false,
+      "user": {
+        "id_user": "uuid",
+        "username": "book_lover"
+      },
+      "created_at": "2024-01-15T10:30:00Z"
+    }
+  ]
+}
+```
+
+==== Notations (Rates)
+
+[cols="1,2,2,3"]
+|===
+|Méthode |Route |Description |Données
+
+|GET
+|`/api/books/:id/rates`
+|Notations d'un livre
+|Param: `id` (book_id)
+
+|POST
+|`/api/rates`
+|Créer/Modifier une notation
+|`{ id_book, rating }` (rating: 1-5)
+
+|DELETE
+|`/api/rates/:id`
+|Supprimer sa notation
+|Param: `id` (rate_id)
+|===
+
+**Exemple réponse notations :**
+```json
+// GET /api/books/uuid/rates
+{
+  "book": {
+    "id_book": "uuid",
+    "title": "Dune"
+  },
+  "rates": [
+    {
+      "id_rate": "uuid",
+      "rating": 5,
+      "id_user": "uuid",
+      "created_at": "2024-01-15T10:30:00Z"
+    }
+  ],
+  "average_rating": 4.5,
+  "total_rates": 42
+}
+```
+
+==== Auteurs
+
+[cols="1,2,2,3"]
+|===
+|Méthode |Route |Description |Données
+
+|GET
+|`/api/authors`
+|Liste tous les auteurs
+|Aucune
+
+|GET
+|`/api/authors/:id`
+|Détails d'un auteur
+|Param: `id`
+
+|GET
+|`/api/authors/:name/works`
+|Œuvres d'un auteur
+|Param: `name` (author_name)
+
+|POST
+|`/api/authors`
+|Créer un auteur
+|`{ author_name, biography?, wikipedia_url? }`
+
+|DELETE
+|`/api/authors/:id`
+|Supprimer un auteur
+|Param: `id`
+|===
+
+==== Genres
+
+[cols="1,2,2,3"]
+|===
+|Méthode |Route |Description |Données
+
+|GET
+|`/api/genres`
+|Liste tous les genres
+|Aucune
+
+|GET
+|`/api/genres/:id`
+|Détails d'un genre
+|Param: `id`
+
+|GET
+|`/api/genres/:name/books`
+|Livres d'un genre
+|Param: `name` (genre_name)
+
+|POST
+|`/api/genres`
+|Créer un genre
+|`{ genre_name }`
+|===
+
+==== Rôles et Permissions (RBAC)
+
+[cols="1,2,2,3"]
+|===
+|Méthode |Route |Description |Données
+
+|GET
+|`/api/roles`
+|Liste tous les rôles
+|Aucune
+
+|GET
+|`/api/roles/:id`
+|Détails d'un rôle
+|Param: `id`
+
+|GET
+|`/api/roles/system`
+|Rôles système (USER/ADMIN)
+|Aucune
+
+|GET
+|`/api/roles/:role/permissions`
+|Permissions d'un rôle
+|Param: `role` (USER ou ADMIN)
+
+|POST
+|`/api/roles`
+|Créer un rôle
+|`{ role_name, description }`
+
+|POST
+|`/api/roles/:id/permissions`
+|Ajouter permission à rôle
+|`{ id_permission }`
+
+|PUT
+|`/api/roles/:id`
+|Modifier un rôle
+|`{ role_name?, description? }`
+
+|DELETE
+|`/api/roles/:id`
+|Supprimer un rôle
+|Param: `id`
+
+|DELETE
+|`/api/roles/:id/permissions/:permissionId`
+|Retirer permission d'un rôle
+|Params: `id`, `permissionId`
+|===
+
+==== Administration (Rôle ADMIN)
+
+[cols="1,2,2,3"]
+|===
+|Méthode |Route |Description |Données
+
+|GET
+|`/api/admin/users`
+|Liste des utilisateurs avec rôles
+|Aucune
+
+|GET
+|`/api/admin/reviews`
+|Tous les avis (avec infos user/book)
+|Aucune
+
+|DELETE
+|`/api/admin/reviews/:id`
+|Supprimer un avis (admin bypass)
+|Param: `id`
+|===
+
+*Note:* Les routes suivantes de la documentation originale ne sont pas implémentées :
+- `PUT /api/admin/users/:id/suspend` (suspension utilisateur)
+- `GET /api/admin/stats` (statistiques globales)
+
+=== 🔒 Sécurité API
+
+==== Headers Requis
+
+**Authentification :**
+```http
+Authorization: Bearer eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9...
+Content-Type: application/json
+```
+
+**Cookies (utilisés pour JWT) :**
+```http
+Cookie: authToken=eyJ0eXAiOiJKV1Q...
+```
+
+==== Codes de Statut
+
+[cols="1,2,3"]
+|===
+|Code |Statut |Utilisation
+
+|200 |OK |Requête réussie avec données
+|201 |Created |Ressource créée (POST)
+|204 |No Content |Suppression réussie (DELETE)
+|400 |Bad Request |Données invalides
+|401 |Unauthorized |Token manquant/invalide ou lockout
+|403 |Forbidden |Permissions insuffisantes
+|404 |Not Found |Ressource inexistante
+|409 |Conflict |Ressource déjà existante
+|422 |Unprocessable Entity |Erreur validation Drizzle-Zod
+|429 |Too Many Requests |Rate limiting dépassé
+|500 |Internal Server Error |Erreur serveur
+|===
+
+==== Rate Limiting & Auth Lockout
+
+[cols="2,1,2"]
+|===
+|Endpoint |Limite |Fenêtre
+
+|`/api/auth/login`
+|5 tentatives échouées
+|15 minutes (lockout)
+
+|`/api/auth/register`
+|3 inscriptions
+|1 heure
+
+|`/api/**` (général)
+|100 requêtes
+|1 minute
+|===
+
+**Lockout système :**
+Après 5 tentatives de connexion échouées, le compte est verrouillé pendant 15 minutes. Un message d'erreur indique le temps restant.
+
+=== 📝 Notes d'Implémentation
+
+==== Controllers d'Association (Non Documentés en Détail)
+
+Les controllers suivants gèrent les relations many-to-many :
+- `authorBookController` : Association auteurs ↔ livres
+- `bookGenreController` : Association livres ↔ genres
+- `bookLibraryController` : Association livres ↔ bibliothèques
+- `bookReadingListController` : Association livres ↔ listes de lecture
+- `userRoleController` : Association utilisateurs ↔ rôles
+- `permissionController` : Gestion des permissions
+
+==== Différences avec la Documentation Initiale
+
+**Routes supprimées/non implémentées :**
+- `/api/auth/refresh` (refresh token)
+- `/api/user/export` (export RGPD)
+- `/api/user/account` (suppression compte RGPD)
+- `/api/admin/users/:id/suspend` (suspension utilisateur)
+- `/api/admin/stats` (statistiques)
+
+**Nouvelles routes ajoutées :**
+- Système complet d'auteurs (`/api/authors`)
+- Système complet de genres (`/api/genres`)
+- Système de notation séparé (`/api/rates`)
+- Système RBAC complet (`/api/roles`, `/api/permissions`)
+- Routes bibliothèques étendues
+- Routes reviews étendues
+
+**Architecture actuelle :**
+- JWT stocké dans des cookies httpOnly (protection XSS)
+- Système de lockout après tentatives échouées
+- Validation Zod via middlewares
+- Soft delete sur les utilisateurs (champ `deleted_at`)
+
+---
+
+[[section-en]]
+== 🇬🇧🇺🇸 API Specifications
+
+🇬🇧🇺🇸 *English* | <<section-fr,🇫🇷 Passer au Français>>
+
+=== 🛣️ Application Routes
+
+==== JWT Authentication
+
+[cols="1,2,2,3"]
+|===
+|Method |Route |Description |Data
+
+|POST
+|`/api/auth/register`
+|User registration
+|`{ firstname, lastname, username, email, password }`
+
+|POST
+|`/api/auth/login`
+|User login
+|`{ email, password }` OR `{ username, password }`
+
+|POST
+|`/api/auth/logout`
+|Logout (clear cookie)
+|`Authorization: Bearer <token>`
+|===
+
+**JWT Responses:**
+```json
+// POST /api/auth/login - Success
+{
+  "message": "Login successful",
+  "token": "eyJ0eXAiOiJKV1Q...",
+  "user": {
+    "id": "uuid",
+    "username": "john_doe",
+    "email": "john@example.com",
+    "firstname": "John",
+    "lastname": "Doe"
+  }
+}
+```
+
+==== User Management
+
+[cols="1,2,2,3"]
+|===
+|Method |Route |Description |Data
+
+|GET
+|`/api/users`
+|List all users
+|`Authorization: Bearer <token>`
+
+|GET
+|`/api/users/:id`
+|Get user by ID
+|Param: `id`
+
+|PUT
+|`/api/users/:id`
+|Update user
+|`{ firstname?, lastname?, username?, email? }`
+
+|PUT
+|`/api/users/:id/password`
+|Update password
+|`{ current_password, new_password }`
+
+|DELETE
+|`/api/users/:id`
+|Delete user
+|Param: `id`
+|===
+
+*Note:* GDPR routes (`/api/user/export`, `/api/user/account`) are not implemented yet.
+
+==== Books
+
+[cols="1,2,2,3"]
+|===
+|Method |Route |Description |Data
+
+|GET
+|`/api/books/search`
+|Search books via Open Library
+|Query: `q` (search term)
+
+|GET
+|`/api/books/:id`
+|Book details
+|Param: `id` (Open Library ID or local UUID)
+
+|GET
+|`/api/books`
+|List all books
+|Query: `limit?` (default: 50)
+
+|GET
+|`/api/books/trending`
+|Trending books
+|Query: `limit?` (default: 20)
+
+|GET
+|`/api/books/:userId/books`
+|All books of a user
+|Param: `userId`
+
+|POST
+|`/api/books`
+|Create book from Open Library
+|`{ key, title, author_name?, first_publish_year?, cover_i?, ... }`
+
+|DELETE
+|`/api/books/:id`
+|Delete book (with cascades)
+|Param: `id`
+|===
+
+==== Personal Libraries
+
+[cols="1,2,2,3"]
+|===
+|Method |Route |Description |Data
+
+|GET
+|`/api/libraries`
+|User's libraries
+|Query: `user_id` (required)
+
+|GET
+|`/api/libraries/:id`
+|Library details
+|Param: `id`
+
+|POST
+|`/api/libraries`
+|Create library
+|`{ lib_name, id_user }`
+
+|PUT
+|`/api/libraries/:id`
+|Update library
+|`{ lib_name? }`
+
+|PUT
+|`/api/libraries/:id/visibility`
+|Toggle public/private visibility
+|Authentication required
+
+|DELETE
+|`/api/libraries/:id`
+|Delete library
+|`{ user_id }` in body
+|===
+
+==== Reading Lists
+
+[cols="1,2,2,3"]
+|===
+|Method |Route |Description |Data
+
+|GET
+|`/api/reading-lists/accessible`
+|Accessible lists (public + own)
+|Authentication required
+
+|GET
+|`/api/reading-lists/users/:id`
+|Lists of specific user
+|Param: `id` (user_id)
+
+|GET
+|`/api/reading-lists/:id`
+|List details
+|Param: `id`
+
+|POST
+|`/api/reading-lists`
+|Create list
+|`{ list_name, id_library, is_public? }`
+
+|PUT
+|`/api/reading-lists/:id`
+|Update list
+|`{ list_name?, is_public? }`
+
+|DELETE
+|`/api/reading-lists/:id`
+|Delete list
+|Param: `id`
+|===
+
+*Note:* Routes to add/remove books from lists are not implemented in current controller.
+
+==== Reviews
+
+[cols="1,2,2,3"]
+|===
+|Method |Route |Description |Data
+
+|GET
+|`/api/reviews`
+|All reviews
+|None
+
+|GET
+|`/api/users/:userId/reviews`
+|User's reviews
+|Param: `userId`
+
+|GET
+|`/api/books/:id/reviews`
+|Book reviews
+|Param: `id` (book_id)
+
+|POST
+|`/api/reviews`
+|Create review
+|`{ id_book, title, comment?, is_public?, is_spoiler? }`
+
+|PUT
+|`/api/reviews/:id`
+|Update own review
+|`{ title?, comment?, is_public?, is_spoiler? }`
+
+|DELETE
+|`/api/reviews/:id`
+|Delete own review
+|Param: `id`
+|===
+
+==== Ratings
+
+[cols="1,2,2,3"]
+|===
+|Method |Route |Description |Data
+
+|GET
+|`/api/books/:id/rates`
+|Book ratings
+|Param: `id` (book_id)
+
+|POST
+|`/api/rates`
+|Create/Update rating
+|`{ id_book, rating }` (rating: 1-5)
+
+|DELETE
+|`/api/rates/:id`
+|Delete own rating
+|Param: `id` (rate_id)
+|===
+
+==== Authors
+
+[cols="1,2,2,3"]
+|===
+|Method |Route |Description |Data
+
+|GET
+|`/api/authors`
+|List all authors
+|None
+
+|GET
+|`/api/authors/:id`
+|Author details
+|Param: `id`
+
+|GET
+|`/api/authors/:name/works`
+|Author's works
+|Param: `name` (author_name)
+
+|POST
+|`/api/authors`
+|Create author
+|`{ author_name, biography?, wikipedia_url? }`
+
+|DELETE
+|`/api/authors/:id`
+|Delete author
+|Param: `id`
+|===
+
+==== Genres
+
+[cols="1,2,2,3"]
+|===
+|Method |Route |Description |Data
+
+|GET
+|`/api/genres`
+|List all genres
+|None
+
+|GET
+|`/api/genres/:id`
+|Genre details
+|Param: `id`
+
+|GET
+|`/api/genres/:name/books`
+|Books in genre
+|Param: `name` (genre_name)
+
+|POST
+|`/api/genres`
+|Create genre
+|`{ genre_name }`
+|===
+
+==== Roles and Permissions (RBAC)
+
+[cols="1,2,2,3"]
+|===
+|Method |Route |Description |Data
+
+|GET
+|`/api/roles`
+|List all roles
+|None
+
+|GET
+|`/api/roles/:id`
+|Role details
+|Param: `id`
+
+|GET
+|`/api/roles/system`
+|System roles (USER/ADMIN)
+|None
+
+|GET
+|`/api/roles/:role/permissions`
+|Role permissions
+|Param: `role` (USER or ADMIN)
+
+|POST
+|`/api/roles`
+|Create role
+|`{ role_name, description }`
+
+|POST
+|`/api/roles/:id/permissions`
+|Add permission to role
+|`{ id_permission }`
+
+|PUT
+|`/api/roles/:id`
+|Update role
+|`{ role_name?, description? }`
+
+|DELETE
+|`/api/roles/:id`
+|Delete role
+|Param: `id`
+
+|DELETE
+|`/api/roles/:id/permissions/:permissionId`
+|Remove permission from role
+|Params: `id`, `permissionId`
+|===
+
+==== Administration (ADMIN Role)
+
+[cols="1,2,2,3"]
+|===
+|Method |Route |Description |Data
+
+|GET
+|`/api/admin/users`
+|List users with roles
+|None
+
+|GET
+|`/api/admin/reviews`
+|All reviews (with user/book info)
+|None
+
+|DELETE
+|`/api/admin/reviews/:id`
+|Delete review (admin bypass)
+|Param: `id`
+|===
+
+*Note:* Following routes from original documentation are not implemented:
+- `PUT /api/admin/users/:id/suspend` (user suspension)
+- `GET /api/admin/stats` (global statistics)
+
+=== 🔒 API Security
+
+==== Required Headers
+
+**Authentication:**
+```http
+Authorization: Bearer eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9...
+Content-Type: application/json
+```
+
+**Cookies (used for JWT):**
+```http
+Cookie: authToken=eyJ0eXAiOiJKV1Q...
+```
+
+==== Status Codes
+
+[cols="1,2,3"]
+|===
+|Code |Status |Usage
+
+|200 |OK |Successful request with data
+|201 |Created |Resource created (POST)
+|204 |No Content |Successful deletion (DELETE)
+|400 |Bad Request |Invalid data
+|401 |Unauthorized |Missing/invalid token or lockout
+|403 |Forbidden |Insufficient permissions
+|404 |Not Found |Resource not found
+|409 |Conflict |Resource already exists
+|422 |Unprocessable Entity |Drizzle-Zod validation error
+|429 |Too Many Requests |Rate limiting exceeded
+|500 |Internal Server Error |Server error
+|===
+
+==== Rate Limiting & Auth Lockout
+
+[cols="2,1,2"]
+|===
+|Endpoint |Limit |Window
+
+|`/api/auth/login`
+|5 failed attempts
+|15 minutes (lockout)
+
+|`/api/auth/register`
+|3 registrations
+|1 hour
+
+|`/api/**` (general)
+|100 requests
+|1 minute
+|===
+
+**Lockout system:**
+After 5 failed login attempts, the account is locked for 15 minutes. Error message indicates remaining time.
+
+=== 📝 Implementation Notes
+
+==== Association Controllers (Not Documented in Detail)
+
+The following controllers manage many-to-many relationships:
+- `authorBookController`: Authors ↔ Books
+- `bookGenreController`: Books ↔ Genres
+- `bookLibraryController`: Books ↔ Libraries
+- `bookReadingListController`: Books ↔ Reading Lists
+- `userRoleController`: Users ↔ Roles
+- `permissionController`: Permissions management
+
+==== Differences with Initial Documentation
+
+**Routes removed/not implemented:**
+- `/api/auth/refresh` (refresh token)
+- `/api/user/export` (GDPR export)
+- `/api/user/account` (GDPR account deletion)
+- `/api/admin/users/:id/suspend` (user suspension)
+- `/api/admin/stats` (statistics)
+
+**New routes added:**
+- Complete authors system (`/api/authors`)
+- Complete genres system (`/api/genres`)
+- Separate rating system (`/api/rates`)
+- Complete RBAC system (`/api/roles`, `/api/permissions`)
+- Extended library routes
+- Extended review routes
+
+**Current architecture:**
+- JWT stored in httpOnly cookies (XSS protection)
+- Lockout system after failed attempts
+- Zod validation via middlewares
+- Soft delete on users (`deleted_at` field)
+
+---
+
+*Document mis à jour le {docdate} - Version 2.1 - Updated on {docdate} - Version 2.1*

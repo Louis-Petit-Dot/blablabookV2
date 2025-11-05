@@ -1,0 +1,796 @@
+= AuthStore (Zustand) - Explication Complete
+:toc:
+:toclevels: 3
+
+== Vue d'ensemble
+
+Le fichier `authStore.ts` est le **gestionnaire d'etat d'authentification global** de l'application frontend. Il utilise Zustand pour stocker les informations de l'utilisateur connecte et fournir des helpers pour verifier ses roles et permissions. Ce store communique avec le backend via l'API et persiste les donnees dans le localStorage pour survivre aux rafraichissements de page.
+
+IMPORTANT: Ce store contient **uniquement les donnees utilisateur** (pas le token JWT qui est dans un cookie httpOnly pour la securite). Il sert principalement a adapter l'interface utilisateur selon les droits de l'utilisateur connecte.
+
+== Qu'est-ce qu'on a fait ?
+
+=== Fichiers crees
+
+**1. `src/types/user.ts`** : Definitions TypeScript
+- Interface `User` : Structure complete d'un utilisateur
+- Interface `Role` : Structure d'un role (ADMIN, MODERATOR, USER)
+- Interface `Permissions` : Structure d'une permission (action + resource)
+
+**2. `src/store/authStore.ts`** : Store Zustand
+- State : `user` (User | null) + `isAuthenticated` (boolean)
+- Actions : `login()`, `logout()`
+- Helpers : `hasRole()`, `hasPermission()`
+- Persistence : localStorage avec cle `auth-storage`
+
+=== Structure des interfaces
+
+**User** : Utilisateur complet avec tous ses droits
+```typescript
+interface User {
+  id_user: string           // UUID
+  firstname: string
+  lastname: string
+  username: string
+  email: string
+  avatar_url: string | null
+  preferences: any          // JSON preferences
+  last_login?: Date
+  created_at: Date
+  updated_at: Date
+  roles: Role[]             // Roles de l'utilisateur
+  permissions: Permissions[] // Permissions agregees
+}
+```
+
+**Role** : Role assigne a l'utilisateur
+```typescript
+interface Role {
+  id_role: string           // UUID
+  role_name: string         // "ADMIN", "MODERATOR", "USER"
+  description: string       // Description du role
+  assigned_at: Date         // Date d'assignation
+}
+```
+
+**Permissions** : Permission individuelle
+```typescript
+interface Permissions {
+  id_permission: string     // UUID
+  label: string             // "Lire les livres"
+  action: string | null     // "read", "write", "delete"
+  resource: string | null   // "books", "users", "reviews"
+}
+```
+
+=== Structure du store
+
+**State (donnees stockees)** :
+- `user: User | null` : Utilisateur connecte ou null si deconnecte
+- `isAuthenticated: boolean` : Indicateur simple de connexion
+
+**Actions (fonctions qui modifient le state)** :
+- `login(user: User)` : Stocke l'utilisateur et passe isAuthenticated a true
+- `logout()` : Supprime l'utilisateur et passe isAuthenticated a false
+
+**Helpers (fonctions de verification)** :
+- `hasRole(roleName: string)` : Verifie si l'utilisateur a un role specifique
+- `hasPermission(action: string, resource: string)` : Verifie si l'utilisateur a une permission
+
+== Pourquoi on l'a fait ?
+
+=== Problemes resolus
+
+**1. Gestion de l'etat global**
+
+AVANT (sans Zustand) :
+- Passer les infos user de parent en enfant via props (prop drilling)
+- Re-fetch des infos user dans chaque composant qui en a besoin
+- Perte des infos au refresh de page
+
+APRES (avec Zustand + persist) :
+- Acces direct aux infos user depuis n'importe quel composant
+- Une seule source de verite pour l'utilisateur connecte
+- Persistance automatique dans localStorage
+
+**2. Conditional rendering base sur les droits**
+
+AVANT :
+- Impossible de masquer/afficher des elements selon les roles
+- Interface identique pour tous les utilisateurs
+- Mauvaise experience utilisateur
+
+APRES :
+- Boutons/menus/sections adaptes selon les roles/permissions
+- Interface personnalisee selon les droits
+- Meilleure UX (on ne montre que ce qui est accessible)
+
+**3. Type safety avec TypeScript**
+
+AVANT :
+- Pas de validation des donnees utilisateur
+- Risque d'erreurs avec des champs manquants
+- Autocomplete absente
+
+APRES :
+- Validation TypeScript complete
+- Autocomplete dans l'IDE
+- Detection d'erreurs a la compilation
+
+=== Objectifs atteints
+
+- ✅ Store global accessible partout
+- ✅ Persistence localStorage (survit au refresh)
+- ✅ Helpers pour conditional rendering
+- ✅ Type safety complet avec TypeScript
+- ✅ Separation des responsabilites (state management isole)
+
+== Principe de fonctionnement
+
+=== Architecture globale
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                         FRONTEND                            │
+│                                                             │
+│  ┌──────────────┐    ┌──────────────┐    ┌──────────────┐ │
+│  │  user.ts     │───▶│ authStore.ts │◀───│ Components   │ │
+│  │  (types)     │    │  (Zustand)   │    │              │ │
+│  └──────────────┘    └──────┬───────┘    └──────────────┘ │
+│                             │                              │
+│                             │ localStorage                 │
+│                             ▼                              │
+│                      ┌─────────────┐                       │
+│                      │ 'auth-      │                       │
+│                      │  storage'   │                       │
+│                      └─────────────┘                       │
+└─────────────────────────────────────────────────────────────┘
+                              │
+                              │ HTTP (cookie httpOnly)
+                              ▼
+┌─────────────────────────────────────────────────────────────┐
+│                         BACKEND                             │
+│                                                             │
+│  POST /api/users/login                                      │
+│                                                             │
+│  Response:                                                  │
+│  {                                                          │
+│    "user": {                                                │
+│      "id_user": "uuid",                                     │
+│      "firstname": "John",                                   │
+│      "roles": [...],                                        │
+│      "permissions": [...]                                   │
+│    }                                                        │
+│  }                                                          │
+│                                                             │
+│  Cookie httpOnly: token=jwt                                 │
+└─────────────────────────────────────────────────────────────┘
+```
+
+=== Workflow complet : Login utilisateur
+
+==== Diagramme de sequence
+
+[mermaid]
+----
+sequenceDiagram
+    actor User
+    participant Form as LoginForm<br/>(Component)
+    participant Store as authStore<br/>(Zustand)
+    participant LS as localStorage
+    participant API as Axios API
+    participant Backend as Backend<br/>(Hono)
+    participant DB as PostgreSQL
+    participant Cache as Deno KV<br/>(Cache)
+
+    User->>Form: Saisit email + password
+    Form->>API: POST /api/users/login<br/>{email, password}
+    API->>Backend: HTTP Request
+
+    Backend->>DB: SELECT user WHERE email
+    DB-->>Backend: User found
+
+    Backend->>Backend: Verify password (Argon2)
+
+    alt Cache HIT
+        Backend->>Cache: getUserRoles(userId)
+        Cache-->>Backend: Roles cached
+        Backend->>Cache: getUserPermissions(userId)
+        Cache-->>Backend: Permissions cached
+    else Cache MISS
+        Backend->>DB: SELECT roles via user_role_view
+        DB-->>Backend: User roles
+        Backend->>DB: SELECT permissions via role_permission_view
+        DB-->>Backend: User permissions
+        Backend->>Cache: setUserRoles(userId, roles)
+        Backend->>Cache: setUserPermissions(userId, perms)
+    end
+
+    Backend->>Backend: Generate JWT token
+    Backend->>Backend: Set httpOnly cookie
+
+    Backend-->>API: Response:<br/>{user: {..., roles, permissions}}<br/>+ Cookie: token=jwt
+    API-->>Form: Response data
+
+    Form->>Store: login(user)
+    Store->>Store: set({user, isAuthenticated: true})
+    Store->>LS: persist to 'auth-storage'
+    LS-->>Store: saved
+
+    Form->>User: Navigate to /dashboard
+----
+
+==== Etapes detaillees
+
+**Etape 1 : User remplit le formulaire**
+```
+User tape email + password dans LoginForm
+```
+
+**Etape 2 : Frontend envoie requete au backend**
+```typescript
+// Dans LoginForm.tsx
+const response = await api.post('/users/login', {
+  email: 'john@example.com',
+  password: 'password123'
+})
+```
+
+**Etape 3 : Backend authentifie et renvoie les donnees**
+
+Backend fait (voir backend `userService.ts:login()`) :
+1. Verifie email/password
+2. Recupere roles/permissions (avec cache Deno KV)
+3. Genere JWT et le met dans cookie httpOnly
+4. Renvoie user avec roles/permissions
+
+Response backend :
+```json
+{
+  "message": "Login successful",
+  "user": {
+    "id_user": "123e4567-e89b-12d3-a456-426614174000",
+    "firstname": "John",
+    "lastname": "Doe",
+    "username": "johndoe",
+    "email": "john@example.com",
+    "avatar_url": null,
+    "preferences": {},
+    "last_login": "2025-10-02T12:00:00Z",
+    "created_at": "2025-01-01T00:00:00Z",
+    "updated_at": "2025-10-02T12:00:00Z",
+    "roles": [
+      {
+        "id_role": "uuid-role",
+        "role_name": "ADMIN",
+        "description": "Administrator",
+        "assigned_at": "2025-01-01T00:00:00Z"
+      }
+    ],
+    "permissions": [
+      {
+        "id_permission": "uuid-perm-1",
+        "label": "Supprimer des utilisateurs",
+        "action": "delete",
+        "resource": "users"
+      },
+      {
+        "id_permission": "uuid-perm-2",
+        "label": "Lire les livres",
+        "action": "read",
+        "resource": "books"
+      }
+    ]
+  }
+}
+```
+
+**Etape 4 : Frontend stocke dans Zustand**
+```typescript
+// Dans LoginForm.tsx apres reponse API
+const { login } = useAuthStore()
+login(response.user)  // Stocke dans le store
+```
+
+**Etape 5 : Zustand persiste automatiquement**
+```
+localStorage.setItem('auth-storage', JSON.stringify({
+  state: {
+    user: { ...response.user },
+    isAuthenticated: true
+  }
+}))
+```
+
+**Etape 6 : Redirection vers dashboard**
+```typescript
+navigate('/dashboard')
+```
+
+=== Workflow complet : Utilisation dans un composant
+
+**Exemple : Header avec conditional rendering**
+
+```typescript
+// components/Header.tsx
+import { useAuthStore } from '../store/authStore'
+
+function Header() {
+  const { user, isAuthenticated, hasRole, hasPermission, logout } = useAuthStore()
+
+  const handleLogout = () => {
+    logout()  // Supprime user du store
+    // Appel API pour invalider le cookie (optionnel)
+    navigate('/login')
+  }
+
+  return (
+    <header>
+      {isAuthenticated ? (
+        <>
+          <span>Bonjour {user?.firstname}</span>
+
+          {/* Afficher seulement si ADMIN */}
+          {hasRole('ADMIN') && (
+            <Link to="/admin">Panel Admin</Link>
+          )}
+
+          {/* Afficher seulement si permission delete users */}
+          {hasPermission('delete', 'users') && (
+            <button>Gerer les utilisateurs</button>
+          )}
+
+          <button onClick={handleLogout}>Se deconnecter</button>
+        </>
+      ) : (
+        <Link to="/login">Se connecter</Link>
+      )}
+    </header>
+  )
+}
+```
+
+**Ce qui se passe :**
+
+1. `useAuthStore()` recupere le state et les fonctions
+2. `isAuthenticated` determine si on affiche "connecte" ou "non connecte"
+3. `hasRole('ADMIN')` verifie si `user.roles` contient un role avec `role_name === 'ADMIN'`
+4. `hasPermission('delete', 'users')` verifie si `user.permissions` contient `{ action: 'delete', resource: 'users' }`
+5. Les elements sont affiches conditionnellement selon les resultats
+
+==== Diagramme de sequence : Conditional rendering
+
+[mermaid]
+----
+sequenceDiagram
+    participant Header as Header<br/>(Component)
+    participant Store as authStore<br/>(Zustand)
+    participant LS as localStorage
+    participant React as React
+
+    Header->>Store: useAuthStore()
+    Store->>LS: read 'auth-storage'
+    LS-->>Store: user data
+    Store-->>Header: {user, isAuthenticated,<br/>hasRole, hasPermission}
+
+    Header->>Header: Check isAuthenticated
+    alt isAuthenticated = true
+        Header->>React: Render "Bonjour {firstname}"
+
+        Header->>Store: hasRole('ADMIN')
+        Store->>Store: user.roles.some(r => r.role_name === 'ADMIN')
+        Store-->>Header: true/false
+
+        alt hasRole = true
+            Header->>React: Render Link to="/admin"
+        else hasRole = false
+            Header->>React: Skip render
+        end
+
+        Header->>Store: hasPermission('delete', 'users')
+        Store->>Store: user.permissions.some(<br/>p => p.action === 'delete'<br/>&& p.resource === 'users')
+        Store-->>Header: true/false
+
+        alt hasPermission = true
+            Header->>React: Render button Gerer utilisateurs
+        else hasPermission = false
+            Header->>React: Skip render
+        end
+
+    else isAuthenticated = false
+        Header->>React: Render Link to="/login"
+    end
+
+    React->>Header: Final JSX rendered
+----
+
+=== Communication authStore ↔ Backend
+
+**Frontend → Backend (Login)** :
+```
+POST /api/users/login
+Body: { email, password }
+→ Backend verifie, recupere roles/permissions
+→ Backend renvoie user complet + cookie JWT
+```
+
+**Frontend ← Backend (Response)** :
+```
+Response: { user: { ...roles, ...permissions } }
+→ Frontend stocke dans authStore.login(user)
+→ Zustand persiste dans localStorage
+```
+
+**Requetes suivantes (avec JWT cookie)** :
+```
+GET /api/books
+Headers: Cookie: token=jwt (automatique)
+→ Backend verifie JWT
+→ Backend verifie permissions en BDD (pas confiance au frontend)
+→ Backend renvoie donnees si autorise
+```
+
+**Frontend → Backend (Logout)** :
+```
+POST /api/users/logout
+→ Backend supprime cookie JWT
+→ Frontend appelle authStore.logout()
+→ Zustand supprime user du state + localStorage
+```
+
+== Details techniques
+
+=== Pourquoi pas de token dans le store ?
+
+**Securite** : Le token JWT est dans un **cookie httpOnly**
+
+```typescript
+// Backend (userController.ts)
+authUtils.setCookieToken(c, result.token)
+
+// Le cookie est configure comme :
+{
+  httpOnly: true,    // Pas accessible en JavaScript
+  secure: true,      // HTTPS uniquement
+  sameSite: 'strict' // Protection CSRF
+}
+```
+
+**Avantages** :
+- ✅ Protection XSS : Impossible de voler le token via JavaScript
+- ✅ Envoi automatique : Le navigateur ajoute le cookie a chaque requete
+- ✅ Pas de gestion manuelle : Pas besoin d'ajouter Authorization header
+
+**Dans le store** :
+- Seulement les infos user pour l'UI (firstname, roles, permissions)
+- Le token reste invisible et inaccessible au frontend
+
+=== Pourquoi persist avec localStorage ?
+
+**Persistance** : Sans persist, le store se vide au refresh
+
+```typescript
+persist(
+  (set, get) => ({ ...store }),
+  { name: 'auth-storage' }  // Cle dans localStorage
+)
+```
+
+**Comportement** :
+
+1. User se connecte → `login(user)` stocke dans state
+2. Zustand ecrit automatiquement dans `localStorage['auth-storage']`
+3. User refresh la page → Zustand lit `localStorage['auth-storage']`
+4. State restaure automatiquement
+
+**Avantage** :
+- User reste connecte apres refresh
+- Pas de re-login systematique
+- Meilleure UX
+
+**Limitation** :
+- Si JWT expire mais localStorage reste, user semble connecte mais API refuse
+- Solution : Interceptor axios qui logout() si 401 Unauthorized
+
+=== Implementation des helpers
+
+**hasRole(roleName: string)** :
+
+```typescript
+hasRole: (roleName) => {
+  const { user } = get()
+  if (!user) return false
+  return user.roles.some(role => role.role_name === roleName)
+}
+```
+
+**Logique** :
+1. Recupere user depuis le store avec `get()`
+2. Si pas de user → `false`
+3. Sinon, cherche dans `user.roles[]` si un role a `role_name === roleName`
+
+**Exemple d'utilisation** :
+```typescript
+hasRole('ADMIN')      // true si user a role ADMIN
+hasRole('MODERATOR')  // true si user a role MODERATOR
+hasRole('USER')       // true pour tous (role de base)
+```
+
+**hasPermission(action: string, resource: string)** :
+
+```typescript
+hasPermission: (action, resource) => {
+  const { user } = get()
+  if (!user) return false
+  return user.permissions.some(
+    perm => perm.action === action && perm.resource === resource
+  )
+}
+```
+
+**Logique** :
+1. Recupere user depuis le store
+2. Si pas de user → `false`
+3. Sinon, cherche dans `user.permissions[]` si une permission correspond
+
+**Exemple d'utilisation** :
+```typescript
+hasPermission('read', 'books')    // Peut lire les livres ?
+hasPermission('delete', 'users')  // Peut supprimer des users ?
+hasPermission('write', 'reviews') // Peut ecrire des reviews ?
+```
+
+=== Middleware Zustand persist
+
+**Configuration** :
+```typescript
+persist(
+  (set, get) => ({ /* store */ }),
+  { name: 'auth-storage' }
+)
+```
+
+**Ce que fait persist** :
+1. Intercepte chaque `set()` (modification du state)
+2. Serialise le state en JSON
+3. Ecrit dans `localStorage.setItem('auth-storage', json)`
+4. Au boot de l'app, lit `localStorage.getItem('auth-storage')`
+5. Deserialise et restaure le state
+
+**Contenu localStorage** :
+```json
+{
+  "state": {
+    "user": {
+      "id_user": "uuid",
+      "firstname": "John",
+      "roles": [...],
+      "permissions": [...]
+    },
+    "isAuthenticated": true
+  },
+  "version": 0
+}
+```
+
+== Integration avec le backend RBAC
+
+=== Separation des responsabilites
+
+**Frontend (authStore)** :
+- Stocke user/roles/permissions pour l'UI
+- Helpers pour conditional rendering
+- **Ne prend AUCUNE decision de securite**
+
+**Backend (middlewares RBAC)** :
+- Verifie TOUJOURS les permissions en BDD
+- Source de verite pour les autorisations
+- **Seul a decider si une action est autorisee**
+
+=== Exemple : Supprimer un utilisateur
+
+**Frontend** :
+```typescript
+// Dashboard.tsx
+{hasPermission('delete', 'users') && (
+  <button onClick={() => deleteUser(userId)}>
+    Supprimer
+  </button>
+)}
+```
+
+**Ce qui se passe** :
+1. `hasPermission('delete', 'users')` verifie dans le store local
+2. Si `true` → Bouton affiche
+3. User clique → `deleteUser()` appelle API
+
+**Backend** :
+```typescript
+// users-routes.ts
+userRoutes.delete('/:id',
+  jwtMiddleware,               // Verifie JWT cookie
+  requirePermission('delete', 'users'),  // Verifie en BDD !
+  userController.delete
+)
+```
+
+**Ce qui se passe** :
+1. Middleware `jwtMiddleware` verifie le JWT
+2. Middleware `requirePermission` lit les permissions depuis PostgreSQL
+3. Si user n'a pas la permission → 403 Forbidden
+4. **Meme si le frontend affichait le bouton par erreur**, le backend refuse
+
+=== Principe Zero Trust
+
+**Regle d'or** : Le backend ne fait JAMAIS confiance au frontend
+
+- Frontend masque/affiche = **UX uniquement**
+- Backend verifie en BDD = **Securite reelle**
+
+**Exemple de contournement impossible** :
+
+User malveillant modifie localStorage :
+```javascript
+// User ouvre DevTools console
+const store = JSON.parse(localStorage.getItem('auth-storage'))
+store.state.user.roles.push({ role_name: 'ADMIN' })
+localStorage.setItem('auth-storage', JSON.stringify(store))
+location.reload()
+```
+
+**Resultat** :
+- ✅ Frontend affiche les boutons admin (roles falsifies dans le store)
+- ❌ Backend refuse toutes les requetes (JWT ne contient pas ADMIN, BDD non plus)
+- ✅ Aucun acces non autorise
+
+**Pourquoi c'est safe** :
+- Le JWT (dans le cookie) n'a pas change
+- Le backend verifie en BDD, pas dans le JWT
+- L'utilisateur voit des boutons mais ne peut rien faire avec
+
+==== Diagramme de sequence : Zero Trust en action
+
+[plantuml, zero-trust, svg]
+----
+@startuml
+actor User
+participant "Dashboard\n(Component)" as Dashboard
+participant "authStore\n(Zustand)" as Store
+participant "Axios API" as API
+participant "Backend\n(Hono)" as Backend
+participant "RBAC\nMiddleware" as RBAC
+database "PostgreSQL" as DB
+
+== Phase 1: Affichage UI (Frontend) ==
+
+User -> Dashboard: Acces a la page
+Dashboard -> Store: hasPermission('delete', 'users')
+Store -> Store: Check user.permissions[]
+Store --> Dashboard: true (permission en cache)
+Dashboard -> Dashboard: Render <button>Supprimer</button>
+
+== Phase 2: Action utilisateur ==
+
+User -> Dashboard: Click sur bouton Supprimer
+Dashboard -> API: DELETE /api/users/{id}
+API -> Backend: HTTP DELETE + Cookie JWT
+
+== Phase 3: Verification securite (Backend) ==
+
+Backend -> Backend: Verify JWT signature
+Backend -> Backend: Extract userId from JWT
+
+Backend -> RBAC: requirePermission('delete', 'users')
+RBAC -> DB: SELECT permissions\nFROM user_role_permissions_view\nWHERE id_user = ?
+DB --> RBAC: User permissions (source of truth)
+
+alt User has permission
+    RBAC --> Backend: ✅ Authorized
+    Backend -> DB: DELETE FROM users WHERE id = ?
+    DB --> Backend: User deleted
+    Backend --> API: 200 OK
+    API --> Dashboard: Success
+    Dashboard -> User: Notification "Utilisateur supprime"
+else User lacks permission
+    RBAC --> Backend: ❌ 403 Forbidden
+    Backend --> API: 403 {error: "Insufficient permissions"}
+    API --> Dashboard: Error
+    Dashboard -> User: "Erreur: Permission refusee"
+end
+
+note right of RBAC
+  Le backend verifie TOUJOURS en BDD
+  Meme si le frontend affichait le bouton,
+  le backend refuse si pas de permission reelle
+end note
+
+@enduml
+----
+
+**Points cles du diagramme** :
+
+1. **Phase 1 (Frontend)** : Le composant verifie `hasPermission()` dans le store local pour decider d'afficher le bouton
+2. **Phase 2 (Action)** : User clique, le frontend envoie la requete DELETE
+3. **Phase 3 (Backend)** : Le middleware RBAC verifie TOUJOURS en BDD (pas de confiance au frontend)
+4. **Resultat** : Meme si un attaquant falsifie le localStorage, le backend refuse la requete
+
+== Evolutions futures
+
+=== Court terme
+
+- [ ] Ajouter interceptor axios pour logout automatique si 401
+- [ ] Ajouter `updateUser()` pour modifier le profil
+- [ ] Ajouter `refreshUser()` pour recharger roles/permissions
+
+=== Moyen terme
+
+- [ ] Ajouter `hasAnyRole(['ADMIN', 'MODERATOR'])` pour flexibilite
+- [ ] Ajouter `hasAllPermissions([...])` pour verifications multiples
+- [ ] Implementer refresh token si JWT expire
+
+=== Long terme
+
+- [ ] WebSockets pour notifications temps reel de changement de roles
+- [ ] Cache TTL frontend pour eviter trop de verifications
+- [ ] Dashboard utilisateur avec liste des permissions actuelles
+
+== Troubleshooting
+
+=== User deconnecte apres refresh
+
+**Cause** : JWT expire mais localStorage garde les infos
+
+**Solution** : Interceptor axios
+```typescript
+axios.interceptors.response.use(
+  response => response,
+  error => {
+    if (error.response?.status === 401) {
+      useAuthStore.getState().logout()
+      navigate('/login')
+    }
+    return Promise.reject(error)
+  }
+)
+```
+
+=== hasRole/hasPermission renvoie toujours false
+
+**Verifier** :
+1. `user` est bien dans le store (pas null)
+2. `user.roles` et `user.permissions` sont des arrays non vides
+3. Les noms de roles correspondent exactement ("ADMIN" vs "admin")
+
+**Debug** :
+```typescript
+const { user } = useAuthStore()
+console.log('User:', user)
+console.log('Roles:', user?.roles)
+console.log('Permissions:', user?.permissions)
+```
+
+=== localStorage corrompu
+
+**Symptomes** : Erreur au chargement de l'app
+
+**Solution** : Vider le localStorage
+```javascript
+localStorage.removeItem('auth-storage')
+location.reload()
+```
+
+== Conclusion
+
+Le authStore est le **coeur de la gestion d'authentification frontend**. Il fournit :
+
+- ✅ Un etat global accessible partout
+- ✅ Une persistance automatique dans localStorage
+- ✅ Des helpers pour conditional rendering
+- ✅ Une separation claire frontend (UX) vs backend (securite)
+- ✅ Une integration transparente avec le RBAC backend
+
+**Points cles a retenir** :
+- Le token JWT reste dans le cookie httpOnly (pas dans le store)
+- Les helpers `hasRole()`/`hasPermission()` sont pour l'UI uniquement
+- Le backend verifie TOUJOURS en BDD (Zero Trust)
+- La persistence permet de garder la session apres refresh

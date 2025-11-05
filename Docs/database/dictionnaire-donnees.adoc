@@ -1,0 +1,1440 @@
+= Dictionnaire des Donnees - BlaBlaBook V2
+:toc:
+:toc-title: Sommaire
+:sectnums:
+:icons: font
+:version: 2.0
+:date: {docdate}
+
+== 0. Contexte technique
+
+Ce dictionnaire des donnees a ete concu selon la methodologie MERISE pour BlaBlaBook V2. Il est optimise pour une implementation avec :
+
+- **Stack technique** : Deno + Hono + Drizzle ORM + PostgreSQL
+- **Types PostgreSQL** : Utilisation des types natifs (UUID, SERIAL, ENUM)
+- **Approche hybride** : UUID pour references + SERIAL pour performance
+- **Conformite RGPD** : Champs anonymisation et suppression soft
+- **Gestion temporaire** : Systeme de nettoyage automatique
+
+=== 0.1 Choix architecturaux JSONB
+
+Le schema integre strategiquement des colonnes JSONB pour maximiser la flexibilite sans compromettre les performances :
+
+**USER.preferences (JSONB)**
+- **Motivation** : Personnalisation des recherches et de l'interface utilisateur
+- **Donnees variables** : Filtres de recherche, preferences UI, objectifs de lecture
+- **Avantage** : Evite la creation de multiples tables de configuration
+
+**BOOK.metadata (JSONB)**
+- **Motivation** : Integration flexible avec OpenLibrary API
+- **Donnees variables** : Identifiants externes, series, awards, couvertures multiples
+- **Verification OpenLibrary** : Tests API confirment la variabilite des champs retournes
+- **Robustesse** : Le schema reste stable meme avec des donnees API partielles
+
+Cette approche hybride combine la rigueur relationnelle pour les donnees critiques et la flexibilite NoSQL pour les donnees evolutives.
+
+---
+
+== 1. Vue d'ensemble
+
+=== 1.1 Entites du systeme
+
+[cols="1,2,3"]
+|===
+|Code |Libelle |Description
+
+|USER
+|Utilisateur
+|Comptes utilisateurs de l'application
+
+|ROLE
+|Role
+|Roles du systeme RBAC
+
+|PERMISSION
+|Permission
+|Permissions du systeme RBAC
+
+|BOOK
+|Livre
+|Informations sur les livres avec gestion temporaire
+
+|LIBRARY
+|Bibliotheque
+|Bibliotheques personnelles des utilisateurs
+
+|READING_LIST
+|Liste de lecture
+|Collections thematiques de livres
+
+|REVIEW
+|Avis
+|Avis/critiques sur les livres avec gestion spoilers
+
+|RATE
+|Note
+|Notes numeriques attribuees aux livres
+
+|AUTHOR
+|Auteur
+|Informations sur les auteurs de livres
+
+|GENRE
+|Genre
+|Genres litteraires
+
+|LIBRARY_PERMISSION
+|Permission Bibliotheque
+|Gestion partage bibliotheques
+|===
+
+=== 1.2 Tables d'associations
+
+[cols="2,2,1,1,3"]
+|===
+|Code |Libelle |Entite 1 |Entite 2 |Description
+
+|USER_ROLE
+|Utilisateur-Role
+|USER
+|ROLE
+|Attribution des roles aux utilisateurs
+
+|ROLE_PERMISSION
+|Role-Permission
+|ROLE
+|PERMISSION
+|Attribution des permissions aux roles
+
+|BOOK_LIBRARY
+|Livre-Bibliotheque
+|BOOK
+|LIBRARY
+|Livres dans les bibliotheques
+
+|READING_LIST_BOOK
+|Liste-Livre
+|READING_LIST
+|BOOK
+|Livres dans les listes de lecture
+
+|BOOK_AUTHOR
+|Livre-Auteur
+|BOOK
+|AUTHOR
+|Auteurs des livres
+
+|BOOK_GENRE
+|Livre-Genre
+|BOOK
+|GENRE
+|Genres des livres
+|===
+
+---
+
+== 2. Description des entites
+
+=== USER
+
+[cols="2,2,1,1,2,2"]
+|===
+|Code |Libelle |Type |Taille |Contraintes |Commentaire
+
+|id_user
+|ID utilisateur
+|UUID
+|-
+|PK, NOT NULL, DEFAULT gen_random_uuid()
+|Cle primaire
+
+|firstname
+|Prenom
+|VARCHAR
+|100
+|NOT NULL
+|Prenom de l'utilisateur
+
+|lastname
+|Nom
+|VARCHAR
+|100
+|NOT NULL
+|Nom de famille
+
+|username
+|Nom d'utilisateur
+|VARCHAR
+|50
+|UNIQUE, NOT NULL
+|Identifiant unique
+
+|email
+|Email
+|VARCHAR
+|255
+|UNIQUE, NOT NULL
+|Adresse email
+
+|password
+|Mot de passe
+|VARCHAR
+|255
+|NOT NULL
+|Hash du mot de passe
+
+|avatar_url
+|URL avatar
+|VARCHAR
+|500
+|NULL
+|URL de l'avatar utilisateur
+
+|preferences
+|Preferences utilisateur
+|JSONB
+|-
+|NOT NULL, DEFAULT '{}'
+|Preferences explicites (filtres, UI, etc.)
+
+|last_login
+|Derniere connexion
+|TIMESTAMP
+|-
+|NULL
+|Derniere connexion
+
+|created_at
+|Date creation
+|TIMESTAMP
+|-
+|NOT NULL, DEFAULT NOW()
+|Date de creation
+
+|updated_at
+|Date modification
+|TIMESTAMP
+|-
+|NOT NULL, DEFAULT NOW()
+|Date de modification
+
+|deleted_at
+|Date suppression
+|TIMESTAMP
+|-
+|NULL
+|Date de suppression (soft delete)
+|===
+
+**Domaines de valeurs :**
+
+- username : 3-50 caracteres alphanumeriques + underscore
+- email : Format email valide RFC 5322
+- password : Hash Argon2id ou bcrypt
+- avatar_url : URL valide ou NULL
+- preferences : Objet JSON avec cles optionnelles :
+  * search_filters : {languages: string[], max_pages: number, exclude_genres: string[], min_rating: number}
+  * ui_settings : {theme: 'light'|'dark', spoiler_warning: boolean, books_per_page: number}
+  * reading_preferences : {reading_goal: number, notification_frequency: string}
+
+=== ROLE
+
+[cols="2,2,1,1,2,2"]
+|===
+|Code |Libelle |Type |Taille |Contraintes |Commentaire
+
+|id_role
+|ID role
+|SERIAL
+|-
+|PK, NOT NULL
+|Cle primaire
+
+|name
+|Nom
+|VARCHAR
+|50
+|UNIQUE, NOT NULL
+|Nom du role
+
+|description
+|Description
+|TEXT
+|-
+|NOT NULL
+|Description du role
+
+|created_at
+|Date creation
+|TIMESTAMP
+|-
+|NOT NULL, DEFAULT NOW()
+|Date de creation
+|===
+
+**Domaines de valeurs :**
+
+- name : USER, MODERATOR, ADMIN
+
+=== PERMISSION
+
+[cols="2,2,1,1,2,2"]
+|===
+|Code |Libelle |Type |Taille |Contraintes |Commentaire
+
+|id_permission
+|ID permission
+|SERIAL
+|-
+|PK, NOT NULL
+|Cle primaire
+
+|label
+|Libelle
+|VARCHAR
+|100
+|UNIQUE, NOT NULL
+|Nom de la permission
+
+|action
+|Action
+|VARCHAR
+|255
+|-
+|Description de l'action
+
+|resource
+|Ressource
+|VARCHAR
+|100
+|-
+|Ressource concernee
+
+|created_at
+|Date creation
+|TIMESTAMP
+|-
+|NOT NULL, DEFAULT NOW()
+|Date de creation
+|===
+
+**Domaines de valeurs :**
+
+- label : CREATE_BOOK, READ_BOOK, UPDATE_BOOK, DELETE_BOOK, MODERATE_REVIEW
+- action : Description libre de l'action
+- resource : books, users, reviews, libraries
+
+=== BOOK
+
+[cols="2,2,1,1,2,2"]
+|===
+|Code |Libelle |Type |Taille |Contraintes |Commentaire
+
+|id_book
+|ID livre
+|UUID
+|-
+|PK, NOT NULL, DEFAULT gen_random_uuid()
+|Cle primaire
+
+|isbn
+|Code ISBN
+|VARCHAR
+|17
+|UNIQUE, NULL
+|Code ISBN-13 du livre
+
+|title
+|Titre
+|VARCHAR
+|255
+|NOT NULL
+|Titre du livre
+
+|summary
+|Resume
+|TEXT
+|-
+|NULL
+|Resume du livre
+
+|nb_pages
+|Nombre de pages
+|INTEGER
+|-
+|NULL, CHECK (nb_pages > 0)
+|Nombre de pages
+
+|publication_year
+|Annee publication
+|INTEGER
+|-
+|NULL, CHECK (publication_year > 0)
+|Annee de publication
+
+|language
+|Langue
+|VARCHAR
+|5
+|NOT NULL, DEFAULT 'fr'
+|Code langue ISO 639-1
+
+|image
+|URL image
+|VARCHAR
+|500
+|NULL
+|URL de la couverture
+
+|metadata
+|Metadonnees livre
+|JSONB
+|-
+|NOT NULL, DEFAULT '{}'
+|Metadonnees flexibles (APIs externes, editeur, etc.)
+
+|is_temporary
+|Livre temporaire
+|BOOLEAN
+|-
+|NOT NULL, DEFAULT FALSE
+|Indicateur livre temporaire
+
+|imported_at
+|Date import
+|TIMESTAMP
+|-
+|NULL
+|Date import API externe
+
+|created_at
+|Date creation
+|TIMESTAMP
+|-
+|NOT NULL, DEFAULT NOW()
+|Date de creation
+
+|updated_at
+|Date modification
+|TIMESTAMP
+|-
+|NOT NULL, DEFAULT NOW()
+|Date de modification
+|===
+
+**Domaines de valeurs :**
+
+- isbn : Format ISBN-10 ou ISBN-13 (optionnel)
+- title : Titre complet du livre
+- nb_pages : Nombre entier positif
+- publication_year : Annee >= 1000
+- language : Code ISO 639-1 (fr, en, es, etc.)
+- metadata : Objet JSON avec cles optionnelles :
+  * openlibrary_id : string, goodreads_rating : number, awards : string[]
+  * series : {name: string, volume: number}, tags : string[]
+  * cover_versions : {small: string, medium: string, large: string}
+- is_temporary : true (suppression auto 72h), false (permanent)
+
+=== LIBRARY
+
+[cols="2,2,1,1,2,2"]
+|===
+|Code |Libelle |Type |Taille |Contraintes |Commentaire
+
+|id_library
+|ID bibliotheque
+|UUID
+|-
+|PK, NOT NULL, DEFAULT gen_random_uuid()
+|Cle primaire
+
+|id_user
+|ID utilisateur
+|UUID
+|-
+|FK, NOT NULL
+|Reference USER
+
+|name
+|Nom
+|VARCHAR
+|100
+|NOT NULL
+|Nom de la bibliotheque
+
+|description
+|Description
+|TEXT
+|-
+|NULL
+|Description de la bibliotheque
+
+|is_public
+|Bibliotheque publique
+|BOOLEAN
+|-
+|NOT NULL, DEFAULT FALSE
+|Visibilite publique
+
+|created_at
+|Date creation
+|TIMESTAMP
+|-
+|NOT NULL, DEFAULT NOW()
+|Date de creation
+
+|updated_at
+|Date modification
+|TIMESTAMP
+|-
+|NOT NULL, DEFAULT NOW()
+|Date de modification
+
+|deleted_at
+|Date suppression
+|TIMESTAMP
+|-
+|NULL
+|Date de suppression (soft delete)
+|===
+
+**Domaines de valeurs :**
+
+- name : Nom personnalise de la bibliotheque
+- is_public : true (visible par tous), false (prive)
+
+=== READING_LIST
+
+[cols="2,2,1,1,2,2"]
+|===
+|Code |Libelle |Type |Taille |Contraintes |Commentaire
+
+|id_list
+|ID liste
+|UUID
+|-
+|PK, NOT NULL, DEFAULT gen_random_uuid()
+|Cle primaire
+
+|id_user
+|ID utilisateur
+|UUID
+|-
+|FK, NOT NULL
+|Reference USER proprietaire
+
+|id_library
+|ID bibliotheque
+|UUID
+|-
+|FK, NULL
+|Reference LIBRARY contenante
+
+|list_name
+|Nom liste
+|VARCHAR
+|100
+|NOT NULL
+|Nom de la liste
+
+|description
+|Description
+|TEXT
+|-
+|NULL
+|Description de la liste
+
+|is_public
+|Liste publique
+|BOOLEAN
+|-
+|NOT NULL, DEFAULT FALSE
+|Visibilite publique
+
+|is_system
+|Liste systeme
+|BOOLEAN
+|-
+|NOT NULL, DEFAULT FALSE
+|Liste predefinie
+
+|created_at
+|Date creation
+|TIMESTAMP
+|-
+|NOT NULL, DEFAULT NOW()
+|Date de creation
+
+|updated_at
+|Date modification
+|TIMESTAMP
+|-
+|NOT NULL, DEFAULT NOW()
+|Date de modification
+|===
+
+**Domaines de valeurs :**
+
+- list_name : Nom personnalise de la liste (3-100 caracteres)
+- is_public : true (partageable), false (prive)
+- is_system : true (Ma bibliotheque, A lire, etc.), false (personnalise)
+
+=== REVIEW
+
+[cols="2,2,1,1,2,2"]
+|===
+|Code |Libelle |Type |Taille |Contraintes |Commentaire
+
+|id_review
+|ID avis
+|UUID
+|-
+|PK, NOT NULL, DEFAULT gen_random_uuid()
+|Cle primaire
+
+|id_user
+|ID utilisateur
+|UUID
+|-
+|FK, NOT NULL
+|Reference USER
+
+|id_book
+|ID livre
+|UUID
+|-
+|FK, NOT NULL
+|Reference BOOK
+
+|rating
+|Note
+|INTEGER
+|-
+|NOT NULL, CHECK (rating >= 1 AND rating <= 5)
+|Note de 1 a 5 etoiles
+
+|comment
+|Commentaire
+|TEXT
+|-
+|NULL
+|Texte de l'avis
+
+|contains_spoiler
+|Contient spoiler
+|BOOLEAN
+|-
+|NOT NULL, DEFAULT FALSE
+|Indicateur spoiler
+
+|is_anonymous
+|Avis anonyme
+|BOOLEAN
+|-
+|NOT NULL, DEFAULT FALSE
+|Publication anonyme RGPD
+
+|created_at
+|Date creation
+|TIMESTAMP
+|-
+|NOT NULL, DEFAULT NOW()
+|Date de creation
+
+|updated_at
+|Date modification
+|TIMESTAMP
+|-
+|NOT NULL, DEFAULT NOW()
+|Date de modification
+|===
+
+**Domaines de valeurs :**
+
+- rating : Entier de 1 a 5 etoiles
+- comment : Texte libre de l'avis utilisateur (10-2000 caracteres)
+- contains_spoiler : true (masque par defaut), false (visible)
+- is_anonymous : true (nom masque), false (nom visible)
+
+=== RATE
+
+[cols="2,2,1,1,2,2"]
+|===
+|Code |Libelle |Type |Taille |Contraintes |Commentaire
+
+|id_rate
+|ID note
+|UUID
+|-
+|PK, NOT NULL, DEFAULT gen_random_uuid()
+|Cle primaire
+
+|id_user
+|ID utilisateur
+|UUID
+|-
+|FK, NOT NULL
+|Reference USER
+
+|id_book
+|ID livre
+|UUID
+|-
+|FK, NOT NULL
+|Reference BOOK
+
+|rating
+|Note
+|INTEGER
+|-
+|NOT NULL, CHECK (rating >= 1 AND rating <= 5)
+|Note de 1 a 5 etoiles
+
+|created_at
+|Date creation
+|TIMESTAMP
+|-
+|NOT NULL, DEFAULT NOW()
+|Date de creation
+
+|updated_at
+|Date modification
+|TIMESTAMP
+|-
+|NOT NULL, DEFAULT NOW()
+|Date de modification
+|===
+
+**Domaines de valeurs :**
+
+- rating : Entier de 1 a 5 etoiles
+
+=== AUTHOR
+
+[cols="2,2,1,1,2,2"]
+|===
+|Code |Libelle |Type |Taille |Contraintes |Commentaire
+
+|id_author
+|ID auteur
+|UUID
+|-
+|PK, NOT NULL, DEFAULT gen_random_uuid()
+|Cle primaire
+
+|firstname
+|Prenom
+|VARCHAR
+|100
+|NULL
+|Prenom de l'auteur
+
+|lastname
+|Nom
+|VARCHAR
+|100
+|NOT NULL
+|Nom de famille
+
+|bio
+|Biographie
+|TEXT
+|-
+|NULL
+|Biographie de l'auteur
+
+|birth_date
+|Date naissance
+|DATE
+|-
+|NULL
+|Date de naissance
+
+|death_date
+|Date deces
+|DATE
+|-
+|NULL
+|Date de deces
+
+|avatar_url
+|URL avatar
+|VARCHAR
+|500
+|NULL
+|URL photo auteur
+
+|created_at
+|Date creation
+|TIMESTAMP
+|-
+|NOT NULL, DEFAULT NOW()
+|Date de creation
+
+|updated_at
+|Date modification
+|TIMESTAMP
+|-
+|NOT NULL, DEFAULT NOW()
+|Date de modification
+|===
+
+**Domaines de valeurs :**
+
+- firstname : Prenom de l'auteur (optionnel)
+- lastname : Nom de famille de l'auteur (obligatoire)
+- bio : Biographie libre
+- birth_date/death_date : Dates coherentes (death_date >= birth_date)
+
+=== GENRE
+
+[cols="2,2,1,1,2,2"]
+|===
+|Code |Libelle |Type |Taille |Contraintes |Commentaire
+
+|id_genre
+|ID genre
+|SERIAL
+|-
+|PK, NOT NULL
+|Cle primaire
+
+|name
+|Nom
+|VARCHAR
+|100
+|UNIQUE, NOT NULL
+|Nom du genre
+
+|description
+|Description
+|TEXT
+|-
+|NULL
+|Description du genre
+
+|created_at
+|Date creation
+|TIMESTAMP
+|-
+|NOT NULL, DEFAULT NOW()
+|Date de creation
+|===
+
+**Domaines de valeurs :**
+
+- name : Fiction, Non-fiction, Science-fiction, Romance, Thriller, Fantasy, Policier, Biographie, Histoire, etc.
+
+=== LIBRARY_PERMISSION
+
+[cols="2,2,1,1,2,2"]
+|===
+|Code |Libelle |Type |Taille |Contraintes |Commentaire
+
+|id_permission
+|ID permission
+|UUID
+|-
+|PK, NOT NULL, DEFAULT gen_random_uuid()
+|Cle primaire
+
+|id_library
+|ID bibliotheque
+|UUID
+|-
+|FK, NOT NULL
+|Reference LIBRARY
+
+|id_user
+|ID utilisateur
+|UUID
+|-
+|FK, NOT NULL
+|Reference USER autorise
+
+|permission_level
+|Niveau permission
+|permission_level_enum
+|-
+|NOT NULL
+|Type de permission accordee
+
+|granted_by
+|Accorde par
+|UUID
+|-
+|FK, NOT NULL
+|Reference USER qui accorde
+
+|granted_at
+|Date octroi
+|TIMESTAMP
+|-
+|NOT NULL, DEFAULT NOW()
+|Date d'octroi
+
+|expires_at
+|Date expiration
+|TIMESTAMP
+|-
+|NULL
+|Date d'expiration (optionnelle)
+
+|revoked_at
+|Date revocation
+|TIMESTAMP
+|-
+|NULL
+|Date de revocation
+|===
+
+**Type ENUM permission_level_enum :**
+```sql
+CREATE TYPE permission_level_enum AS ENUM ('read', 'write', 'admin');
+```
+
+**Domaines de valeurs :**
+
+- permission_level : read (lecture), write (modification), admin (gestion complete)
+- expires_at : NULL (permanent) ou date future
+- revoked_at : NULL (active) ou date de revocation
+
+---
+
+== 3. Tables d'associations
+
+=== USER_ROLE (Utilisateur - Role)
+
+[cols="2,2,1,1,2,2"]
+|===
+|Code |Libelle |Type |Taille |Contraintes |Commentaire
+
+|id_user
+|ID utilisateur
+|UUID
+|-
+|PK, FK, NOT NULL
+|Reference USER
+
+|id_role
+|ID role
+|SERIAL
+|-
+|PK, FK, NOT NULL
+|Reference ROLE
+
+|assigned_at
+|Date attribution
+|TIMESTAMP
+|-
+|NOT NULL, DEFAULT NOW()
+|Date d'attribution
+
+|assigned_by
+|Attribue par
+|UUID
+|-
+|FK, NULL
+|Reference USER qui attribue
+|===
+
+=== ROLE_PERMISSION (Role - Permission)
+
+[cols="2,2,1,1,2,2"]
+|===
+|Code |Libelle |Type |Taille |Contraintes |Commentaire
+
+|id_role
+|ID role
+|SERIAL
+|-
+|PK, FK, NOT NULL
+|Reference ROLE
+
+|id_permission
+|ID permission
+|SERIAL
+|-
+|PK, FK, NOT NULL
+|Reference PERMISSION
+
+|created_at
+|Date creation
+|TIMESTAMP
+|-
+|NOT NULL, DEFAULT NOW()
+|Date de creation
+|===
+
+=== BOOK_LIBRARY (Livre - Bibliotheque)
+
+[cols="2,2,1,1,2,2"]
+|===
+|Code |Libelle |Type |Taille |Contraintes |Commentaire
+
+|id_book
+|ID livre
+|UUID
+|-
+|PK, FK, NOT NULL
+|Reference BOOK
+
+|id_library
+|ID bibliotheque
+|UUID
+|-
+|PK, FK, NOT NULL
+|Reference LIBRARY
+
+|added_at
+|Date ajout
+|TIMESTAMP
+|-
+|NOT NULL, DEFAULT NOW()
+|Date d'ajout
+
+|notes
+|Notes personnelles
+|TEXT
+|-
+|NULL
+|Notes privees utilisateur
+|===
+
+=== READING_LIST_BOOK (Liste - Livre)
+
+[cols="2,2,1,1,2,2"]
+|===
+|Code |Libelle |Type |Taille |Contraintes |Commentaire
+
+|id_list
+|ID liste
+|UUID
+|-
+|PK, FK, NOT NULL
+|Reference READING_LIST
+
+|id_book
+|ID livre
+|UUID
+|-
+|PK, FK, NOT NULL
+|Reference BOOK
+
+|reading_status
+|Statut lecture
+|reading_status_enum
+|-
+|NOT NULL, DEFAULT 'to_read'
+|Statut de lecture
+
+|priority
+|Priorite
+|INTEGER
+|-
+|CHECK (priority BETWEEN 1 AND 5), DEFAULT 3
+|Priorite de lecture
+
+|personal_notes
+|Notes personnelles
+|TEXT
+|-
+|NULL
+|Notes privees sur le livre
+
+|date_added
+|Date ajout
+|TIMESTAMP
+|-
+|NOT NULL, DEFAULT NOW()
+|Date d'ajout a la liste
+
+|date_started
+|Date debut lecture
+|TIMESTAMP
+|-
+|NULL
+|Date debut de lecture
+
+|date_finished
+|Date fin lecture
+|TIMESTAMP
+|-
+|NULL
+|Date fin de lecture
+|===
+
+**Type ENUM reading_status_enum :**
+```sql
+CREATE TYPE reading_status_enum AS ENUM (
+  'to_read',    -- A lire
+  'reading',    -- En cours
+  'read',       -- Lu
+  'abandoned',  -- Abandonne
+  'on_hold'     -- En pause
+);
+```
+
+=== BOOK_AUTHOR (Livre - Auteur)
+
+[cols="2,2,1,1,2,2"]
+|===
+|Code |Libelle |Type |Taille |Contraintes |Commentaire
+
+|id_book
+|ID livre
+|UUID
+|-
+|PK, FK, NOT NULL
+|Reference BOOK
+
+|id_author
+|ID auteur
+|UUID
+|-
+|PK, FK, NOT NULL
+|Reference AUTHOR
+
+|role
+|Role auteur
+|VARCHAR
+|50
+|DEFAULT 'author'
+|Role de l'auteur
+
+|order_index
+|Ordre affichage
+|INTEGER
+|-
+|NOT NULL, DEFAULT 1
+|Ordre pour multi-auteurs
+|===
+
+**Domaines de valeurs :**
+
+- role : author (auteur), co-author (co-auteur), editor (editeur), translator (traducteur)
+- order_index : Ordre d'affichage pour livres multi-auteurs
+
+=== BOOK_GENRE (Livre - Genre)
+
+[cols="2,2,1,1,2,2"]
+|===
+|Code |Libelle |Type |Taille |Contraintes |Commentaire
+
+|id_book
+|ID livre
+|UUID
+|-
+|PK, FK, NOT NULL
+|Reference BOOK
+
+|id_genre
+|ID genre
+|SERIAL
+|-
+|PK, FK, NOT NULL
+|Reference GENRE
+
+|is_primary
+|Genre principal
+|BOOLEAN
+|-
+|NOT NULL, DEFAULT FALSE
+|Indicateur genre principal
+
+|added_at
+|Date ajout
+|TIMESTAMP
+|-
+|NOT NULL, DEFAULT NOW()
+|Date d'ajout du genre
+|===
+
+---
+
+== 4. Contraintes d'integrite
+
+=== 4.1 Contraintes referentielles
+
+**Cles etrangeres principales :**
+
+[cols="3,2,3"]
+|===
+|Table.Colonne |Reference |Action suppression
+
+|LIBRARY.id_user
+|USER.id_user
+|CASCADE DELETE
+
+|READING_LIST.id_user
+|USER.id_user
+|CASCADE DELETE
+
+|READING_LIST.id_library
+|LIBRARY.id_library
+|SET NULL
+
+|REVIEW.id_user
+|USER.id_user
+|CASCADE DELETE
+
+|REVIEW.id_book
+|BOOK.id_book
+|RESTRICT DELETE
+
+|RATE.id_user
+|USER.id_user
+|CASCADE DELETE
+
+|RATE.id_book
+|BOOK.id_book
+|RESTRICT DELETE
+
+|LIBRARY_PERMISSION.id_library
+|LIBRARY.id_library
+|CASCADE DELETE
+
+|LIBRARY_PERMISSION.id_user
+|USER.id_user
+|CASCADE DELETE
+
+|LIBRARY_PERMISSION.granted_by
+|USER.id_user
+|RESTRICT DELETE
+|===
+
+=== 4.2 Contraintes fonctionnelles
+
+**Contraintes d'unicite :**
+
+- **UK_USER_USERNAME** : UNIQUE(username)
+  - _Un nom d'utilisateur unique dans le systeme_
+
+- **UK_USER_EMAIL** : UNIQUE(email)
+  - _Un email unique par utilisateur_
+
+- **UK_ROLE_NAME** : UNIQUE(name)
+  - _Un nom de role unique_
+
+- **UK_PERMISSION_LABEL** : UNIQUE(label)
+  - _Un libelle de permission unique_
+
+- **UK_BOOK_ISBN** : UNIQUE(isbn) WHERE isbn IS NOT NULL
+  - _Un code ISBN unique par livre (si renseigne)_
+
+- **UK_GENRE_NAME** : UNIQUE(name)
+  - _Un nom de genre unique_
+
+- **UK_USER_BOOK_REVIEW** : UNIQUE(id_user, id_book) ON review
+  - _Un avis unique par utilisateur par livre_
+
+- **UK_USER_BOOK_RATE** : UNIQUE(id_user, id_book) ON rate
+  - _Une note unique par utilisateur par livre_
+
+- **UK_LIST_USER_NAME** : UNIQUE(id_user, list_name) ON reading_list
+  - _Un nom de liste unique par utilisateur_
+
+**Contraintes de validation :**
+
+- **CK_REVIEW_RATING** : CHECK (rating >= 1 AND rating <= 5)
+  - _La note d'avis doit etre comprise entre 1 et 5_
+
+- **CK_RATE_VALUE** : CHECK (rating >= 1 AND rating <= 5)
+  - _La note doit etre comprise entre 1 et 5_
+
+- **CK_BOOK_PAGES** : CHECK (nb_pages IS NULL OR nb_pages > 0)
+  - _Le nombre de pages doit etre positif_
+
+- **CK_BOOK_YEAR** : CHECK (publication_year IS NULL OR publication_year > 0)
+  - _L'annee de publication doit etre positive_
+
+- **CK_AUTHOR_DATES** : CHECK (death_date IS NULL OR birth_date IS NULL OR death_date >= birth_date)
+  - _La date de deces doit etre posterieure a la naissance_
+
+- **CK_PERMISSION_EXPIRY** : CHECK (expires_at IS NULL OR expires_at > granted_at)
+  - _La date d'expiration doit etre posterieure a l'octroi_
+
+- **CK_READING_DATES** : CHECK (date_finished IS NULL OR date_started IS NULL OR date_finished >= date_started)
+  - _La date de fin de lecture doit etre posterieure au debut_
+
+=== 4.3 Implementation Drizzle ORM
+
+```typescript
+// Exemple pour la table REVIEW
+export const review = pgTable('review', {
+  id_review: uuid('id_review').defaultRandom().primaryKey(),
+  id_user: uuid('id_user').notNull().references(() => user.id_user, { onDelete: 'cascade' }),
+  id_book: uuid('id_book').notNull().references(() => book.id_book, { onDelete: 'restrict' }),
+  rating: integer('rating').notNull().check(sql`rating >= 1 AND rating <= 5`),
+  comment: text('comment'),
+  contains_spoiler: boolean('contains_spoiler').notNull().default(false),
+  is_anonymous: boolean('is_anonymous').notNull().default(false),
+  created_at: timestamp('created_at').notNull().defaultNow(),
+  updated_at: timestamp('updated_at').notNull().defaultNow(),
+}, (table) => {
+  return {
+    // Contrainte unique : un avis par utilisateur par livre
+    userBookUnique: unique().on(table.id_user, table.id_book),
+  };
+});
+
+// Type ENUM pour statuts de lecture
+export const readingStatusEnum = pgEnum('reading_status_enum', [
+  'to_read', 'reading', 'read', 'abandoned', 'on_hold'
+]);
+
+// Type ENUM pour niveaux de permission
+export const permissionLevelEnum = pgEnum('permission_level_enum', [
+  'read', 'write', 'admin'
+]);
+```
+
+---
+
+== 5. Notes d'implementation
+
+=== 5.1 Index recommandes
+
+Pour optimiser les performances :
+
+```sql
+-- Index sur les cles etrangeres frequemment utilisees
+CREATE INDEX idx_review_user ON review(id_user);
+CREATE INDEX idx_review_book ON review(id_book);
+CREATE INDEX idx_rate_user ON rate(id_user);
+CREATE INDEX idx_rate_book ON rate(id_book);
+CREATE INDEX idx_library_user ON library(id_user);
+CREATE INDEX idx_reading_list_user ON reading_list(id_user);
+
+-- Index pour les recherches de livres
+CREATE INDEX idx_book_title ON book USING gin(to_tsvector('french', title));
+CREATE INDEX idx_book_isbn ON book(isbn) WHERE isbn IS NOT NULL;
+CREATE INDEX idx_book_temporary ON book(is_temporary, imported_at) WHERE is_temporary = true;
+
+-- Index pour le partage de bibliotheques
+CREATE INDEX idx_library_permission_user ON library_permission(id_user);
+CREATE INDEX idx_library_permission_library ON library_permission(id_library);
+
+-- Index pour les avis avec spoilers
+CREATE INDEX idx_review_spoiler ON review(contains_spoiler, created_at);
+```
+
+=== 5.2 Triggers suggeres
+
+```sql
+-- Trigger pour mettre a jour updated_at automatiquement
+CREATE OR REPLACE FUNCTION update_updated_at_column()
+RETURNS TRIGGER AS $$
+BEGIN
+    NEW.updated_at = NOW();
+    RETURN NEW;
+END;
+$$ language 'plpgsql';
+
+CREATE TRIGGER update_user_updated_at BEFORE UPDATE ON "user"
+    FOR EACH ROW EXECUTE PROCEDURE update_updated_at_column();
+
+CREATE TRIGGER update_book_updated_at BEFORE UPDATE ON book
+    FOR EACH ROW EXECUTE PROCEDURE update_updated_at_column();
+
+CREATE TRIGGER update_library_updated_at BEFORE UPDATE ON library
+    FOR EACH ROW EXECUTE PROCEDURE update_updated_at_column();
+
+-- Trigger pour nettoyage automatique des livres temporaires
+CREATE OR REPLACE FUNCTION cleanup_temporary_books()
+RETURNS void AS $$
+BEGIN
+    DELETE FROM book
+    WHERE is_temporary = true
+      AND imported_at < NOW() - INTERVAL '72 hours'
+      AND id_book NOT IN (
+        SELECT DISTINCT id_book FROM book_library
+        UNION
+        SELECT DISTINCT id_book FROM reading_list_book
+        UNION
+        SELECT DISTINCT id_book FROM review
+        UNION
+        SELECT DISTINCT id_book FROM rate
+      );
+END;
+$$ LANGUAGE plpgsql;
+
+-- Planification du nettoyage (a configurer avec pg_cron)
+-- SELECT cron.schedule('cleanup-temp-books', '0 2 * * *', 'SELECT cleanup_temporary_books();');
+```
+
+=== 5.3 Vues utiles
+
+```sql
+-- Vue pour les livres avec moyennes
+CREATE VIEW book_with_ratings AS
+SELECT
+  b.*,
+  ROUND(AVG(rv.rating), 2) as average_rating,
+  COUNT(rv.id_review) as review_count,
+  ROUND(AVG(rt.rating), 2) as average_rate,
+  COUNT(rt.id_rate) as rate_count
+FROM book b
+LEFT JOIN review rv ON b.id_book = rv.id_book
+LEFT JOIN rate rt ON b.id_book = rt.id_book
+GROUP BY b.id_book;
+
+-- Vue pour les bibliotheques publiques avec permissions
+CREATE VIEW public_libraries AS
+SELECT
+  l.*,
+  u.username as owner_username,
+  COUNT(bl.id_book) as book_count
+FROM library l
+JOIN "user" u ON l.id_user = u.id_user
+LEFT JOIN book_library bl ON l.id_library = bl.id_library
+WHERE l.is_public = true
+  AND l.deleted_at IS NULL
+GROUP BY l.id_library, u.username;
+```
+
+=== 5.4 Sequences et UUID
+
+**Strategie hybride :**
+
+- **UUID** pour les entites metier principales (USER, BOOK, LIBRARY, etc.)
+  - Avantages : Distribution, securite, references externes
+  - Utilisation : Entites exposees publiquement, references cross-service
+
+- **SERIAL** pour les entites de reference (ROLE, PERMISSION, GENRE)
+  - Avantages : Performance, simplicite, taille reduite
+  - Utilisation : Entites internes, rarement modifiees, reference statique
+
+Cette approche optimise les performances tout en maintenant la flexibilite necessaire pour une architecture distribuee future.
+
+---
+
+== 6. Regles de gestion specifiques
+
+=== 6.1 Gestion des livres temporaires
+
+- Les livres avec `is_temporary = true` sont automatiquement supprimes apres 72h
+- Exception : livres references dans bibliotheques, listes, avis ou notes
+- Processus de nettoyage execute quotidiennement a 2h du matin
+- Import depuis APIs externes cree systematiquement des livres temporaires
+
+=== 6.2 Gestion RGPD
+
+- Champ `is_anonymous` sur les avis pour respecter le droit a l'anonymat
+- Suppression soft avec `deleted_at` pour les donnees utilisateur
+- Triggers de pseudonymisation pour les donnees archivees
+- Audit trail complet des acces aux donnees personnelles
+
+=== 6.3 Partage de bibliotheques
+
+- Trois niveaux : read (consultation), write (ajout/retrait), admin (gestion complete)
+- Permissions temporaires avec `expires_at` optionnel
+- Revocation immediate avec `revoked_at`
+- Cascade de suppression si proprietaire supprime sa bibliotheque
+
+=== 6.4 Gestion des spoilers
+
+- Detection automatique de mots-cles spoilers dans les avis
+- Masquage conditionnel selon preference utilisateur
+- Avertissement explicite avant revelation du contenu
+- Indexation separee pour recherche sans spoiler

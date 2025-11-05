@@ -1,0 +1,278 @@
+= Use Cases BlaBlaBook V2
+:toc:
+:toc-title: Sommaire
+:sectnums:
+:icons: font
+
+== Vue d'ensemble
+
+Diagramme des cas d'usage pour BlaBlaBook V2 avec gestion des spoilers, RGPD et permissions granulaires.
+
+== Acteurs
+
+=== Visiteur
+Utilisateur non authentifié qui consulte le contenu public avec protection spoiler maximale.
+
+=== Utilisateur
+Utilisateur authentifié avec contrôle complet sur sa bibliothèque, ses avis et la gestion des spoilers.
+
+=== Administrateur
+Utilisateur avec privilèges de modération et gestion système.
+
+== Diagramme Use Case
+
+[plantuml, use-cases-v2, png]
+----
+
+@startuml
+left to right direction
+skinparam packageStyle rectangle
+
+actor Visiteur
+actor Utilisateur
+actor Administrateur
+
+rectangle BlaBlaBook {
+
+ rectangle Auth {
+  (S'inscrire) as inscrire
+  (Se connecter) as connecter
+  (Se déconnecter) as deconnecter
+ }
+
+ rectangle ConsultationPublique {
+  (Consulter page d'accueil) as accueil
+  (Rechercher un livre) as recherche
+  (Voir détails d'un livre) as detail
+  (Voir avis publics spoilers blur) as avisBlur
+  (Voir avis publics contrôle spoilers) as avisControle
+ }
+
+ rectangle BibliothequePersonnelle {
+  (Voir sa bibliothèque) as voirBiblio
+  (Ajouter livre à sa bibliothèque) as ajouter
+  (Retirer livre de sa bibliothèque) as retirer
+ }
+
+ rectangle ListesDeLecture {
+  (Créer liste de lecture) as creerListe
+  (Modifier liste de lecture) as modifierListe
+  (Supprimer liste de lecture) as supprimerListe
+  (Ajouter livre à une liste) as ajouterAListe
+  (Retirer livre d'une liste) as retirerDeListe
+ }
+
+ rectangle AvisEtEvaluations {
+  (Rédiger un avis) as redigerAvis
+  (Publier Dépublier avis RGPD) as publierAvis
+  (Noter un livre 1-5 étoiles) as noterLivre
+  (Marquer avis comme spoiler) as marquerSpoiler
+ }
+
+ rectangle PermissionsEtPartage {
+  (Partager sa bibliothèque) as partagerBiblio
+  (Gérer permissions bibliothèque) as gererPermissions
+ }
+
+ rectangle Administration {
+  (Modérer contenu avis) as modererAvis
+  (Supprimer livre de la base) as supprimerLivre
+  (Lister utilisateurs) as listerUsers
+  (Gérer rôles utilisateurs) as gererRoles
+ }
+
+  ' Relations VISITEUR (consultation publique + protection spoiler max)
+  Visiteur --> accueil
+  Visiteur --> recherche
+  Visiteur --> detail
+  Visiteur --> avisBlur
+  Visiteur --> inscrire
+  Visiteur --> connecter
+
+  ' Relations UTILISATEUR (accès complet sauf admin)
+  Utilisateur --> accueil
+  Utilisateur --> recherche
+  Utilisateur --> detail
+  Utilisateur --> avisControle
+  Utilisateur --> deconnecter
+
+  Utilisateur --> voirBiblio
+  Utilisateur --> ajouter
+  Utilisateur --> retirer
+
+  Utilisateur --> creerListe
+  Utilisateur --> modifierListe
+  Utilisateur --> supprimerListe
+  Utilisateur --> ajouterAListe
+  Utilisateur --> retirerDeListe
+
+  Utilisateur --> redigerAvis
+  Utilisateur --> publierAvis
+  Utilisateur --> noterLivre
+  Utilisateur --> marquerSpoiler
+
+  Utilisateur --> partagerBiblio
+  Utilisateur --> gererPermissions
+
+  ' Relations ADMINISTRATEUR (hérite de Utilisateur + admin)
+  Administrateur --> modererAvis
+  Administrateur --> supprimerLivre
+  Administrateur --> listerUsers
+  Administrateur --> gererRoles
+  Administrateur --|> Utilisateur
+}
+
+@enduml
+----
+
+== Description des Use Cases
+
+=== Authentification
+
+==== S'inscrire
+**Acteur :** Visiteur +
+**Description :** Création d'un compte utilisateur avec email, mot de passe et informations personnelles. +
+**Préconditions :** Email non déjà utilisé +
+**Postconditions :** Compte créé, utilisateur connecté
+
+==== Se connecter
+**Acteur :** Visiteur +
+**Description :** Authentification avec email/mot de passe +
+**Postconditions :** Session utilisateur active
+
+==== Se déconnecter
+**Acteur :** Utilisateur +
+**Description :** Fermeture de session +
+**Postconditions :** Session fermée, retour statut Visiteur
+
+=== Consultation Publique
+
+==== Consulter page d'accueil
+**Acteurs :** Visiteur, Utilisateur +
+**Description :** Affichage des livres populaires, nouveautés, recommandations
+
+==== Rechercher un livre
+**Acteurs :** Visiteur, Utilisateur +
+**Description :** Recherche par titre, auteur, genre, ISBN via API Open Library
+
+==== Voir détails d'un livre
+**Acteurs :** Visiteur, Utilisateur +
+**Description :** Affichage informations complètes : résumé, auteurs, genres, notes moyennes
+
+==== Voir avis publics
+**Acteur Visiteur :** Avis publics avec spoilers **TOUJOURS floutés** (aucun contrôle) +
+**Acteur Utilisateur :** Avis publics avec **contrôle spoilers** (bouton révéler/masquer)
+
+=== Bibliothèque Personnelle
+
+==== Voir sa bibliothèque
+**Acteur :** Utilisateur +
+**Description :** Affichage des livres ajoutés avec statuts, notes personnelles
+
+==== Ajouter livre à sa bibliothèque
+**Acteur :** Utilisateur +
+**Description :** Import livre via recherche Open Library vers bibliothèque personnelle
+
+==== Retirer livre de sa bibliothèque
+**Acteur :** Utilisateur +
+**Description :** Suppression d'un livre de sa bibliothèque (soft delete)
+
+=== Listes de Lecture
+
+==== Créer liste de lecture
+**Acteur :** Utilisateur +
+**Description :** Création d'une liste thématique avec nom, description, visibilité
+
+==== Modifier liste de lecture
+**Acteur :** Utilisateur +
+**Description :** Modification nom, description, statut public/privé d'une liste
+
+==== Supprimer liste de lecture
+**Acteur :** Utilisateur +
+**Description :** Suppression d'une liste personnelle (soft delete)
+
+==== Ajouter/Retirer livre d'une liste
+**Acteur :** Utilisateur +
+**Description :** Gestion contenu des listes de lecture
+
+=== Avis et Évaluations
+
+==== Rédiger un avis
+**Acteur :** Utilisateur +
+**Description :** Création avis avec titre, commentaire, flags spoiler/public +
+**Règle RGPD :** Par défaut `is_public = false`
+
+==== Publier/Dépublier avis
+**Acteur :** Utilisateur +
+**Description :** Contrôle visibilité avis (respect RGPD) +
+**Postconditions :** `is_public` et `published_at` mis à jour
+
+==== Noter un livre
+**Acteur :** Utilisateur +
+**Description :** Attribution note 1-5 étoiles pour un livre dans une liste
+
+==== Marquer avis comme spoiler
+**Acteur :** Utilisateur +
+**Description :** Flag `is_spoiler = true` pour protection CSS automatique
+
+=== Permissions et Partage
+
+==== Partager sa bibliothèque
+**Acteur :** Utilisateur +
+**Description :** Autoriser d'autres utilisateurs à consulter sa bibliothèque
+
+==== Gérer permissions bibliothèque
+**Acteur :** Utilisateur +
+**Description :** Attribution permissions lecture/écriture sur sa bibliothèque
+
+=== Administration
+
+==== Modérer contenu avis
+**Acteur :** Administrateur +
+**Description :** Validation/suppression avis signalés, gestion contenu inapproprié
+
+==== Supprimer livre de la base
+**Acteur :** Administrateur +
+**Description :** Suppression définitive livre de toutes les bibliothèques
+
+==== Lister/Gérer utilisateurs
+**Acteur :** Administrateur +
+**Description :** Administration comptes utilisateurs et attribution rôles
+
+== Règles Métier Spoilers
+
+=== Protection par acteur
+[cols="1,2,2"]
+|===
+|Acteur|Spoilers|Contrôle
+
+|**Visiteur**
+|TOUJOURS floutés CSS
+|❌ Aucun contrôle
+
+|**Utilisateur**
+|Floutés par défaut
+|✅ Bouton révéler/masquer
+
+|**Administrateur**
+|Même que Utilisateur
+|✅ + Modération contenu
+|===
+
+=== Logique d'affichage
+```javascript
+// Pseudo-code logique spoiler
+if (avis.is_spoiler && !user.isConnected) {
+  applyCSSBlur(permanent = true);
+} else if (avis.is_spoiler && user.isConnected) {
+  applyCSSBlur(toggleable = true);
+}
+```
+
+== Extensions futures
+
+* Auto-modération par règles/IA
+* Rôle Modérateur dédié
+* Système de réputation communautaire
+* Notifications temps réel
+* API publique pour développeurs tiers

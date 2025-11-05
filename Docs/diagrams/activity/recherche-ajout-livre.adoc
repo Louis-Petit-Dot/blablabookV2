@@ -1,0 +1,463 @@
+= Recherche & Ajout Livre - OpenLibrary API
+:toc:
+:toc-title: Sommaire
+:sectnums:
+:icons: font
+
+== Vue d'ensemble
+
+Diagramme d'activité pour la recherche de livres via l'API OpenLibrary et leur ajout à la bibliothèque utilisateur dans BlaBlaBook V2.
+
+**NOTE:** Ce diagramme est synchronisé avec le code backend actuel (bookController, bookService, openlibraryService, imageService).
+
+== Flux Recherche & Ajout Livre
+
+[plantuml, recherche-livre, png]
+----
+@startuml
+start
+
+:Utilisateur connecté dans BlaBlaBook;
+
+if (Recherche livre ou ajout direct ?) then (recherche)
+
+  :Saisir critères recherche;
+  note right: Titre, auteur, ISBN, genre
+
+  :Rechercher dans BDD BlaBlaBook locale;
+
+  if (Résultats dans notre BDD ?) then (oui)
+    :Afficher livres de notre BDD;
+    :Utilisateur sélectionne un livre;
+    note right: Données déjà validées et complètes
+
+  else (non)
+    :Aucun résultat local;
+    :Appel API OpenLibrary;
+
+    if (API OpenLibrary répond ?) then (oui)
+
+      if (Résultats API trouvés ?) then (oui)
+        :Afficher liste livres OpenLibrary;
+        :Utilisateur sélectionne un livre;
+
+        if (Livre existe déjà en BDD ?) then (oui)
+          :Récupérer livre existant (openlibrary_key ou isbn);
+          :Message "Ce livre existe déjà dans la base de données";
+        else (non)
+          :Créer nouveau livre en BDD (BOOK);
+          :Importer données OpenLibrary (title, isbn, openlibrary_key, publication_year);
+          :Upload couverture via Cloudinary (imageService);
+          if (Upload couverture réussi ?) then (oui)
+            :Mettre à jour image URL;
+          endif
+          :Créer auteurs (AUTHOR + BOOK_AUTHOR);
+          :Mapper et créer genres (GENRE + BOOK_GENRE);
+          note right: Permanent dès création\nPas de système is_temporary
+        endif
+
+      else (non)
+        :Message "Aucun résultat trouvé";
+        :Proposer ajout manuel;
+        stop
+      endif
+
+    else (non)
+      :Erreur API indisponible;
+      :Mode dégradé - ajout manuel uniquement;
+      stop
+    endif
+  endif
+
+else (ajout direct ISBN)
+
+  :Saisir ISBN directement;
+
+  if (ISBN valide ?) then (oui)
+    :Rechercher ISBN dans BDD locale;
+
+    if (ISBN trouvé en local ?) then (oui)
+      :Récupérer livre existant;
+      note right: Données déjà en BDD
+    else (non)
+      :Appel API OpenLibrary avec ISBN;
+
+      if (Livre trouvé sur OpenLibrary ?) then (oui)
+        if (Existe déjà (openlibrary_key) ?) then (oui)
+          :Récupérer livre existant;
+        else (non)
+          :Créer livre avec données API;
+          :Upload couverture Cloudinary;
+          :Créer auteurs et genres;
+        endif
+      else (non)
+        :Message "ISBN introuvable";
+        :Proposer saisie manuelle;
+        stop
+      endif
+    endif
+
+  else (non)
+    :Erreur format ISBN;
+    :Afficher aide format ISBN;
+    stop
+  endif
+
+endif
+
+:Livre prêt pour ajout;
+
+if (Déjà dans bibliothèque utilisateur ?) then (oui)
+  :Message "Livre déjà dans votre bibliothèque";
+  :Proposer voir détails ou listes;
+
+else (non)
+  :Ajouter à bibliothèque personnelle;
+  :Créer entrée BOOK_LIBRARY;
+  :Proposer ajout à liste de lecture;
+
+  if (Ajouter à une liste ?) then (oui)
+    :Afficher listes utilisateur;
+    :Utilisateur choisit liste;
+    :Ajouter à READING_LIST_BOOK;
+  endif
+
+  :Message confirmation ajout;
+endif
+
+stop
+@enduml
+----
+
+== Scénarios Utilisateur
+
+=== Scénario nominal - Recherche et import OpenLibrary
+
+**Acteur :** Utilisateur connecté
+**Objectif :** Trouver et ajouter un livre depuis OpenLibrary
+
+[cols="1,3"]
+|===
+|Étape |Action
+
+|1 |Utilisateur saisit titre + auteur
+|2 |Système interroge BDD locale d'abord
+|3 |Si aucun résultat, appel openlibraryService.searchBooks()
+|4 |Affichage résultats OpenLibrary
+|5 |Utilisateur sélectionne livre
+|6 |Système vérifie existence via openlibrary_key
+|7 |Si nouveau, appel bookService.createFromOpenLibrary()
+|8 |Création BOOK avec données OpenLibrary
+|9 |Upload couverture via imageService.uploadBookCover()
+|10 |Création AUTHOR si n'existe pas (vérif par author_name)
+|11 |Création BOOK_AUTHOR (jonction)
+|12 |Mapping genres via genreMapping.mapOLSubjectsToGenres()
+|13 |Création GENRE si n'existe pas
+|14 |Création BOOK_GENRE (jonction)
+|15 |Livre disponible pour ajout bibliothèque
+|===
+
+**Résultat :** Livre créé en BDD avec couverture, auteurs et genres.
+
+=== Scénario nominal - Recherche par ISBN
+
+**Acteur :** Utilisateur avec ISBN du livre
+**Objectif :** Ajouter livre via son ISBN
+
+[cols="1,3"]
+|===
+|Étape |Action
+
+|1 |Utilisateur saisit ISBN (10 ou 13 chiffres)
+|2 |Système vérifie format ISBN
+|3 |Recherche en BDD locale par ISBN
+|4 |Si non trouvé, appel openlibraryService.searchByISBN()
+|5 |Si trouvé, vérification existence par openlibrary_key
+|6 |Création livre si nouveau
+|7 |Livre disponible pour ajout
+|===
+
+**Résultat :** Livre trouvé ou créé, prêt pour ajout bibliothèque.
+
+=== Scénario alternatif - Livre déjà en BDD
+
+**Déclencheur :** Import livre déjà présent
+
+[cols="1,3"]
+|===
+|Étape |Action
+
+|1-5 |Sélection livre sur OpenLibrary
+|6 |Système détecte openlibrary_key existant
+|7 |Retour {book, isNew: false, message}
+|8 |Livre existant proposé pour ajout bibliothèque
+|===
+
+**Résultat :** Pas de duplication, livre existant utilisé.
+
+=== Scénario d'exception - API OpenLibrary indisponible
+
+**Déclencheur :** Timeout ou erreur réseau OpenLibrary
+
+[cols="1,3"]
+|===
+|Étape |Action
+
+|1-3 |Recherche dans BDD locale échoue
+|4 |Appel API OpenLibrary timeout/erreur
+|5 |Gestion gracieuse : retour {numFound: 0, docs: []}
+|6 |Message "Aucun résultat trouvé - API indisponible"
+|7 |Proposition ajout manuel
+|===
+
+**Résultat :** Mode dégradé, ajout manuel possible.
+
+== Modèle de données
+
+=== Table BOOK
+
+```typescript
+{
+  id_book: uuid (PK),
+  isbn: varchar(17) UNIQUE,
+  openlibrary_key: varchar(50) UNIQUE,
+  title: varchar(255) NOT NULL,
+  summary: text,
+  nb_pages: integer,
+  publication_year: integer,
+  language: varchar(5) DEFAULT 'fr',
+  image: varchar(500),
+  metadata: jsonb DEFAULT {},
+  created_at: timestamp
+}
+```
+
+**Pas de champs :**
+- ❌ `is_temporary` (n'existe pas)
+- ❌ `imported_at` (n'existe pas)
+- ❌ `deleted_at` (pas de soft delete sur BOOK)
+
+=== Table BOOK_LIBRARY (jonction)
+
+```typescript
+{
+  id_book_library: uuid (PK),
+  id_book: uuid (FK → BOOK, cascade delete),
+  id_library: uuid (FK → LIBRARY, cascade delete),
+  created_at: timestamp
+}
+```
+
+=== Intégration OpenLibrary
+
+**Données importées :**
+- `key` → `openlibrary_key` (ex: /works/OL893415W)
+- `title` → `title`
+- `isbn[0]` → `isbn`
+- `first_publish_year` → `publication_year`
+- `author_name[]` → AUTHOR.author_name
+- `subject[]` → mapping GENRE via genreMapping
+- `cover_i` → upload Cloudinary via imageService
+
+== Processus d'import OpenLibrary
+
+=== Étape 1 : Vérification existence
+
+```typescript
+// Vérification par openlibrary_key
+SELECT * FROM BOOK WHERE openlibrary_key = '/works/OL893415W'
+
+// Vérification par ISBN
+SELECT * FROM BOOK WHERE isbn = '9780140328721'
+```
+
+Si trouvé → retour livre existant, **pas de création**.
+
+=== Étape 2 : Création livre
+
+```typescript
+INSERT INTO BOOK (title, isbn, openlibrary_key, publication_year, image)
+VALUES (
+  'The Great Gatsby',
+  '9780140328721',
+  '/works/OL893415W',
+  1925,
+  NULL // Sera mis à jour après upload Cloudinary
+)
+RETURNING id_book;
+```
+
+=== Étape 3 : Upload couverture Cloudinary
+
+```typescript
+const uploadResult = await imageService.uploadBookCover(
+  bookId,
+  openLibraryData.key // /works/OL893415W
+);
+
+if (uploadResult.success) {
+  UPDATE BOOK SET image = uploadResult.url WHERE id_book = bookId;
+}
+```
+
+**Processus imageService :**
+1. Appel languageService.findBestCover(workKey) pour trouver meilleure couverture française
+2. Upload direct URL OpenLibrary → Cloudinary
+3. Conversion automatique WebP + quality:auto:best
+4. Retour URL HTTPS Cloudinary
+
+=== Étape 4 : Création auteurs
+
+```typescript
+for (const authorName of author_name) {
+  // Vérification existence auteur
+  SELECT * FROM AUTHOR WHERE author_name = authorName LIMIT 1;
+
+  // Création si nouveau
+  if (!exists) {
+    INSERT INTO AUTHOR (author_name) VALUES (authorName) RETURNING id_author;
+  }
+
+  // Création jonction BOOK_AUTHOR
+  INSERT INTO BOOK_AUTHOR (id_book, id_author) VALUES (bookId, authorId);
+}
+```
+
+=== Étape 5 : Mapping et création genres
+
+```typescript
+// Mapping sujets OpenLibrary → genres locaux
+const genres = mapOLSubjectsToGenres(openLibraryData.subject);
+// Ex: ['science fiction', 'dystopian'] → ['Science-Fiction']
+
+for (const genreName of genres) {
+  // Vérification existence genre
+  SELECT * FROM GENRE WHERE genre_name = genreName LIMIT 1;
+
+  // Création si nouveau
+  if (!exists) {
+    INSERT INTO GENRE (genre_name) VALUES (genreName) RETURNING id_genre;
+  }
+
+  // Création jonction BOOK_GENRE
+  INSERT INTO BOOK_GENRE (id_book, id_genre) VALUES (bookId, genreId);
+}
+```
+
+**Mapping intelligent :**
+- 25 catégories de genres principaux
+- 160+ variations de sujets mappées
+- Déduplication automatique (Set)
+- Fallback "Divers" pour sujets non mappés
+
+== API OpenLibrary - Endpoints utilisés
+
+=== searchBooks()
+
+**Endpoint :** `https://openlibrary.org/search.json`
+
+**Paramètres :**
+- `q` : query générale
+- `title` : recherche par titre
+- `author` : recherche par auteur
+- `isbn` : recherche par ISBN
+- `fields` : limitation des champs (optimisation payload ~70%)
+
+**Champs récupérés :**
+`key,title,author_name,cover_i,first_publish_year,isbn,subject`
+
+**Cache :** Trending books cachés 1h (cacheService)
+
+=== getTrendingBooks()
+
+**Endpoint :** `https://openlibrary.org/trending/daily.json`
+
+**Cache :** 1h TTL (100x plus rapide que l'API)
+
+=== Gestion erreurs
+
+**Timeout réseau :**
+```typescript
+if (error?.code === 'ECONNABORTED' || error?.request) {
+  return { numFound: 0, start: 0, docs: [] }; // Graceful fallback
+}
+```
+
+**Avantages :**
+- Tests CI offline ne cassent pas
+- Mode dégradé automatique
+- Pas d'exception non gérée
+
+== Messages utilisateur
+
+=== Succès
+- "Ce livre existe déjà dans la base de données" (isNew: false)
+- "Livre ajouté à votre bibliothèque avec succès"
+- "Book added to reading list successfully"
+
+=== Erreurs recherche
+- "Aucun résultat trouvé"
+- "ISBN introuvable sur OpenLibrary"
+- "API OpenLibrary indisponible - Mode dégradé"
+- "Format ISBN invalide (10 ou 13 chiffres requis)"
+
+=== Erreurs ajout
+- "Livre déjà dans votre bibliothèque"
+- "Book not found"
+- "Library not found"
+
+== Différences avec le design initial
+
+**Fonctionnalités RETIRÉES :**
+- ❌ Champ `is_temporary` sur BOOK (n'existe pas)
+- ❌ Champ `imported_at` sur BOOK (n'existe pas)
+- ❌ Suppression automatique livres temporaires après 72h (n'existe pas)
+- ❌ Marquage `is_temporary = false` lors ajout bibliothèque (n'existe pas)
+
+**Fonctionnalités RÉELLES :**
+- ✅ Vérification existence par `openlibrary_key` ET `isbn` (double check)
+- ✅ Upload couverture Cloudinary avec optimisation WebP automatique
+- ✅ Sélection automatique meilleure couverture française (languageService)
+- ✅ Mapping intelligent genres : 25 catégories, 160+ variantes
+- ✅ Déduplication auteurs et genres par nom
+- ✅ Gestion gracieuse erreurs API (mode dégradé, pas de throw)
+- ✅ Cache trending books 1h pour performance
+- ✅ Limitation champs API (~70% réduction payload)
+- ✅ Livre permanent dès création (pas de concept temporaire)
+
+**Architecture :**
+- `bookService.createFromOpenLibrary()` : création complète livre + relations
+- `imageService.uploadBookCover()` : upload Cloudinary avec languageService
+- `openlibraryService.searchBooks()` : recherche avec cache et fallback
+- `genreMapping.mapOLSubjectsToGenres()` : mapping sujets → genres
+- Pas de soft delete sur BOOK (contrairement à USER, LIBRARY, READING_LIST)
+
+== Points d'attention UX
+
+**Recherche optimisée :**
+- BDD locale interrogée en premier (performance)
+- API OpenLibrary en fallback
+- Affichage résultats mixtes possible
+
+**Import intelligent :**
+- Pas de doublons (vérification openlibrary_key + isbn)
+- Couverture optimisée automatiquement (WebP)
+- Auteurs et genres créés automatiquement
+- Livre permanent dès import (pas de nettoyage)
+
+**Gestion d'erreurs transparente :**
+- API indisponible → mode dégradé gracieux
+- Pas de crash si timeout OpenLibrary
+- Messages clairs pour l'utilisateur
+
+**Performance :**
+- Cache trending 1h (100x plus rapide)
+- Limitation champs API (70% réduction payload)
+- Upload direct URL → Cloudinary (pas de téléchargement local)
+
+**Évolution future possible :**
+- Ajout champ `is_temporary` pour gestion livres provisoires
+- Nettoyage automatique livres non utilisés
+- Import enrichi (summary, metadata)
+- Support multi-langues pour mapping genres
+- Recherche avancée (combinaison critères)

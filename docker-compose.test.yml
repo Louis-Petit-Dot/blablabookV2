@@ -1,0 +1,24 @@
+services:
+  # Service Backend Test - Deno + Hono
+  backend-test:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.test
+    env_file: ./backend/.env.test
+    depends_on:
+      - postgres-test
+    restart: "no"
+
+  # Service PostgreSQL Test
+  postgres-test:
+    image: postgres:17-alpine
+    env_file: ./backend/.env.test
+    ports:
+      - "5434:5432"
+    volumes:
+      - postgres_test_data:/var/lib/postgresql/data
+      - ./backend/DB/BBBV2.sql:/docker-entrypoint-initdb.d/BBBV2.sql
+    restart: "no"
+
+volumes:
+  postgres_test_data:

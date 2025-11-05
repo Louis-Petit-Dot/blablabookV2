@@ -1,0 +1,344 @@
+= Middleware AuthLockout - Analyse Complète
+:toc:
+:toclevels: 3
+
+== Vue d'ensemble
+
+Le middleware authLockout protège l'API BlaBlaBook V2 contre les attaques de force brute sur les comptes utilisateur. Il surveille les tentatives de connexion échouées et verrouille temporairement les comptes après trop d'échecs consécutifs. C'est le système de sécurité qui empêche les pirates d'essayer des milliers de mots de passe pour forcer l'accès aux comptes.
+
+== Fonctions principales
+
+=== authLockoutMiddleware
+**Objectif:** Vérifier si un compte n'est pas temporairement verrouillé avant d'autoriser une tentative de connexion
+**Quand:** Appliqué uniquement sur la route de connexion (POST /login)
+**Pourquoi important:** Empêche les attaques automatisées qui testent des milliers de mots de passe
+
+=== recordFailedLogin
+**Objectif:** Enregistrer un échec de connexion et éventuellement verrouiller le compte
+**Quand:** Appelée par le contrôleur après chaque tentative de connexion échouée
+**Pourquoi important:** Compte les échecs pour déclencher la protection
+
+=== recordSuccessfulLogin
+**Objectif:** Remettre à zéro le compteur d'échecs après une connexion réussie
+**Quand:** Appelée par le contrôleur après chaque connexion réussie
+**Pourquoi important:** Permet à l'utilisateur légitime de réinitialiser la protection
+
+== Principe des attaques par force brute
+
+=== Qu'est-ce qu'une attaque par force brute
+Imaginez un cambrioleur qui essaie toutes les combinaisons possibles sur un cadenas jusqu'à trouver la bonne. Une attaque par force brute fait la même chose avec les mots de passe : un programme informatique teste automatiquement des milliers ou millions de mots de passe jusqu'à trouver le bon.
+
+=== Application aux comptes BlaBlaBook
+Sans protection, un attaquant pourrait :
+- Essayer tous les mots de passe courants (123456, password, etc.)
+- Tester des dictionnaires entiers de mots de passe
+- Utiliser des informations personnelles de l'utilisateur (date de naissance, nom, etc.)
+- Continuer indéfiniment jusqu'à réussir
+
+=== Comment le middleware authLockout empêche cela
+Le système compte les échecs de connexion et dit : "Trop d'erreurs, attendez 15 minutes avant de réessayer". Cela rend l'attaque si lente qu'elle devient pratiquement impossible.
+
+== Fonctionnement du middleware authLockout
+
+=== Principe du compte à rebours
+Le système authLockout fonctionne comme un gardien qui surveille les tentatives :
+
+1. **Surveillance discrète** : Il observe chaque tentative de connexion sans se montrer
+2. **Comptage des erreurs** : Il compte secrètement les échecs pour chaque adresse email
+3. **Détection de comportement suspect** : Après 5 échecs, il considère que c'est suspect
+4. **Verrouillage temporaire** : Il bloque toute nouvelle tentative pendant 15 minutes
+5. **Remise à zéro automatique** : Après une connexion réussie, il efface l'historique
+
+=== Stockage des tentatives avec Deno KV
+
+Le système utilise Deno KV (key-value store) pour stocker les tentatives avec fallback mémoire :
+
+**Deno KV (prioritaire) :**
+- Base de données clé-valeur native de Deno
+- Persistance des données même après redémarrage du serveur
+- Expiration automatique des entrées via `expireIn`
+- Partageable entre plusieurs instances de l'application
+
+**Fallback mémoire :**
+- Si Deno KV n'est pas disponible, utilise un Map JavaScript en mémoire
+- Permet au système de fonctionner même sans Deno KV
+- Les données sont perdues au redémarrage
+
+**Pour chaque email, le système mémorise :**
+- **Nombre d'échecs** : Compteur incrémenté à chaque erreur
+- **Dernière tentative** : Horodatage de la dernière tentative
+- **Verrouillé jusqu'à** : Timestamp de fin de verrouillage (si applicable)
+
+=== Fenêtre de temps glissante
+Le système utilise une fenêtre de 15 minutes :
+- Si 15 minutes s'écoulent entre deux tentatives, le compteur repart à zéro
+- Seuls les échecs récents comptent pour le verrouillage
+- Cela permet aux utilisateurs légitimes de retrouver l'accès après une pause
+
+== Configuration de sécurité
+
+=== Paramètres de protection
+- **Nombre maximum d'essais** : 5 tentatives autorisées
+- **Durée de verrouillage** : 15 minutes de blocage
+- **Fenêtre de comptage** : 15 minutes pour accumuler les échecs
+
+=== Équilibre sécurité/utilisabilité
+Ces valeurs offrent un bon compromis :
+- **5 essais** : Assez pour qu'un utilisateur légitime se trompe quelques fois
+- **15 minutes** : Assez court pour ne pas frustrer, assez long pour décourager les attaques
+- **Fenêtre glissante** : Les utilisateurs légitimes peuvent reprendre après une pause
+
+=== Possibilité d'ajustement
+Les valeurs peuvent être facilement modifiées selon les besoins :
+- Plus strict pour des comptes sensibles
+- Plus permissif pour améliorer l'expérience utilisateur
+- Adaptation selon l'analyse des tentatives d'attaque
+
+== Route utilisant le middleware authLockout
+
+=== Protection spécialisée de la connexion
+**Route unique protégée :** POST /api/users/login
+
+**Pourquoi uniquement cette route :**
+- La connexion est le seul point d'entrée pour les attaques par force brute
+- Les autres routes nécessitent déjà une authentification
+- Concentrer la protection là où elle est vraiment nécessaire
+
+**Placement dans la chaîne de middlewares :**
+1. **authLockoutMiddleware** : Vérifie les verrouillages en premier
+2. **csrfProtection** : Vérifie l'origine de la requête
+3. **validateSchema** : Valide le format des données
+4. **userController.login** : Traite la connexion proprement dite
+
+== Exemple de flux complet
+
+=== Scénario : Un attaquant tente une attaque par force brute sur le compte de Marie
+
+==== Situation de départ
+Un attaquant a récupéré l'adresse email de Marie (marie@example.com) et lance un programme automatique pour tester des milliers de mots de passe courants.
+
+==== Tentatives 1 à 5 : Surveillance discrète
+Pour chaque tentative échouée :
+- Le middleware authLockout vérifie que marie@example.com n'est pas encore verrouillée
+- Il laisse passer la tentative vers le contrôleur
+- Le contrôleur vérifie le mot de passe et constate l'échec
+- Il appelle recordFailedLogin('marie@example.com')
+- Le système incrémente le compteur : 1, puis 2, puis 3, 4, 5
+
+==== Tentative 6 : Déclenchement du verrouillage
+Lors de la 5ème tentative échouée :
+- recordFailedLogin constate que c'est le 5ème échec
+- Il décide de verrouiller le compte pour 15 minutes
+- Il calcule : maintenant + 15 minutes = heure de déverrouillage
+- Il enregistre cette information
+
+==== Tentatives 7+ : Blocage actif
+Pour toutes les tentatives suivantes :
+- Le middleware authLockout vérifie marie@example.com
+- Il trouve que le compte est verrouillé jusqu'à [heure future]
+- Il bloque immédiatement sans même vérifier le mot de passe
+- Il renvoie : "Account temporarily locked. Try again in X minutes."
+
+==== Protection réussie
+L'attaquant se retrouve bloqué :
+- Son programme doit attendre 15 minutes entre chaque série de 5 tentatives
+- Une attaque qui aurait pris quelques minutes prend maintenant des années
+- L'attaque devient économiquement non rentable
+- Marie est protégée
+
+=== Scénario alternatif : Marie se trompe puis réussit
+
+==== Tentatives légitimes
+Marie essaie de se connecter mais se trompe 3 fois :
+- Le système compte : 1, 2, 3 tentatives échouées
+- Marie n'est pas encore verrouillée (limite à 5)
+
+==== Connexion réussie
+À la 4ème tentative, Marie se souvient de son vrai mot de passe :
+- Le contrôleur valide la connexion
+- Il appelle recordSuccessfulLogin('marie@example.com')
+- Le système efface complètement l'historique d'échecs
+- Marie peut continuer normalement
+
+==== Remise à zéro
+Si Marie se trompe encore plus tard :
+- Le compteur repart de zéro
+- Elle a de nouveau droit à 5 tentatives
+- Le système ne pénalise pas les erreurs passées
+
+== Gestion des verrouillages
+
+=== Informations fournies à l'utilisateur
+Quand un compte est verrouillé, l'utilisateur reçoit :
+- Un message clair : "Account temporarily locked"
+- La durée d'attente précise : "Try again in X minutes"
+- L'heure exacte de déverrouillage (format ISO)
+
+=== Calcul du temps restant
+Le système calcule précisément :
+- Temps actuel vs heure de déverrouillage
+- Conversion en minutes pour l'affichage
+- Arrondi au supérieur pour être sûr
+
+=== Déverrouillage automatique
+Aucune intervention manuelle n'est nécessaire :
+- Le système vérifie automatiquement à chaque nouvelle tentative
+- Si le temps de verrouillage est écoulé, l'accès est restauré
+- Le compteur d'échecs repart à zéro
+
+== Nettoyage et maintenance
+
+=== Expiration automatique avec Deno KV
+Le système utilise l'expiration automatique native de Deno KV :
+- Chaque entrée est créée avec un `expireIn: ATTEMPT_WINDOW` (15 minutes)
+- Deno KV supprime automatiquement les entrées expirées
+- Plus besoin de nettoyage périodique manuel
+- Libération automatique de l'espace de stockage
+
+=== Avantages de Deno KV
+Le stockage avec Deno KV apporte :
+- **Persistance** : Les verrouillages survivent aux redémarrages du serveur
+- **Partage** : Les informations peuvent être partagées entre plusieurs instances
+- **Performance** : Accès très rapides, optimisé pour les clé-valeurs
+- **Simplicité** : Pas besoin de base de données externe
+
+=== Fallback mémoire pour compatibilité
+Si Deno KV n'est pas disponible :
+- Le système bascule automatiquement sur un Map en mémoire
+- Les verrouillages sont perdus au redémarrage
+- Ne partage pas entre instances
+- Convient pour développement et tests
+
+=== Stockage de l'email dans le contexte
+Le middleware stocke l'email de la tentative dans le contexte :
+- `c.set('loginEmail', email)` pour utilisation par le controller
+- Permet au controller d'appeler `recordFailedLogin()` ou `recordSuccessfulLogin()`
+- Évite de re-parser le body JSON dans le controller
+
+== Logging et surveillance
+
+=== Alertes sur les verrouillages
+Chaque verrouillage génère une alerte dans les logs :
+- Email du compte verrouillé
+- Nombre de tentatives qui ont causé le verrouillage
+- Timestamp du verrouillage
+
+=== Monitoring des attaques
+Les logs permettent :
+- D'identifier les comptes fréquemment attaqués
+- De détecter les campagnes d'attaques coordonnées
+- D'ajuster les paramètres de sécurité si nécessaire
+
+=== Analyse des patterns
+Les administrateurs peuvent :
+- Voir quels comptes sont ciblés
+- Identifier les pics d'activité malveillante
+- Prendre des mesures préventives supplémentaires
+
+== Évolution vers un système distribué
+
+=== Limitations actuelles
+Le système en mémoire local a ses limites :
+- Pas de persistance entre redémarrages
+- Pas de partage entre plusieurs serveurs
+- Pas d'historique long terme
+
+=== Améliorations possibles
+Pour une version future :
+- **Redis** : Partage entre serveurs, persistance
+- **Base de données** : Historique complet, analytics
+- **IP blocking** : Protection au niveau réseau
+
+=== Migration transparente
+L'architecture actuelle permet une évolution facile :
+- L'interface des fonctions reste la même
+- Seul le stockage interne changerait
+- Pas d'impact sur le code des contrôleurs
+
+== Résumé
+
+Le middleware authLockout est le **protecteur contre les attaques par force brute** de l'API BlaBlaBook V2. Il sécurise **1 endpoint critique** avec :
+- **Surveillance intelligente** : Comptage des échecs par email
+- **Verrouillage temporaire** : 15 minutes après 5 échecs
+- **Remise à zéro automatique** : Effacement après connexion réussie
+- **Gestion du temps** : Fenêtre glissante de 15 minutes
+- **Nettoyage automatique** : Maintenance périodique de la mémoire
+
+**Il transforme une attaque qui pourrait réussir en quelques minutes en un processus qui prendrait des années, protégeant efficacement tous les comptes utilisateur contre les tentatives de piratage automatisées.**
+
+== Diagramme de séquence - Workflow AuthLockout
+
+[mermaid]
+----
+sequenceDiagram
+    participant Attacker
+    participant AuthLockoutMiddleware
+    participant LoginAttemptStore
+    participant ValidationMiddleware
+    participant Controller
+    participant LegitimateUser
+
+    Note over Attacker, LegitimateUser: Scénario: Attaque par force brute sur marie@example.com
+
+    rect rgb(255, 200, 200)
+        Note over Attacker, Controller: 1. TENTATIVES D'ATTAQUE (1-5)
+        loop Tentatives 1 à 5
+            Attacker->>AuthLockoutMiddleware: POST /login {email: "marie@example.com", password: "motdepasse123"}
+            AuthLockoutMiddleware->>AuthLockoutMiddleware: Parser body pour extraire email
+            AuthLockoutMiddleware->>LoginAttemptStore: Vérifier verrouillage pour marie@example.com
+            LoginAttemptStore-->>AuthLockoutMiddleware: Pas encore verrouillée
+            AuthLockoutMiddleware->>ValidationMiddleware: next() - Continuer pipeline
+
+            ValidationMiddleware->>Controller: Données validées
+            Controller->>Controller: Vérifier mot de passe (échec)
+            Controller->>LoginAttemptStore: recordFailedLogin("marie@example.com")
+            LoginAttemptStore->>LoginAttemptStore: Incrémenter compteur (1→2→3→4→5)
+
+            alt Si tentative < 5
+                Controller-->>Attacker: 401 "Invalid email or password"
+            else Si tentative = 5 (déclenchement verrouillage)
+                LoginAttemptStore->>LoginAttemptStore: Calculer lockedUntil = now + 15min
+                LoginAttemptStore->>LoginAttemptStore: Enregistrer verrouillage
+                Controller-->>Attacker: 401 "Invalid email or password"
+                Note over LoginAttemptStore: Console.warn: Account locked marie@example.com (5 attempts)
+            end
+        end
+    end
+
+    rect rgb(255, 150, 150)
+        Note over Attacker, Controller: 2. TENTATIVES BLOQUÉES (6+)
+        loop Tentatives 6 à ∞
+            Attacker->>AuthLockoutMiddleware: POST /login {email: "marie@example.com", password: "password456"}
+            AuthLockoutMiddleware->>AuthLockoutMiddleware: Parser body pour extraire email
+            AuthLockoutMiddleware->>LoginAttemptStore: Vérifier verrouillage pour marie@example.com
+            LoginAttemptStore-->>AuthLockoutMiddleware: lockedUntil > now (encore verrouillée)
+            AuthLockoutMiddleware->>AuthLockoutMiddleware: Calculer temps restant en minutes
+            AuthLockoutMiddleware-->>Attacker: 429 "Account temporarily locked. Try again in X minutes"
+            Note over AuthLockoutMiddleware: ATTAQUE RALENTIE ⏰
+        end
+    end
+
+    rect rgb(200, 255, 200)
+        Note over LegitimateUser, Controller: 3. UTILISATION LÉGITIME APRÈS EXPIRATION
+        Note over LegitimateUser: 15 minutes plus tard...
+        LegitimateUser->>AuthLockoutMiddleware: POST /login {email: "marie@example.com", password: "vraiMotDePasse"}
+        AuthLockoutMiddleware->>LoginAttemptStore: Vérifier verrouillage pour marie@example.com
+        LoginAttemptStore->>LoginAttemptStore: lockedUntil < now (verrouillage expiré)
+        LoginAttemptStore->>LoginAttemptStore: Nettoyer ancienne entrée
+        AuthLockoutMiddleware->>Controller: next() - Autoriser tentative
+
+        Controller->>Controller: Vérifier mot de passe (succès)
+        Controller->>LoginAttemptStore: recordSuccessfulLogin("marie@example.com")
+        LoginAttemptStore->>LoginAttemptStore: Supprimer complètement l'entrée
+        Controller-->>LegitimateUser: 200 "Login successful" + token
+        Note over LegitimateUser: MARIE RETROUVE L'ACCÈS ✅
+    end
+
+    rect rgb(200, 200, 255)
+        Note over AuthLockoutMiddleware, LoginAttemptStore: 4. NETTOYAGE AUTOMATIQUE
+        LoginAttemptStore->>LoginAttemptStore: setInterval(5min) - Nettoyage périodique
+        LoginAttemptStore->>LoginAttemptStore: Parcourir toutes les entrées
+        LoginAttemptStore->>LoginAttemptStore: Supprimer verrouillages expirés
+        Note over LoginAttemptStore: Maintenance automatique 🧹
+    end
+----

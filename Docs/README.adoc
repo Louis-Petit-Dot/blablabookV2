@@ -1,0 +1,221 @@
+= BlaBlaBook V2 - Documentation Hub 📚
+:toc: left
+:toclevels: 3
+:sectanchors:
+:icons: font
+:version: 2.0
+:description: Main entry point for all BlaBlaBook V2 technical documentation
+
+[.lead]
+*BlaBlaBook V2* is a community platform for managing and sharing personal book libraries, built with Deno, Hono, React 19, and PostgreSQL.
+
+---
+
+== 📖 Introduction
+
+This centralized documentation gathers all specifications, diagrams, technical guides, and architectural decisions for the BlaBlaBook V2 project.
+
+**Core Technologies:**
+
+* **Backend**: Deno 2.5.2, Hono, Drizzle ORM 0.38.0
+* **Frontend**: Vite 6.3.6, React 19.1.1, React Router 7.9.3
+* **Database**: PostgreSQL 17
+* **Infrastructure**: Docker, Nginx
+
+---
+
+== 📋 Requirements & Specifications
+
+Official business and technical specifications documentation.
+
+* link:cdc/business-requirements.adoc[📊 Business Requirements] - Functional and user needs
+* link:cdc/technical-architecture.adoc[🏗️ Technical Architecture] - V2 stack, architectural choices
+* link:cdc/api-specifications.adoc[🛣️ REST API Specifications] - Routes, endpoints, JWT authentication
+* link:cdc/test-strategy.adoc[🧪 Testing Strategy] - Unit, integration, E2E tests with Deno Test
+* link:cdc/risk-analysis.adoc[⚠️ Risk Analysis & GDPR] - GDPR compliance, OWASP security
+
+---
+
+== 🏗️ Architecture
+
+System architecture documentation.
+
+* link:architecture/overview.adoc[🌐 Architecture Overview] - General project architecture
+* link:architecture/security-architecture.adoc[🔒 Security Architecture] - JWT, Zero Trust, RBAC
+* link:architecture/docker-explications.adoc[🐳 Docker Infrastructure] - Docker Compose configuration, services
+* link:architecture/service-images.adoc[🖼️ Image Service] - Image management with Cloudinary
+* link:architecture/architecture.md[📐 Architecture Diagram] - Mermaid architecture schema
+
+---
+
+== 🔧 Backend (Deno + Hono)
+
+Deno backend specific documentation.
+
+* link:backend/author-search-flow.adoc[👤 Author Search] - Author search workflow
+* link:backend/genre-search-flow.adoc[📚 Genre Search] - Genre search workflow
+
+**See also:**
+
+* link:cdc/api-specifications.adoc[Complete REST API routes]
+* link:database/dictionnaire-donnees.adoc[Data dictionary]
+
+---
+
+== 🎨 Frontend (React 19 + Vite)
+
+React frontend specific documentation.
+
+* link:frontend/react-architecture-complete.adoc[⚛️ Complete React Architecture] - Component structure, routing, state management
+* link:frontend/react-explique-simplement.adoc[📖 React Explained Simply] - Pedagogical React guide (FR)
+* link:frontend/react-routerV7.adoc[🛣️ React Router v7] - Routing, layouts, loaders/actions
+* link:frontend/frontend-architecture.adoc[🏗️ Frontend Architecture] - Frontend code organization
+* link:frontend/frontend-security-checklist.adoc[🔒 Frontend Security Checklist] - Client-side security
+
+**Key Architectural Decisions:**
+
+* **Plain text only**: No rich text editor, native React JSX XSS protection
+* **JWT httpOnly cookies**: Token inaccessible from JavaScript
+* **RBAC with guards**: RequireAuth, RequireAdmin
+* **Lazy loading**: Code splitting per route
+
+---
+
+== 🗄️ Database
+
+PostgreSQL database and Merise modeling documentation.
+
+* link:database/dictionnaire-donnees.adoc[📖 Data Dictionary] - Complete description of all tables and columns
+* link:database/ERD/ERD-BBBV2.adoc[📊 ERD Diagram] - Entity Relationship Diagram
+* link:database/Merise/MCD/cardinalites-details.adoc[🔗 Merise Cardinalities] - MCD relationship details
+
+**Merise Models:**
+
+* **MCD** (Conceptual Data Model): `database/Merise/MCD/`
+* **MLD** (Logical Data Model): `database/Merise/MLD/`
+* **MPD** (Physical Data Model): `database/Merise/MPD/`
+
+---
+
+== 📊 Diagrams
+
+UML diagrams and project workflows.
+
+=== Activity Diagrams
+
+* link:diagrams/activity/authentification-workflow.adoc[🔐 Authentication] - Login/register/lockout workflow
+* link:diagrams/activity/recherche-ajout-livre.adoc[🔍 Book Search & Add] - Open Library workflow
+* link:diagrams/activity/gestion-listes-lecture.adoc[📚 Reading Lists Management] - CRUD lists workflow
+* link:diagrams/activity/redaction-avis-spoiler.adoc[✍️ Review Writing with Spoilers] - Review + spoilers workflow
+
+=== Sequence Diagrams
+
+* link:diagrams/sequence/diag-sequence.adoc[⏱️ Complete Sequence Diagrams] - 12 bilingual FR/EN diagrams
+
+=== Use Cases
+
+* link:diagrams/use-cases/use-cases-BBBV2.adoc[👥 BlaBlaBook V2 Use Cases] - Main use cases
+
+=== Technical Workflows
+
+* link:diagrams/workflow-service-images.adoc[🖼️ Image Service Workflow] - Upload and Cloudinary management
+
+---
+
+== 🚀 Deployment
+
+Deployment and infrastructure documentation.
+
+* link:deployment/README.adoc[🐳 Deployment Guide] - Docker instructions, environments, CI/CD
+
+---
+
+== 🎨 Design & Brand Guidelines
+
+Design and visual identity documentation.
+
+* link:design/charte-graphique-blablabook.adoc[🎨 Complete Brand Guidelines] - Colors, typography, components
+* link:design/maquettes/[🖼️ UI Mockups] - Wireframes and mockups
+
+**Color Palette:**
+
+* `#725B3A` - Primary light brown
+* `#D0A868` - Golden beige
+* `#F2E5D0` - Light beige
+* `#999999` - Gray
+* `#FEFBF6` - Off-white
+
+---
+
+== 💻 Development
+
+Guides and conventions for developers.
+
+* link:development/coding-conventions.adoc[📝 Coding Conventions] - TypeScript, Deno, React standards
+* link:development/configuration-guide.adoc[⚙️ Configuration Guide] - Environment variables, dev setup
+* link:development/guide-terminologie-merise.adoc[📖 Merise Terminology] - MCD/MLD/MPD glossary
+
+---
+
+== ⚖️ Legal & GDPR
+
+Legal documentation and GDPR compliance.
+
+* link:legal/rgpd.md[🔒 GDPR Compliance] - Data protection, user rights
+
+**See also:**
+
+* link:cdc/risk-analysis.adoc[Complete GDPR analysis in requirements]
+
+---
+
+== 📋 Project Management
+
+Project conception and management documentation.
+
+* link:project/CONCEPTION-BLABLABOOKV2.adoc[💡 V2 Conception Document] - Product vision, development stages
+
+---
+
+== 🔗 Quick Links
+
+=== For New Developers
+
+1. Read link:cdc/business-requirements.adoc[Business Requirements]
+2. Review link:cdc/technical-architecture.adoc[Technical Architecture]
+3. Follow link:development/configuration-guide.adoc[Configuration Guide]
+4. Respect link:development/coding-conventions.adoc[Coding Conventions]
+
+=== For Backend Contributors
+
+* link:cdc/api-specifications.adoc[REST API Routes]
+* link:database/dictionnaire-donnees.adoc[Database Schema]
+* link:diagrams/sequence/diag-sequence.adoc[Sequence Diagrams]
+
+=== For Frontend Contributors
+
+* link:frontend/react-architecture-complete.adoc[React Architecture]
+* link:frontend/frontend-security-checklist.adoc[Frontend Security]
+* link:design/charte-graphique-blablabook.adoc[Brand Guidelines]
+
+=== For Security
+
+* link:architecture/security-architecture.adoc[Security Architecture]
+* link:cdc/risk-analysis.adoc[OWASP Risk Analysis]
+* link:frontend/frontend-security-checklist.adoc[Frontend Security Checklist]
+
+---
+
+== 📞 Support & Contribution
+
+**Technical questions:** See link:development/coding-conventions.adoc[Coding Conventions]
+
+**Deployment:** Check link:deployment/README.adoc[Deployment Guide]
+
+**Architecture:** Reference link:cdc/technical-architecture.adoc[V2 Technical Architecture]
+
+---
+
+*Documentation maintained on 2025-10-21 - BlaBlaBook V2*
+
+link:../README.adoc[⬆️ Back to main project README]

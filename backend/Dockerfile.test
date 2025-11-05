@@ -1,0 +1,22 @@
+# Dockerfile pour tests Backend Deno + Hono
+FROM denoland/deno:alpine
+
+# Installer les dépendances nécessaires pour Argon2
+RUN apk add --no-cache libstdc++ musl-dev
+
+# Définir le répertoire de travail
+WORKDIR /app
+
+# Copier les fichiers de configuration Deno
+COPY deno.json deno.lock ./
+
+# Copier le code source
+# Copier le code source et les tests
+COPY src/ ./src/
+COPY tests/ ./tests/
+
+# Cache des dépendances Deno (inclut les tests)
+RUN deno cache src/index.ts tests/*.ts || true
+
+# Commande pour lancer les tests
+CMD ["deno", "task", "test"]

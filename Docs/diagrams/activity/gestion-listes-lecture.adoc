@@ -1,0 +1,367 @@
+= Gestion Listes de Lecture
+:toc:
+:toc-title: Sommaire
+:sectnums:
+:icons: font
+
+== Vue d'ensemble
+
+Diagramme d'activité pour la création et gestion des listes de lecture personnalisées dans BlaBlaBook V2.
+
+**NOTE:** Ce diagramme est synchronisé avec le code backend actuel (readingListController, readingListService, bookReadingListController).
+
+== Flux Gestion Listes
+
+[plantuml, gestion-listes, png]
+----
+@startuml
+start
+
+:Utilisateur connecté accède à ses listes;
+
+if (Action souhaitée ?) then (créer nouvelle liste)
+
+  :Clic "Nouvelle liste";
+  :Formulaire création liste;
+  :Saisir list_name (requis);
+  :Sélectionner bibliothèque (id_library);
+  :Choisir visibilité (is_public true/false);
+  :Ajouter description optionnelle;
+
+  if (Nom liste valide ?) then (oui)
+    if (Nom déjà utilisé dans cette bibliothèque ?) then (oui)
+      :Erreur "A reading list with this name already exists in this library";
+      note right: Contrainte unique (id_user, id_library, list_name)
+    else (non)
+      if (Bibliothèque appartient à l'utilisateur ?) then (oui)
+        :Créer liste en base (READING_LIST);
+        :Liste vide créée;
+        :Message "Reading list created successfully";
+      else (non)
+        :Erreur "You can only move lists to your own libraries";
+      endif
+    endif
+  else (non)
+    :Erreur "list_name is required";
+  endif
+
+else (gérer liste existante)
+
+  :Afficher listes utilisateur (publiques + privées);
+  :Sélectionner une liste;
+
+  if (Contrôle d'accès ?) then (lecture)
+    note right: Public OU propriétaire
+    :Voir contenu de la liste;
+  elseif (écriture) then (oui)
+    note right: Propriétaire uniquement
+  endif
+
+  if (Action sur liste ?) then (ajouter livre)
+
+    if (Livre déjà dans liste ?) then (oui)
+      :Message "Book already in this reading list";
+    else (non)
+      :Ajouter livre (READING_LIST_BOOK);
+      :created_at enregistré;
+      :Message "Book added to reading list successfully";
+      note right: Pas de statut lecture, priorité ou notes\nDans la version actuelle
+    endif
+
+  elseif (retirer livre) then (oui)
+
+    :Confirmation suppression;
+    :Retirer livre de liste;
+    :Message "Book removed from reading list successfully";
+
+  elseif (modifier liste) then (oui)
+
+    if (Propriétaire de la liste ?) then (oui)
+      :Formulaire modification liste;
+      :Changer list_name/description/is_public;
+      if (Changement nom ?) then (oui)
+        :Vérifier unicité dans bibliothèque cible;
+      endif
+      if (Changement bibliothèque ?) then (oui)
+        :Vérifier propriété nouvelle bibliothèque;
+      endif
+      :Sauvegarder changements;
+      :updated_at mis à jour;
+    else (non)
+      :Erreur "You need write access to this reading list";
+    endif
+
+  else (supprimer liste)
+
+    if (Propriétaire de la liste ?) then (oui)
+      :Confirmation suppression liste;
+      :Soft delete (deleted_at);
+      :updated_at mis à jour;
+      :Message "Reading list deleted successfully";
+      note right: Cascade delete automatique\ndes READING_LIST_BOOK
+    else (non)
+      :Erreur "You need write access to this reading list";
+    endif
+
+  endif
+
+endif
+
+:Affichage listes mises à jour;
+
+stop
+@enduml
+----
+
+== Scénarios Utilisateur
+
+=== Scénario nominal - Création de liste
+
+**Acteur :** Utilisateur connecté
+**Objectif :** Créer une nouvelle liste de lecture
+
+[cols="1,3"]
+|===
+|Étape |Action
+
+|1 |Utilisateur clique "Nouvelle liste"
+|2 |Saisit list_name, sélectionne id_library, choisit is_public
+|3 |Système valide que id_library appartient à l'utilisateur
+|4 |Système vérifie unicité (id_user, id_library, list_name)
+|5 |Création READING_LIST avec created_at, updated_at
+|6 |Message "Reading list created successfully"
+|===
+
+**Résultat :** Liste vide créée, prête à recevoir des livres.
+
+=== Scénario nominal - Ajout livre à liste
+
+**Acteur :** Propriétaire de la liste
+**Objectif :** Ajouter un livre à sa liste
+
+[cols="1,3"]
+|===
+|Étape |Action
+
+|1 |Utilisateur sélectionne liste + livre
+|2 |Système vérifie propriété de la liste (requireWrite)
+|3 |Système vérifie que livre n'est pas déjà dans la liste
+|4 |Création READING_LIST_BOOK (id_list, id_book, created_at)
+|5 |Message "Book added to reading list successfully"
+|===
+
+**Résultat :** Livre ajouté à la liste.
+
+=== Scénario alternatif - Nom déjà utilisé
+
+**Déclencheur :** Création liste avec nom existant dans même bibliothèque
+
+[cols="1,3"]
+|===
+|Étape |Action
+
+|1-2 |Saisie list_name déjà utilisé dans cette bibliothèque
+|3 |Système détecte contrainte unique
+|4 |Erreur "A reading list with this name already exists in this library"
+|5 |Utilisateur modifie le nom
+|===
+
+**Résultat :** Création refusée, nom doit être unique par bibliothèque.
+
+=== Scénario d'exception - Accès refusé
+
+**Déclencheur :** Tentative modification liste d'un autre utilisateur
+
+[cols="1,3"]
+|===
+|Étape |Action
+
+|1 |Utilisateur tente de modifier liste publique d'autrui
+|2 |Système vérifie propriété (validateReadingListAccess)
+|3 |Erreur "You need write access to this reading list"
+|4 |Action bloquée
+|===
+
+**Résultat :** Seul le propriétaire peut modifier/supprimer.
+
+== Modèle de données
+
+=== Table READING_LIST
+
+```typescript
+{
+  id_list: uuid (PK),
+  id_user: uuid (FK → USER, cascade delete),
+  id_library: uuid (FK → LIBRARY, cascade delete),
+  list_name: varchar(100) NOT NULL,
+  description: text,
+  is_public: boolean DEFAULT false,
+  created_at: timestamp,
+  updated_at: timestamp,
+  deleted_at: timestamp (soft delete)
+}
+```
+
+**Contrainte unique :** `(id_user, id_library, list_name)`
+
+=== Table READING_LIST_BOOK (junction)
+
+```typescript
+{
+  id_reading_list_book: uuid (PK),
+  id_list: uuid (FK → READING_LIST, cascade delete),
+  id_book: uuid (FK → BOOK, cascade delete),
+  created_at: timestamp
+}
+```
+
+**Note :** Version actuelle simple, pas de statut lecture, priorité ou notes personnelles.
+
+== Contrôles d'accès
+
+=== Lecture de liste
+
+**Autorisé si :**
+- Liste publique (`is_public = true`) **OU**
+- Propriétaire de la liste (`id_user = current_user`)
+
+**Implémentation :**
+```typescript
+validateReadingListAccess(readingList, userId, requireWrite: false)
+```
+
+=== Écriture sur liste (création, modification, suppression)
+
+**Autorisé si :**
+- Propriétaire de la liste uniquement (`id_user = current_user`)
+
+**Implémentation :**
+```typescript
+validateReadingListAccess(readingList, userId, requireWrite: true)
+// Middleware requireListOwnership()
+```
+
+=== Héritage visibilité
+
+La visibilité de la liste (`is_public`) **hérite** de la bibliothèque parente.
+Si bibliothèque publique → listes visibles publiquement.
+
+== Règles métier
+
+=== Validation création
+
+**list_name :**
+- Requis (max 100 caractères)
+- Unique par combinaison (id_user, id_library, list_name)
+- Trim des espaces
+
+**id_library :**
+- Requis
+- Doit appartenir à l'utilisateur courant
+- Validation via `validateLibraryOwnership()`
+
+**is_public :**
+- Boolean, default `false`
+- Détermine la visibilité publique de la liste
+
+**description :**
+- Optionnel
+- Type `text` (illimité)
+
+=== Modification liste
+
+**Changement de nom :**
+- Vérification unicité dans bibliothèque cible
+- Exclusion de la liste en cours de modification
+
+**Changement de bibliothèque (déplacement) :**
+- Validation propriété nouvelle bibliothèque
+- Vérification unicité nom dans nouvelle bibliothèque
+
+**Permissions :**
+- Propriétaire uniquement peut modifier
+- id_user non modifiable (protection données)
+
+=== Suppression liste
+
+**Soft delete :**
+- Champ `deleted_at` rempli
+- `updated_at` mis à jour
+- Liste non visible dans getAccessibleLists()
+
+**Cascade delete automatique :**
+- Les READING_LIST_BOOK sont supprimés en base (CASCADE)
+- Pas de confirmation spéciale si liste non vide
+
+**Permissions :**
+- Propriétaire uniquement
+- Middleware `requireListOwnership()` vérifie
+
+== Messages utilisateur
+
+=== Succès
+- "Reading list created successfully"
+- "Book added to reading list successfully"
+- "Book removed from reading list successfully"
+- "Reading list deleted successfully"
+
+=== Erreurs métier
+- "list_name is required"
+- "id_library is required"
+- "A reading list with this name already exists in this library"
+- "You can only move lists to your own libraries"
+- "You need write access to this reading list"
+- "Access denied to this reading list"
+
+=== Erreurs techniques
+- "Reading list not found" (liste supprimée ou inexistante)
+- "Book not found"
+
+== Différences avec le design initial
+
+**Fonctionnalités NON IMPLÉMENTÉES :**
+- ❌ Statut de lecture (a_lire, en_cours, lu, abandonné) sur READING_LIST_BOOK
+- ❌ Notes personnelles sur livres dans liste
+- ❌ Priorité (1-5) sur livres
+- ❌ Avertissement spécial si liste non vide lors suppression
+- ❌ Suggestions alternatives de nom en cas de conflit
+
+**Fonctionnalités RÉELLES :**
+- ✅ Contrainte unique (id_user, id_library, list_name)
+- ✅ Soft delete sur READING_LIST
+- ✅ Cascade delete automatique sur READING_LIST_BOOK
+- ✅ Validation propriété bibliothèque
+- ✅ Contrôle d'accès lecture/écriture granulaire
+- ✅ Héritage visibilité de la bibliothèque parente
+- ✅ Vue ReadingListView pour jointures optimisées
+- ✅ Vérification soft delete (user, library, reading_list)
+
+**Architecture :**
+- Service utilise `EntityValidator` pour validations
+- Middleware `requireListOwnership()` pour protection écriture
+- Vue SQL `ReadingListView` pour performance
+- Cache non utilisé (seulement pour user roles/permissions)
+
+== Points d'attention UX
+
+**Gestion simplifiée :**
+- Listes appartiennent toujours à une bibliothèque
+- Nom unique par bibliothèque (pas global)
+- Déplacement possible vers autre bibliothèque propriétaire
+
+**Visibilité :**
+- Liste publique visible par tous
+- Liste privée visible propriétaire uniquement
+- Héritage de la visibilité de la bibliothèque
+
+**Permissions claires :**
+- Lecture : public OU propriétaire
+- Écriture : propriétaire uniquement
+- Messages d'erreur explicites
+
+**Évolution future possible :**
+- Ajout statut lecture (ENUM: TO_READ, READING, READ, DNF)
+- Ajout notes personnelles (text)
+- Ajout priorité (integer 1-5)
+- Import/export listes
+- Partage collaboratif

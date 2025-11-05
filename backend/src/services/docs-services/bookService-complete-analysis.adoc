@@ -1,0 +1,524 @@
+= Service BookService - Analyse Complète
+:toc:
+:toclevels: 3
+
+== Vue d'ensemble
+
+Le service bookService gère les opérations de recherche, de consultation et d'import de livres dans l'API BlaBlaBook V2. Il s'occupe de la récupération des informations sur les livres depuis l'API externe OpenLibrary, de la gestion du catalogue local, et de l'importation de livres dans la base de données avec upload des couvertures sur Cloudinary.
+
+NOTE: Ce service utilise `.select()` **sans projections explicites** car la table Book ne contient **aucune donnée sensible**. Toutes les informations (titre, ISBN, résumé, etc.) sont publiques par nature. L'utilisation de `.select().from(Book)` est donc appropriée et optimale pour ce cas d'usage.
+
+== Fonctions principales
+
+=== search
+**Objectif:** Rechercher des livres via l'API OpenLibrary et indiquer lesquels sont déjà importés localement
+**Quand:** Utilisé lors des recherches d'utilisateurs dans la barre de recherche
+**Pourquoi important:** Permet la découverte de nouveaux livres depuis OpenLibrary tout en indiquant ceux déjà présents dans la base locale
+
+=== getById
+**Objectif:** Récupérer les informations détaillées d'un livre spécifique depuis la base locale
+**Quand:** Utilisé pour afficher la page détail d'un livre
+**Pourquoi important:** Fournit les données nécessaires pour l'affichage des fiches livre
+
+=== getAll
+**Objectif:** Récupérer la liste de tous les livres de la base locale avec pagination
+**Quand:** Utilisé pour afficher le catalogue complet ou dans les interfaces d'administration
+**Pourquoi important:** Permet la navigation et la découverte de livres dans la bibliothèque locale
+
+=== getTrending
+**Objectif:** Récupérer une sélection aléatoire de livres depuis la base locale
+**Quand:** Utilisé pour afficher les suggestions de livres sur la page d'accueil
+**Pourquoi important:** Fournit des recommandations variées et performantes sans appel API externe
+
+=== createFromOpenLibrary
+**Objectif:** Importer un livre depuis OpenLibrary dans la base locale avec sa couverture
+**Quand:** Utilisé quand un utilisateur souhaite ajouter un nouveau livre à son catalogue
+**Pourquoi important:** Permet l'enrichissement progressif du catalogue local depuis une source externe fiable
+
+== Fonctionnement du service bookService
+
+=== Rôle de pont entre OpenLibrary et la base locale
+Le service bookService fonctionne comme un système hybride :
+
+1. **Moteur de recherche externe** : Il interroge l'API OpenLibrary pour la découverte de livres
+2. **Catalogue local** : Il gère les livres importés dans la base de données PostgreSQL
+3. **Détection de doublons** : Il vérifie automatiquement si un livre OpenLibrary est déjà importé
+4. **Import intelligent** : Il crée les livres, auteurs et relations lors de l'importation
+5. **Upload de couvertures** : Il gère l'upload des images vers Cloudinary
+
+=== Système de recherche hybride
+Le service utilise une approche en deux étapes :
+- **Recherche OpenLibrary** : Interrogation de l'API externe pour trouver des livres
+- **Vérification locale** : Contrôle des livres déjà importés via `openlibrary_key`
+- **Enrichissement de réponse** : Ajout des champs `isImported` et `localId` pour chaque livre
+- **Limitation intelligente** : 20 résultats maximum pour la performance
+
+=== Gestion des trending books
+Pour optimiser les performances de la page d'accueil :
+- **Source locale uniquement** : Sélection depuis la base PostgreSQL (pas d'appel OpenLibrary)
+- **Sélection aléatoire** : Utilisation de `RANDOM()` pour varier les suggestions
+- **Jointures optimisées** : Récupération des auteurs en une seule requête
+- **Limite par défaut** : 20 livres pour équilibrer variété et performance
+
+=== Processus d'importation complet
+L'import d'un livre depuis OpenLibrary suit ce workflow :
+- **Détection de doublons** : Vérification par `openlibrary_key` et `isbn`
+- **Création du livre** : INSERT dans la table Book
+- **Upload Cloudinary** : Upload de la couverture et mise à jour de l'URL
+- **Gestion des auteurs** : Création ou récupération des auteurs existants
+- **Relations** : Création des liens book-author dans BookAuthor
+
+== Opérations détaillées
+
+=== Recherche de livres (search)
+
+**Fonctionnement en mots simples :**
+Cette fonction interroge l'API OpenLibrary pour trouver des livres, puis vérifie lesquels sont déjà importés dans la base locale.
+
+**Processus de recherche :**
+1. **Requête OpenLibrary** : Appel de `searchGeneral(query, 20)` depuis le service OpenLibrary
+2. **Extraction des clés** : Récupération des `openlibrary_key` de chaque livre trouvé
+3. **Vérification locale** : SELECT sur Book avec OR sur toutes les clés OpenLibrary
+4. **Mapping enrichi** : Ajout de `isImported` (boolean) et `localId` (UUID si importé) à chaque livre
+5. **Retour structuré** : {books, total_books, search_query, source: "openlibrary"}
+
+**Structure de réponse enrichie :**
+```javascript
+{
+    books: [
+        {
+            key: "/works/OL893415W",
+            title: "1984",
+            author_name: ["George Orwell"],
+            cover_i: 8228691,
+            first_publish_year: 1949,
+            isbn: "0451524934",
+            subject: ["Fiction", "Dystopia"],
+            isImported: true,          // ← NOUVEAU: indique si déjà en base
+            localId: "uuid-du-livre"   // ← NOUVEAU: ID local si importé
+        }
+    ],
+    total_books: 1,
+    search_query: "1984",
+    source: "openlibrary"
+}
+```
+
+**Gestion des doublons :**
+Le service utilise un `Set` pour vérifier rapidement si une clé OpenLibrary est présente localement, optimisant la performance.
+
+=== Consultation détaillée (getById)
+
+**Fonctionnement en mots simples :**
+Cette fonction récupère un livre spécifique depuis la **base locale uniquement** (pas d'appel OpenLibrary).
+
+**Processus de validation :**
+1. **Validation d'existence** : Utilise EntityValidator pour confirmer que le livre existe localement
+2. **Récupération sécurisée** : Obtient les données complètes du livre validé
+3. **Format standardisé** : Retourne les informations dans une structure cohérente
+4. **Gestion d'erreurs** : Lève une exception si le livre n'existe pas
+
+**Sécurité intégrée :**
+L'utilisation d'EntityValidator garantit que seuls les livres existants dans la base locale sont retournés, évitant les erreurs d'affichage.
+
+=== Consultation du catalogue (getAll)
+
+**Fonctionnement en mots simples :**
+Cette fonction récupère une liste de livres depuis la **base locale uniquement**.
+
+**Processus de récupération :**
+1. **Paramètre de limite** : Accepte une limite personnalisée (50 par défaut)
+2. **Sélection paginée** : Récupère le nombre demandé de livres locaux
+3. **Comptage automatique** : Calcule le nombre de livres retournés
+4. **Métadonnées incluses** : Retourne la limite appliquée pour information
+
+**Gestion de la charge :**
+La limite par défaut de 50 livres équilibre la richesse des données et la performance de l'interface.
+
+=== Livres tendances (getTrending)
+
+**Fonctionnement en mots simples :**
+Cette fonction sélectionne aléatoirement des livres depuis la **base locale** pour afficher des suggestions variées sur la page d'accueil.
+
+**Changement architectural important :**
+```javascript
+// ANCIEN CODE (commenté) - Causait LCP 30s
+// const olResults = await getTrendingBooks(limit);
+// Interrogeait OpenLibrary à chaque chargement de page
+
+// NOUVEAU CODE - Performance optimale
+const localBooks = await db
+    .select({...})
+    .from(Book)
+    .leftJoin(BookAuthor, ...)
+    .leftJoin(Author, ...)
+    .orderBy(sql`RANDOM()`)
+    .limit(limit);
+```
+
+**Raison du changement :**
+L'ancien code utilisant OpenLibrary causait un **LCP (Largest Contentful Paint) de 30 secondes**, rendant la page d'accueil inutilisable. Le nouveau code utilise uniquement la base locale avec sélection aléatoire.
+
+**Processus de récupération :**
+1. **Sélection aléatoire** : `orderBy(sql\`RANDOM()\`)` pour varier les suggestions
+2. **Jointures optimisées** : Récupération des auteurs en une seule requête (LEFT JOIN)
+3. **Groupement des auteurs** : Agrégation des auteurs multiples par livre via Map
+4. **Limite par défaut** : 20 livres pour équilibrer variété et performance
+5. **Retour structuré** : {books, total_books, source: "local-random"}
+
+**Structure de réponse :**
+```javascript
+{
+    books: [
+        {
+            key: "local-uuid",           // Clé locale si pas d'openlibrary_key
+            title: "Le Petit Prince",
+            author_name: ["Antoine de Saint-Exupéry"],
+            cover_i: null,               // Pas de cover_i pour livres locaux
+            first_publish_year: 1943,
+            image: "https://cloudinary.com/...",
+            isLocal: true                // Indique que c'est un livre local
+        }
+    ],
+    total_books: 20,
+    source: "local-random"
+}
+```
+
+=== Importation depuis OpenLibrary (createFromOpenLibrary)
+
+**Fonctionnement en mots simples :**
+Cette fonction importe un livre complet depuis OpenLibrary dans la base locale, incluant la création des auteurs, l'upload de la couverture sur Cloudinary, et les relations book-author.
+
+**Processus complet d'importation :**
+
+==== 1. Détection de doublons (lignes 148-176)
+```javascript
+// Vérification par openlibrary_key
+if (openLibraryData.key) {
+    const existingByKey = await db.select()
+        .from(Book)
+        .where(eq(Book.openlibrary_key, openLibraryData.key))
+        .limit(1);
+
+    if (existingByKey.length > 0) {
+        return {
+            book: existingByKey[0],
+            message: "Ce livre existe déjà dans la base de données",
+            isNew: false
+        };
+    }
+}
+
+// Vérification par ISBN
+if (openLibraryData.isbn?.[0]) {
+    const existingByIsbn = await db.select()
+        .from(Book)
+        .where(eq(Book.isbn, openLibraryData.isbn[0]))
+        .limit(1);
+    // ...
+}
+```
+
+**Double protection :**
+- Par `openlibrary_key` en priorité (identifiant unique OpenLibrary)
+- Par `isbn` en fallback (pour détecter les imports manuels)
+
+==== 2. Création du livre (lignes 178-187)
+```javascript
+const [newBook] = await db.insert(Book).values({
+    title: openLibraryData.title,
+    isbn: openLibraryData.isbn?.[0] || null,
+    openlibrary_key: openLibraryData.key,
+    publication_year: openLibraryData.first_publish_year || null,
+    image: null, // Sera mis à jour après l'upload Cloudinary
+}).returning();
+
+const bookId = newBook.id_book; // UUID généré par PostgreSQL
+```
+
+**Point clé :**
+PostgreSQL génère automatiquement l'UUID via `gen_random_uuid()`, pas besoin de le fournir.
+
+==== 3. Upload de la couverture sur Cloudinary (lignes 189-204)
+```javascript
+if (openLibraryData.key) {
+    const uploadResult = await imageService.uploadBookCover(
+        bookId,
+        openLibraryData.key
+    );
+
+    if (uploadResult.success && uploadResult.url) {
+        // Mise à jour de l'URL de l'image
+        await db.update(Book)
+            .set({ image: uploadResult.url })
+            .where(eq(Book.id_book, bookId));
+
+        newBook.image = uploadResult.url;
+    }
+}
+```
+
+**Processus Cloudinary :**
+- Le service `imageService.uploadBookCover()` télécharge la couverture depuis OpenLibrary
+- Upload vers Cloudinary avec transformation automatique (resize, optimization)
+- Retour de l'URL publique Cloudinary
+- Mise à jour du champ `image` dans Book
+
+==== 4. Création des auteurs et relations (lignes 206-233)
+```javascript
+if (openLibraryData.author_name && openLibraryData.author_name.length > 0) {
+    for (const authorName of openLibraryData.author_name) {
+        // Vérifie si l'auteur existe déjà
+        const [existingAuthor] = await db.select()
+            .from(Author)
+            .where(eq(Author.author_name, authorName))
+            .limit(1);
+
+        let authorId: string;
+
+        if (existingAuthor) {
+            authorId = existingAuthor.id_author;
+        } else {
+            // Crée le nouvel auteur
+            const [newAuthor] = await db.insert(Author).values({
+                author_name: authorName,
+            }).returning();
+            authorId = newAuthor.id_author;
+        }
+
+        // Crée la relation book-author
+        await db.insert(BookAuthor).values({
+            id_book: bookId,
+            id_author: authorId,
+        });
+    }
+}
+```
+
+**Gestion intelligente des auteurs :**
+- **Réutilisation** : Si l'auteur existe déjà, récupération de son ID
+- **Création** : Si nouvel auteur, insertion avec génération d'UUID
+- **Relations** : Création systématique du lien book-author dans la table de jonction
+
+==== 5. Retour structuré (lignes 235-239)
+```javascript
+return {
+    book: newBook,
+    message: "Livre importé avec succès depuis OpenLibrary",
+    isNew: true
+};
+```
+
+**Réponse complète :**
+- `book` : Objet Book complet avec l'URL Cloudinary mise à jour
+- `message` : Message de succès localisé
+- `isNew` : Boolean indiquant qu'il s'agit d'un nouvel import (vs doublon)
+
+== Validation et contrôles qualité
+
+=== EntityValidator integration
+Le service s'appuie sur EntityValidator pour :
+- **validateBook** : Confirmer l'existence du livre demandé dans la base locale
+- **Gestion cohérente** : Messages d'erreur standardisés avec les autres services
+- **Validation automatique** : Intégration transparente dans getById
+
+=== Contrôles de performance
+Le service applique des limites intelligentes :
+- **Limite de recherche** : 20 résultats maximum pour les recherches OpenLibrary
+- **Limite de trending** : 20 livres aléatoires par défaut
+- **Limite de consultation** : 50 livres par défaut pour getAll
+- **Optimisation des requêtes** : Utilisation de LEFT JOIN pour récupérer les auteurs
+- **Prévention de surcharge** : Protection contre les requêtes trop larges
+
+=== Gestion des doublons
+Les fonctionnalités de détection incluent :
+- **Double vérification** : Par `openlibrary_key` ET par `isbn`
+- **Retour informatif** : `isNew: false` si doublon détecté
+- **Performance** : Utilisation de `Set` pour vérification O(1) dans search()
+- **Sécurité** : Prévention des imports multiples du même livre
+
+== Gestion des erreurs spécialisées
+
+=== Erreurs de validation
+- **Livre inexistant** : Gérée par EntityValidator avec message standardisé
+- **ID invalide** : Validation du format avant recherche en base
+- **Paramètres manquants** : Gestion gracieuse avec valeurs par défaut
+
+=== Erreurs d'importation
+- **Doublon détecté** : Retour gracieux avec `isNew: false`
+- **Échec upload Cloudinary** : L'import continue sans image (NULL)
+- **Auteur manquant** : Import du livre sans relation author (optionnel)
+- **OpenLibrary API down** : Propagation de l'erreur avec message explicite
+
+=== Gestion des cas limites
+- **Aucun résultat** : Retour d'une liste vide sans erreur
+- **Recherche trop large** : Limitation automatique à 20 résultats
+- **Catalogue vide** : Gestion gracieuse avec compteur à zéro
+- **Livre sans couverture** : Import valide avec `image: NULL`
+
+== Performance et optimisation
+
+=== Requêtes optimisées
+- **Index recommandés** : Sur `openlibrary_key` et `isbn` pour les recherches et détections de doublons
+- **LIMIT systématique** : Prévention des requêtes sans limite
+- **LEFT JOIN efficace** : Récupération des auteurs en une seule requête dans getTrending
+- **RANDOM() PostgreSQL** : Sélection aléatoire native pour performance optimale
+- **Projection complète** : SELECT * acceptable pour l'entité Book (pas de données sensibles)
+
+=== Gestion mémoire
+- **Limitation des résultats** : Maximum 50 livres par requête getAll
+- **Groupement efficace** : Utilisation de Map pour agréger les auteurs par livre
+- **Réutilisation de connexions** : Partage de la connexion base de données
+- **Nettoyage automatique** : Libération des ressources après traitement
+
+=== Cache et optimisations externes
+- **Cloudinary CDN** : Les images sont servies via CDN global
+- **OpenLibrary throttling** : Limite de 20 résultats pour respecter les limites API
+- **Base locale prioritaire** : getTrending n'appelle jamais OpenLibrary pour la performance
+
+== Interaction avec d'autres services
+
+=== Dépendances directes
+- **EntityValidator** : Validation de l'existence des livres
+- **openlibrary/books** : Service d'interrogation de l'API OpenLibrary externe
+- **cloudinary/imageService** : Upload et transformation des couvertures
+- **Database connection** : Opérations CRUD via Drizzle ORM
+
+=== Services connexes
+- **authorService** : Gestion des auteurs créés lors de l'import
+- **genreService** : Catégorisation possible des livres par genre (futur)
+- **reviewService** : Association avec les avis sur les livres
+- **rateService** : Lien avec les notes attribuées aux livres
+
+=== Tables impactées lors de l'import
+- **Book** : Insertion du livre principal
+- **Author** : Création ou réutilisation des auteurs
+- **BookAuthor** : Création des relations many-to-many
+- **Cloudinary** : Upload externe des images de couverture
+
+== Exemple de flux complet
+
+=== Scénario 1 : Recherche d'un livre sur OpenLibrary
+
+**Situation de départ :**
+Marie tape "1984" dans la barre de recherche pour trouver le livre de George Orwell.
+
+**Traitement par le service :**
+1. **Requête OpenLibrary** : `searchGeneral("1984", 20)` retourne 20 livres
+2. **Extraction des clés** : Récupération de tous les `key` OpenLibrary (ex: "/works/OL893415W")
+3. **Vérification locale** : SELECT sur Book avec OR sur toutes les clés
+4. **Enrichissement** : Ajout de `isImported: true` et `localId: "uuid"` pour les livres déjà importés
+5. **Retour** : Liste de 20 livres avec indication claire de ceux déjà présents localement
+
+**Résultat :**
+Marie voit une liste de livres avec un indicateur visuel pour ceux déjà dans sa bibliothèque, et peut importer les autres.
+
+=== Scénario 2 : Import d'un livre depuis OpenLibrary
+
+**Situation de départ :**
+Pierre veut ajouter "Le Petit Prince" à sa collection après l'avoir trouvé via search.
+
+**Traitement par le service :**
+1. **Détection doublon** : Vérification par `openlibrary_key` et `isbn` → Livre non trouvé localement
+2. **Création Book** : INSERT dans la table Book avec titre, ISBN, publication_year
+3. **Upload Cloudinary** : Téléchargement de la couverture depuis OpenLibrary → Upload vers Cloudinary → Mise à jour de `image` avec l'URL
+4. **Gestion auteurs** : "Antoine de Saint-Exupéry" n'existe pas → Création dans Author → Création relation dans BookAuthor
+5. **Retour** : `{book: {...}, message: "Livre importé avec succès", isNew: true}`
+
+**Résultat :**
+Pierre a maintenant "Le Petit Prince" dans sa bibliothèque locale avec couverture optimisée sur Cloudinary et auteur créé.
+
+=== Scénario 3 : Affichage des trending books sur la page d'accueil
+
+**Situation de départ :**
+Un visiteur arrive sur la page d'accueil et doit voir des suggestions de livres.
+
+**Traitement par le service :**
+1. **Sélection aléatoire** : `SELECT ... ORDER BY RANDOM() LIMIT 20` depuis la base locale
+2. **Jointures auteurs** : LEFT JOIN sur BookAuthor et Author pour récupérer les noms d'auteurs
+3. **Groupement** : Agrégation des auteurs multiples via Map
+4. **Retour** : {books: 20 livres avec auteurs, total_books: 20, source: "local-random"}
+
+**Résultat :**
+La page d'accueil charge en moins de 2 secondes avec 20 suggestions variées (vs 30s avec l'ancien code OpenLibrary).
+
+== Diagramme de séquence - Import complet depuis OpenLibrary
+
+[mermaid]
+----
+sequenceDiagram
+    participant Controller
+    participant BookService
+    participant Database
+    participant ImageService
+    participant Cloudinary
+
+    Note over Controller, Cloudinary: Workflow: Import d'un livre depuis OpenLibrary
+
+    Controller->>BookService: createFromOpenLibrary(openLibraryData)
+
+    BookService->>Database: SELECT FROM books WHERE openlibrary_key = ?
+    Database-->>BookService: [] (aucun doublon)
+
+    BookService->>Database: INSERT INTO books (title, isbn, openlibrary_key, ...)
+    Database-->>BookService: newBook avec id_book généré
+
+    BookService->>ImageService: uploadBookCover(bookId, openLibraryKey)
+    ImageService->>Cloudinary: Upload de la couverture
+    Cloudinary-->>ImageService: {success: true, url: "https://..."}
+    ImageService-->>BookService: uploadResult
+
+    BookService->>Database: UPDATE books SET image = ? WHERE id_book = ?
+    Database-->>BookService: OK
+
+    loop Pour chaque auteur
+        BookService->>Database: SELECT FROM authors WHERE author_name = ?
+
+        alt Auteur existe
+            Database-->>BookService: existingAuthor
+        else Auteur n'existe pas
+            BookService->>Database: INSERT INTO authors (author_name)
+            Database-->>BookService: newAuthor avec id_author généré
+        end
+
+        BookService->>Database: INSERT INTO book_author (id_book, id_author)
+        Database-->>BookService: OK
+    end
+
+    BookService-->>Controller: {book: {...}, message: "Livre importé avec succès", isNew: true}
+----
+
+== Résumé
+
+Le service bookService est le **système hybride de gestion de livres** de l'API BlaBlaBook V2. Il gère **5 opérations principales** avec :
+
+=== Opérations de recherche et consultation
+- **search()** : Interroge OpenLibrary et enrichit avec statut d'import local (isImported, localId)
+- **getById()** : Récupère un livre depuis la base locale avec validation EntityValidator
+- **getAll()** : Liste les livres locaux avec pagination (limite 50 par défaut)
+- **getTrending()** : Sélection aléatoire depuis la base locale pour performance optimale (vs ancien code OpenLibrary 30s)
+
+=== Opération d'importation complète
+- **createFromOpenLibrary()** : Import workflow complet incluant :
+  - Détection de doublons (openlibrary_key + isbn)
+  - Création du livre dans PostgreSQL
+  - Upload couverture sur Cloudinary avec transformation
+  - Gestion intelligente des auteurs (création ou réutilisation)
+  - Relations book-author automatiques
+
+=== Points clés d'architecture
+- ✅ **Approche hybride** : OpenLibrary pour recherche, base locale pour consultation
+- ✅ **Performance optimisée** : getTrending utilise uniquement la base locale (RANDOM())
+- ✅ **Détection de doublons** : Double vérification openlibrary_key + isbn
+- ✅ **Upload Cloudinary** : Couvertures optimisées et servies via CDN
+- ✅ **Relations automatiques** : Gestion complète auteurs et book-author lors de l'import
+- ✅ **Gestion gracieuse** : Import continue même si upload Cloudinary échoue
+
+=== Optimisations critiques
+- 🚀 **LCP amélioré** : getTrending passe de 30s (OpenLibrary) à <2s (local)
+- 🚀 **Enrichissement search** : Indication `isImported` évite les imports doublons
+- 🚀 **Cloudinary CDN** : Images optimisées et distribuées globalement
+- 🚀 **Réutilisation auteurs** : Évite la duplication dans la table Author
+
+**Il assure la découverte, la consultation, et l'enrichissement progressif du catalogue de livres de la plateforme.**

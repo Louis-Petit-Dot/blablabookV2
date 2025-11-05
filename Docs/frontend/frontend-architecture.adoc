@@ -1,0 +1,735 @@
+= Architecture Frontend - BlaBlaBook V2
+:toc:
+:toc-title: Sommaire
+
+== 🔗 Correspondance Backend ↔ Frontend
+
+Cette architecture frontend est **alignée avec le backend existant**.
+
+[cols="1,1,2"]
+|===
+| Backend | Frontend Feature | Description
+
+| `users/` + `user-roles/`
+| `features/auth/` + `features/users/`
+| Authentification, profils utilisateurs
+
+| `books/` + `book-authors/` + `book-genres/`
+| `features/books/`
+| Catalogue livres, recherche, détails
+
+| `authors/`
+| `features/authors/`
+| Gestion auteurs, pages auteur
+
+| `genres/`
+| `features/genres/`
+| Filtres par genre, navigation thématique
+
+| `libraries/` + `book-libraries/`
+| `features/libraries/`
+| Bibliothèques personnelles (shelves multiples)
+
+| `reading-lists/` + `book-reading-lists/`
+| `features/reading-lists/`
+| Listes de lecture thématiques
+
+| `reviews/`
+| `features/reviews/`
+| Critiques littéraires complètes
+
+| `rates/`
+| `features/rates/`
+| Système de notation (étoiles)
+
+| `roles/` + `permissions/` + `role-permissions/`
+| `features/admin/`
+| Panel admin RBAC (rôles, permissions, modération)
+|===
+
+**Note** : Les features "discussions" et "clubs" ne sont pas dans le backend actuel (voir section Features Futures).
+
+== 🏗️ Structure du Projet
+
+=== Organisation par Features
+
+[source]
+----
+frontend/src/
+├── assets/              # Images, icons, fonts
+├── components/          # Composants réutilisables (Button, Input, Card, Modal...)
+├── features/            # Modules métier organisés par feature (alignés avec backend)
+│   ├── auth/
+│   │   ├── components/  # LoginForm, RegisterForm, etc.
+│   │   ├── hooks/       # useAuth, useLogin
+│   │   ├── services/    # authService.ts
+│   │   └── store/       # authStore.ts (Zustand)
+│   ├── books/
+│   │   ├── components/  # BookCard, BookList, BookDetail
+│   │   ├── hooks/       # useBooks, useBookSearch
+│   │   ├── services/    # booksService.ts
+│   │   └── store/       # booksStore.ts
+│   ├── authors/
+│   │   ├── components/  # AuthorCard, AuthorDetail
+│   │   ├── hooks/       # useAuthors
+│   │   ├── services/    # authorsService.ts
+│   │   └── store/       # authorsStore.ts
+│   ├── genres/
+│   │   ├── components/  # GenreFilter, GenreBadge
+│   │   ├── hooks/       # useGenres
+│   │   ├── services/    # genresService.ts
+│   │   └── store/       # genresStore.ts
+│   ├── libraries/
+│   │   ├── components/  # LibraryShelf, AddToLibrary
+│   │   ├── hooks/       # useLibraries
+│   │   ├── services/    # librariesService.ts
+│   │   └── store/       # librariesStore.ts
+│   ├── reading-lists/
+│   │   ├── components/  # ReadingListCard, CreateList
+│   │   ├── hooks/       # useReadingLists
+│   │   ├── services/    # readingListsService.ts
+│   │   └── store/       # readingListsStore.ts
+│   ├── reviews/
+│   │   ├── components/  # ReviewCard, ReviewForm, ReviewList
+│   │   ├── hooks/       # useReviews
+│   │   ├── services/    # reviewsService.ts
+│   │   └── store/       # reviewsStore.ts
+│   ├── rates/
+│   │   ├── components/  # RatingStars, RateBook
+│   │   ├── hooks/       # useRates
+│   │   ├── services/    # ratesService.ts
+│   │   └── store/       # ratesStore.ts
+│   ├── users/
+│   │   ├── components/  # UserProfile, UserAvatar, UserStats
+│   │   ├── hooks/       # useUser, useUserProfile
+│   │   ├── services/    # usersService.ts
+│   │   └── store/       # usersStore.ts
+│   └── admin/
+│       ├── components/  # RoleManager, PermissionTable, UserTable
+│       ├── hooks/       # useRoles, usePermissions
+│       ├── services/    # rolesService.ts, permissionsService.ts
+│       └── store/       # adminStore.ts
+├── layouts/             # Structures de pages (PublicLayout, DashboardLayout, AdminLayout)
+├── pages/              # Pages routes (Home, Login, Dashboard, BookPage...)
+├── hooks/              # Custom hooks globaux (useMediaQuery, useDebounce...)
+├── services/           # Services API globaux (api.ts, interceptors.ts)
+├── store/              # Store Zustand global (user, theme, notifications...)
+├── styles/             # SCSS (_variables, _mixins, _fonts, global.scss)
+├── types/              # Types TypeScript globaux
+├── utils/              # Fonctions utilitaires (formatDate, validators...)
+├── App.tsx
+├── main.tsx
+└── router.tsx          # Configuration React Router
+----
+
+== 📄 Pages Principales
+
+=== Zone Publique (non authentifié)
+
+[cols="1,3"]
+|===
+| Page | Composants clés
+
+| **Home**
+| Hero, FeaturedBooks, Testimonials, CTASection
+
+| **Login**
+| LoginForm (email/password, OAuth Google)
+
+| **Register**
+| RegisterForm (multistep: infos perso → préférences lectures)
+
+| **BookCatalog**
+| SearchBar, FilterSidebar, BookGrid, Pagination
+
+| **BookDetail**
+| BookInfo, RatingsSummary, ReviewsList, CTALogin
+
+| **About**
+| MissionStatement, TeamSection
+
+| **Legal**
+| CGU, Politique de confidentialité
+|===
+
+=== Zone Authentifiée
+
+[cols="1,3"]
+|===
+| Page | Composants clés
+
+| **Dashboard**
+| ReadingStats, CurrentBooks, RecentReviews, Recommendations
+
+| **MyLibrary**
+| LibraryShelf (shelves multiples), BookFilters, SortOptions
+
+| **MyReadingLists**
+| ReadingListGrid, CreateListModal, ManageLists
+
+| **ReadingListDetail**
+| ListHeader, BookGrid, AddBooksToList, ShareList
+
+| **MyReviews**
+| ReviewsList (mes reviews), EditReview, DeleteReview
+
+| **Profile**
+| ProfileHeader, EditProfile, ReadingPreferences, AccountSettings
+|===
+
+=== Zone Admin (RBAC)
+
+[cols="1,3"]
+|===
+| Page | Composants clés
+
+| **AdminDashboard**
+| UserStats, BookStats, ReviewStats, ActivityTimeline
+
+| **UserManagement**
+| UserTable, SearchUsers, UserDetail, SuspendUser
+
+| **RoleManagement**
+| RoleTable, CreateRole, EditRole, DeleteRole
+
+| **PermissionManagement**
+| PermissionTable, AssignPermissions, RolePermissionsMatrix
+
+| **UserRoleAssignment**
+| UserRoleTable, AssignRoles, BulkActions
+
+| **ContentModeration**
+| ReviewQueue, ReportedReviews, ApproveReject
+
+| **Analytics**
+| Charts (users, books, reviews, rates), Export data
+|===
+
+== 🧩 Composants Réutilisables
+
+=== UI de Base
+
+- **Button** : Primary, Secondary, Danger, Ghost, sizes, loading state
+- **Input** : Text, Email, Password, TextArea, avec validation inline
+- **Select** : Dropdown avec search, multiselect
+- **Card** : Container générique avec header/footer optionnels
+- **Modal** : Overlay avec animations, tailles configurables
+- **Toast** : Notifications temporaires (success, error, info)
+- **Badge** : Tags, labels, statuts
+- **Avatar** : Photo utilisateur avec fallback initiales
+- **Loader** : Spinner, skeleton screens
+
+=== Navigation
+
+- **Header** : Logo, nav links, user menu, notifications bell
+- **Sidebar** : Menu latéral pour dashboard/admin
+- **Breadcrumbs** : Fil d'ariane pour navigation hiérarchique
+- **Tabs** : Onglets pour sections multiples
+
+=== Formulaires
+
+- **FormField** : Wrapper avec label, error message, help text
+- **SearchBar** : Recherche avec autocomplete, clear button
+- **DatePicker** : Sélection de dates (Radix UI)
+- **RatingInput** : Étoiles cliquables pour noter
+
+=== Données
+
+- **DataTable** : Table avec tri, filtres, pagination
+- **Pagination** : Navigation entre pages de résultats
+- **EmptyState** : Placeholder quand pas de données
+- **ErrorBoundary** : Catch erreurs React
+
+== 🔌 Technologies & Bibliothèques
+
+=== Core Stack
+
+[cols="1,2,2"]
+|===
+| Technologie | Usage | Apprentissage requis
+
+| **React 18**
+| UI Library, hooks, Suspense
+| ✅ Déjà maîtrisé
+
+| **TypeScript**
+| Type safety, interfaces, generics
+| ⚠️ Perfectionnement
+
+| **Vite**
+| Build tool, HMR, dev server
+| ✅ Configuration OK
+
+| **React Router v7**
+| Routing, layouts, loaders, actions
+| ⚠️ Nouvelles features v7
+
+| **Axios**
+| HTTP client, interceptors
+| ✅ Déjà configuré
+|===
+
+=== State Management
+
+[cols="1,2,2"]
+|===
+| Bibliothèque | Usage | Apprentissage
+
+| **Zustand**
+| Store global (user, theme, cart...)
+| 🔴 À apprendre
+
+| **React Query**
+| Cache serveur, mutations, invalidation
+| 🔴 À apprendre (optionnel mais recommandé)
+|===
+
+=== UI Components
+
+[cols="1,2,2"]
+|===
+| Bibliothèque | Usage | Apprentissage
+
+| **Radix UI**
+| Composants accessibles headless (Modal, Dropdown, Tabs...)
+| 🔴 À apprendre
+
+| **React Hook Form**
+| Gestion formulaires performante
+| ⚠️ Basics requis
+
+| **Zod**
+| Validation schémas TypeScript
+| ⚠️ Syntaxe à apprendre
+|===
+
+=== Styling
+
+- **SCSS Modules** : Styles scoped par composant
+- **clsx** : Conditional classnames
+- Variables globales déjà configurées
+
+== 🎯 Plan de Développement par Phases
+
+=== Phase 1 : Fondations (Semaine 1)
+
+**Objectifs** : Infrastructure de base, navigation, layouts
+
+[cols="1,3,1"]
+|===
+| Tâche | Détails | Statut
+
+| Router setup
+| Routes publiques/privées, layouts, redirections
+| ⏳
+
+| Layouts
+| PublicLayout, DashboardLayout, AdminLayout avec Header/Sidebar
+| ⏳
+
+| Composants UI base
+| Button, Input, Card, Modal, Loader
+| ⏳
+
+| Store Zustand
+| authStore (user, login, logout), themeStore
+| ⏳
+
+| Services API
+| Interceptors, error handling global
+| ⏳
+|===
+
+**Apprentissage requis** :
+
+- Zustand : Store creation, hooks (useStore), persist middleware
+- React Router v7 : Layouts, protected routes, loaders
+- Radix UI : Modal, Dropdown basics
+
+---
+
+=== Phase 2 : Authentification (Semaine 1-2)
+
+**Objectifs** : Login, Register, gestion session
+
+[cols="1,3,1"]
+|===
+| Tâche | Détails | Statut
+
+| LoginForm
+| Email/password, validation Zod, error handling
+| ⏳
+
+| RegisterForm
+| Multistep form (infos → préférences), validation
+| ⏳
+
+| Protected Routes
+| Redirect si non authentifié, role-based access
+| ⏳
+
+| OAuth Google
+| Intégration bouton Google, callback
+| ⏳
+|===
+
+**Apprentissage requis** :
+
+- React Hook Form + Zod : useForm, zodResolver, validation
+- OAuth flow : Authorization code, tokens
+
+---
+
+=== Phase 3 : Catalogue & Livres (Semaine 2)
+
+**Objectifs** : Affichage livres, recherche, détails
+
+[cols="1,3,1"]
+|===
+| Tâche | Détails | Statut
+
+| BookGrid
+| Affichage liste livres, lazy loading images
+| ⏳
+
+| BookCard
+| Composant réutilisable (cover, titre, auteur, rating)
+| ⏳
+
+| SearchBar
+| Recherche avec debounce, autocomplete
+| ⏳
+
+| FilterSidebar
+| Filtres par genre, note, année
+| ⏳
+
+| BookDetail
+| Page livre complète, reviews, add to shelf
+| ⏳
+|===
+
+**Apprentissage requis** :
+
+- React Query (optionnel) : useQuery, cache, invalidation
+- Performance : useMemo, useCallback, React.lazy
+
+---
+
+=== Phase 4 : Bibliothèques & Listes (Semaine 3)
+
+**Objectifs** : Bibliothèques utilisateur, listes de lecture
+
+[cols="1,3,1"]
+|===
+| Tâche | Détails | Statut
+
+| MyLibrary
+| Affichage shelves, filtres, tri
+| ⏳
+
+| AddToLibrary
+| Modal ajout livre à bibliothèque, sélection shelf
+| ⏳
+
+| MyReadingLists
+| Grille listes, créer/éditer/supprimer
+| ⏳
+
+| ReadingListDetail
+| Page liste complète, drag & drop order, partage
+| ⏳
+|===
+
+**Apprentissage requis** :
+
+- Drag & Drop : @dnd-kit/core (recommandé)
+- Zustand : Actions complexes (optimistic updates)
+
+---
+
+=== Phase 5 : Reviews & Ratings (Semaine 3)
+
+**Objectifs** : Système de notes et critiques
+
+[cols="1,3,1"]
+|===
+| Tâche | Détails | Statut
+
+| RatingStars
+| Composant étoiles interactif, half-stars
+| ⏳
+
+| RateBook
+| Modal notation rapide d'un livre
+| ⏳
+
+| ReviewForm
+| Formulaire critique complète (textarea, rating, spoiler flag)
+| ⏳
+
+| ReviewsList
+| Affichage reviews avec pagination, filtres
+| ⏳
+
+| MyReviews
+| Page mes reviews, éditer, supprimer
+| ⏳
+|===
+
+**Apprentissage requis** :
+
+- Optimistic updates : Zustand ou React Query
+- Text editor : Simple textarea ou markdown editor
+
+---
+
+=== Phase 6 : Dashboard & Stats (Semaine 4)
+
+**Objectifs** : Tableau de bord avec statistiques
+
+[cols="1,3,1"]
+|===
+| Tâche | Détails | Statut
+
+| Dashboard
+| Layout avec widgets (stats, livres en cours, recommandations)
+| ⏳
+
+| ReadingStats
+| Graphiques (livres lus/mois, genres préférés, pages lues)
+| ⏳
+
+| RecentActivity
+| Timeline activités récentes (reviews, ajouts...)
+| ⏳
+
+| Profile
+| Édition profil, avatar upload, préférences lecture
+| ⏳
+|===
+
+**Apprentissage requis** :
+
+- File upload : FormData, preview, compression
+- Charts : Recharts ou Chart.js
+
+---
+
+=== Phase 7 : Admin Panel RBAC (Semaine 4)
+
+**Objectifs** : Gestion utilisateurs, rôles, permissions, modération
+
+[cols="1,3,1"]
+|===
+| Tâche | Détails | Statut
+
+| AdminDashboard
+| Stats globales (users, books, reviews), graphiques activité
+| ⏳
+
+| UserManagement
+| DataTable utilisateurs, recherche, détails, suspend/activate
+| ⏳
+
+| RoleManagement
+| CRUD rôles (créer, éditer, supprimer), permissions associées
+| ⏳
+
+| PermissionManagement
+| Liste permissions, matrice rôles-permissions
+| ⏳
+
+| UserRoleAssignment
+| Assigner/retirer rôles aux users, actions bulk
+| ⏳
+
+| ContentModeration
+| Queue reviews signalées, approve/reject, ban user
+| ⏳
+|===
+
+**Apprentissage requis** :
+
+- DataTable complexe : Tri, filtres, pagination server-side
+- Role-based rendering : Afficher UI selon permissions
+- Bulk actions : Sélection multiple, actions groupées
+
+== 🧠 Apprentissage Collaboratif
+
+=== Zustand (State Management)
+
+**Pourquoi** : Plus simple que Redux, moins verbose, performance optimale
+
+**Concepts clés** :
+
+- Store : `create()` pour définir state + actions
+- Hooks : `useStore()` pour consommer
+- Middleware : `persist()` pour localStorage, `devtools()`
+
+**Exemple minimal** :
+
+[source,typescript]
+----
+// store/authStore.ts
+import { create } from 'zustand'
+
+interface AuthStore {
+  user: User | null
+  token: string | null
+  login: (user: User, token: string) => void
+  logout: () => void
+}
+
+export const useAuthStore = create<AuthStore>((set) => ({
+  user: null,
+  token: null,
+  login: (user, token) => set({ user, token }),
+  logout: () => set({ user: null, token: null }),
+}))
+
+// Dans un composant
+const { user, login, logout } = useAuthStore()
+----
+
+---
+
+=== Radix UI (Composants Accessibles)
+
+**Pourquoi** : Accessibilité WCAG 2.1 AA native, headless (tu contrôles le style)
+
+**Composants prioritaires** :
+
+- `@radix-ui/react-dialog` : Modal
+- `@radix-ui/react-dropdown-menu` : Dropdowns
+- `@radix-ui/react-tabs` : Onglets
+- `@radix-ui/react-select` : Select accessible
+
+**Exemple Modal** :
+
+[source,typescript]
+----
+import * as Dialog from '@radix-ui/react-dialog'
+
+<Dialog.Root>
+  <Dialog.Trigger>Ouvrir</Dialog.Trigger>
+  <Dialog.Portal>
+    <Dialog.Overlay className="modal-overlay" />
+    <Dialog.Content className="modal-content">
+      <Dialog.Title>Titre</Dialog.Title>
+      <Dialog.Description>Description</Dialog.Description>
+      <Dialog.Close>Fermer</Dialog.Close>
+    </Dialog.Content>
+  </Dialog.Portal>
+</Dialog.Root>
+----
+
+---
+
+=== React Hook Form + Zod
+
+**Pourquoi** : Performance (pas de re-renders), validation TypeScript-first
+
+**Workflow** :
+
+1. Définir schéma Zod
+2. Créer form avec `useForm` + `zodResolver`
+3. Register inputs, handle submit
+
+**Exemple** :
+
+[source,typescript]
+----
+import { useForm } from 'react-hook-form'
+import { zodResolver } from '@hookform/resolvers/zod'
+import { z } from 'zod'
+
+const loginSchema = z.object({
+  email: z.string().email('Email invalide'),
+  password: z.string().min(8, 'Min 8 caractères'),
+})
+
+type LoginForm = z.infer<typeof loginSchema>
+
+function LoginForm() {
+  const { register, handleSubmit, formState: { errors } } = useForm<LoginForm>({
+    resolver: zodResolver(loginSchema),
+  })
+
+  const onSubmit = (data: LoginForm) => {
+    // API call
+  }
+
+  return (
+    <form onSubmit={handleSubmit(onSubmit)}>
+      <input {...register('email')} />
+      {errors.email && <span>{errors.email.message}</span>}
+
+      <input {...register('password')} type="password" />
+      {errors.password && <span>{errors.password.message}</span>}
+
+      <button type="submit">Connexion</button>
+    </form>
+  )
+}
+----
+
+== 📋 Prochaines Étapes Immédiates
+
+1. **Installer les dépendances** :
+[source,bash]
+----
+npm install zustand
+npm install @radix-ui/react-dialog @radix-ui/react-dropdown-menu
+npm install react-hook-form @hookform/resolvers/zod zod
+npm install clsx
+----
+
+2. **Setup Router** : Créer `router.tsx` avec routes de base
+
+3. **Créer les layouts** : PublicLayout, DashboardLayout
+
+4. **Premier store Zustand** : authStore avec login/logout
+
+5. **Premiers composants UI** : Button, Input, Card
+
+== 🎓 Ressources d'Apprentissage
+
+- **Zustand** : https://zustand-demo.pmnd.rs/
+- **Radix UI** : https://www.radix-ui.com/primitives/docs/overview/introduction
+- **React Hook Form** : https://react-hook-form.com/get-started
+- **Zod** : https://zod.dev/
+
+== ✅ Validation
+
+À chaque phase, on valide :
+
+- ✅ Fonctionnel : Features marchent comme attendu
+- ✅ Accessible : Navigation clavier, screen readers
+- ✅ Responsive : Mobile, tablet, desktop
+- ✅ Performance : Lighthouse score > 90
+- ✅ Type-safe : Pas d'erreurs TypeScript
+
+== 🚀 Features Futures (hors scope actuel)
+
+Ces features ne sont **pas encore dans le backend**, mais pourraient être ajoutées ultérieurement :
+
+=== Discussions / Forum
+- Threads de discussion sur des livres ou thèmes
+- Système de commentaires imbriqués
+- Likes, upvotes
+- Notifications en temps réel
+
+=== Clubs de Lecture
+- Créer/rejoindre des clubs thématiques
+- Discussions privées de club
+- Planning de lectures communes
+- Gestion des membres (invitations, rôles)
+
+=== Social Features
+- Follow/unfollow d'autres lecteurs
+- Feed d'activités des amis
+- Recommandations basées sur le réseau
+- Messages privés
+
+Pour l'instant, **se concentrer sur les 7 phases définies** qui correspondent à l'architecture backend existante.

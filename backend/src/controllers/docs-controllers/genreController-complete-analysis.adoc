@@ -1,0 +1,119 @@
+= Controller GenreController - Analyse Complète
+:toc:
+:toclevels: 3
+
+== Vue d'ensemble
+
+Le controller genreController constitue la couche de présentation pour la gestion des genres littéraires dans l'API BlaBlaBook V2. Il expose des endpoints HTTP RESTful pour la consultation, création et découverte de genres avec intégration OpenLibrary pour l'enrichissement externe.
+
+== Architecture du controller
+
+=== Design pattern mixte : simple + validation ciblée
+- **Endpoints de consultation** : Délégation pure (getAll, getById)
+- **Endpoint de création** : Validation du champ obligatoire genre_name
+- **Endpoint d'enrichissement** : Découverte de livres via OpenLibrary
+- **Codes de statut appropriés** : 200 pour consultation, 201 pour création
+
+== Endpoints disponibles
+
+=== GET /genres - getAll()
+**Objectif:** Récupérer la liste complète des genres
+**Flux:** Délégation directe vers `genreService.getAll()`
+
+=== GET /genres/:id - getById()
+**Objectif:** Récupérer un genre spécifique
+**Flux:** Délégation directe vers `genreService.getById(genreId)`
+
+=== POST /genres - create()
+**Objectif:** Créer un nouveau genre
+**Body requis:**
+```json
+{
+  "genre_name": "string (obligatoire)",
+  "description": "string (optionnel)"
+}
+```
+
+**Code avec validation :**
+```typescript
+async create(c: Context) {
+    const data = await c.req.json();
+
+    if (!data.genre_name) {
+        throw new Error('genre_name is required.');
+    }
+
+    const result = await genreService.create(data);
+    return c.json(result, 201);
+}
+```
+
+**Validations :**
+- **genre_name obligatoire** : Seul champ critique validé côté controller
+- **Unicité** : Contrôlée par le service
+- **Code 201** : Création réussie
+
+=== GET /genres/:name/books - getBooks()
+**Objectif:** Découvrir des livres d'un genre via OpenLibrary
+**Paramètres:** `name` (nom du genre à rechercher)
+
+**Flux de traitement :**
+```typescript
+async getBooks(c: Context) {
+    const genreName = c.req.param('name');
+    const result = await genreService.getBooks(genreName);
+    return c.json(result);
+}
+```
+
+**Fonctionnalité :**
+- **Recherche externe** : Interrogation OpenLibrary avec `subject:"genreName"`
+- **Enrichissement** : Découverte de livres non présents localement
+- **Limite automatique** : 50 livres maximum (géré par le service)
+
+== Patterns de conception
+
+=== Validation minimale ciblée
+```typescript
+// Seul le champ business-critical est validé
+if (!data.genre_name) {
+    throw new Error('genre_name is required.');
+}
+```
+
+**Justification :**
+- **Performance** : Validation légère, logique métier déléguée
+- **Simplicité** : Code minimal et maintenable
+- **Évolutivité** : Ajout facile de validations futures
+
+=== Intégration API externe transparente
+L'endpoint `getBooks()` expose l'intégration OpenLibrary sans complexité :
+- **Délégation complète** : Service gère l'API OpenLibrary
+- **Gestion d'erreurs** : Propagation transparente
+- **Limitation automatique** : Protection contre surcharge
+
+== Gestion d'erreurs
+
+=== Stratégie par endpoint
+- **getAll/getById** : Délégation complète (404 si genre inexistant)
+- **create** : Validation controller + gestion doublons service (409)
+- **getBooks** : Gestion erreurs API externes par le service
+
+=== Codes de réponse
+- **200** : Consultation réussie, découverte de livres
+- **201** : Genre créé avec succès
+- **400** : genre_name manquant
+- **404** : Genre non trouvé
+- **409** : Genre déjà existant
+
+== Résumé
+
+Le controller genreController est l'**interface HTTP pour la gestion des genres** de l'API BlaBlaBook V2. Il expose **4 endpoints** avec :
+
+- **Simplicité optimale** : Validation minimale, délégation maximale
+- **Intégration externe** : Découverte de livres via OpenLibrary
+- **Validation ciblée** : Seul genre_name vérifié côté controller
+- **Enrichissement du catalogue** : API externe pour expansion du contenu
+- **Codes de statut cohérents** : 200/201 selon l'opération
+
+**Il combine simplicité de gestion et richesse de découverte externe pour la taxonomie littéraire.**

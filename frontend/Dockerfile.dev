@@ -1,0 +1,23 @@
+#Dockerfile pour développement Frontend Node + Next.js + Radix UI
+FROM node:22-alpine
+
+# Mise à jour des paquets Alpine
+RUN apk update && \
+    apk upgrade --no-cache && \
+    rm -rf /var/cache/apk/*
+
+# Repertoire de travail
+WORKDIR /app
+
+# Copies des json de configuration
+COPY package.json package-lock.json ./
+
+# Installation des dépendances
+RUN npm ci
+
+# Copie du code source
+COPY . .
+
+# Exposition du port de l'application
+EXPOSE 5473
+CMD ["npm", "run", "dev"]

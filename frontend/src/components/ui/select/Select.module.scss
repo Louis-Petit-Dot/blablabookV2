@@ -1,0 +1,165 @@
+/**
+ * Styles pour le composant Select
+ * Suit le même design pattern que Input.module.scss
+ */
+
+@use '../../../styles/variables' as *;
+
+.selectWrapper {
+  width: 100%;
+}
+
+.label {
+  display: block;
+  font-family: $font-base;
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--text-primary);
+  margin-bottom: 0.5rem;
+}
+
+.required {
+  color: var(--error);
+}
+
+.selectContainer {
+  position: relative;
+  width: 100%;
+}
+
+.icon {
+  position: absolute;
+  left: 1rem;
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-tertiary);
+  pointer-events: none;
+  z-index: 1;
+
+  svg {
+    width: 1.25rem;
+    height: 1.25rem;
+  }
+}
+
+.chevron {
+  position: absolute;
+  right: 1rem;
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-tertiary);
+  pointer-events: none;
+  transition: transform 200ms ease;
+
+  svg {
+    width: 1.25rem;
+    height: 1.25rem;
+  }
+}
+
+.select {
+  width: 100%;
+  padding: 0.75rem 2.5rem 0.75rem 1rem;
+  font-family: $font-base;
+  font-size: 1rem;
+  color: var(--text-primary);
+  background: var(--bg-primary);
+  border: 1px solid var(--text-primary);
+  border-radius: 8px;
+  transition: all 200ms ease;
+  cursor: pointer;
+  appearance: none; // Enlève le style par défaut du navigateur
+
+  &.withIcon {
+    padding-left: 3rem;
+  }
+
+  // WCAG Focus visible
+  &:focus {
+    outline: none;
+    border-color: var(--error);
+    box-shadow: 0 0 0 3px rgba(193, 119, 103, 0.1);
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--error);
+    outline-offset: 2px;
+  }
+
+  // Hover
+  &:hover:not(:disabled) {
+    border-color: var(--text-primary);
+  }
+
+  // Active/Open - Rotation du chevron
+  &:focus ~ .chevron,
+  &:active ~ .chevron {
+    transform: translateY(-50%) rotate(180deg);
+  }
+
+  // Disabled
+  &:disabled {
+    background: var(--bg-secondary);
+    color: var(--text-quaternary);
+    cursor: not-allowed;
+    opacity: 0.6;
+  }
+
+  // Options styling
+  option {
+    padding: 0.5rem;
+    background: var(--bg-primary);
+    color: var(--text-primary);
+
+    &:disabled {
+      color: var(--text-quaternary);
+    }
+  }
+}
+
+// État erreur
+.select.error {
+  border-color: var(--error);
+
+  &:focus {
+    border-color: var(--error);
+    box-shadow: 0 0 0 3px rgba(165, 91, 91, 0.1);
+  }
+}
+
+.errorText {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  margin-top: 0.5rem;
+  font-size: 0.875rem;
+  color: var(--error);
+  font-weight: 500;
+
+  svg {
+    flex-shrink: 0;
+  }
+}
+
+.helperText {
+  margin-top: 0.5rem;
+  font-size: 0.875rem;
+  color: var(--text-quaternary);
+}
+
+// Responsive
+@media (max-width: 768px) {
+  .select {
+    font-size: 0.9375rem; // 15px pour mobile (meilleur pour les petits écrans)
+  }
+
+  .label {
+    font-size: 0.8125rem; // 13px
+  }
+}

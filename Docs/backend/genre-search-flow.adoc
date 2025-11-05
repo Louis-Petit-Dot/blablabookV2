@@ -1,0 +1,309 @@
+= Flux de Recherche par Genre - BlablaBook V2
+:toc:
+:toclevels: 2
+:source-highlighter: highlightjs
+
+== Vue d'ensemble
+
+Le système de recherche par genre utilise la même approche **hybride** que les auteurs, privilégiant OpenLibrary pour découvrir les livres d'un genre spécifique tout en maintenant la gestion locale des relations.
+
+== Architecture
+
+=== Principe général
+* **Découverte/Navigation** : Direct via OpenLibrary API par sujet
+* **Stockage/Relations** : Base de données locale pour les livres possédés
+* **Recherche enrichie** : Utilisation de la syntaxe OpenLibrary `subject:"genre"`
+
+=== Endpoints
+
+[cols="1,2,3"]
+|===
+|Méthode |Endpoint |Description
+
+|GET
+|`/genres/search/{name}/books`
+|Recherche les livres d'un genre via OpenLibrary
+
+|GET
+|`/genres/{id}`
+|Récupération d'un genre spécifique en DB locale
+
+|POST
+|`/genres/`
+|Création d'un genre en DB locale (Admin)
+|===
+
+== Diagramme de Séquence - Recherche par Genre
+
+[source,plantuml]
+----
+@startuml
+!theme plain
+title Flux de Recherche de Livres par Genre
+
+actor Utilisateur as U
+participant "Frontend" as F
+participant "API Gateway" as API
+participant "GenreController" as GC
+participant "GenreService" as GS
+participant "OpenLibrary API" as OL
+
+U -> F: Sélectionne "Science Fiction"
+F -> API: GET /genres/search/science-fiction/books
+
+API -> GC: getBooks("science-fiction")
+GC -> GS: getBooks("science-fiction")
+
+GS -> OL: searchBooks({ q: 'subject:"science-fiction"', limit: 50 })
+note right: Recherche par sujet OpenLibrary
+OL --> GS: { docs: [book1, book2, book3, ...] }
+
+GS --> GC: {\n  genre: "science-fiction",\n  books: [...]\n}
+GC --> API: JSON Response
+API --> F: Liste des livres du genre
+F --> U: Affichage des résultats par genre
+
+note over U, OL: Chaque livre devient un lien cliquable\nvers le flux de recherche classique
+@enduml
+----
+
+== Flux Détaillé
+
+=== 1. Requête Utilisateur
+L'utilisateur sélectionne ou recherche un genre spécifique.
+
+[source,http]
+----
+GET /genres/search/science-fiction/books
+GET /genres/search/fantasy/books
+GET /genres/search/romance/books
+----
+
+=== 2. Traitement Côté Serveur
+
+==== Controller (genreController.ts)
+[source,typescript]
+----
+async getBooks(c: Context) {
+    const genreName = c.req.param('name');
+    const result = await genreService.getBooks(genreName);
+    return c.json(result);
+}
+----
+
+==== Service (genreService.ts)
+[source,typescript]
+----
+async getBooks(genreName: string) {
+    const books = await OpenLibrary.searchBooks({
+        q: `subject:"${genreName}"`,
+        limit: 50
+    });
+
+    return {
+        genre: genreName,
+        books: books.docs
+    };
+}
+----
+
+=== 3. Syntaxe de Recherche OpenLibrary
+
+La recherche utilise la syntaxe avancée d'OpenLibrary :
+
+[cols="2,3,3"]
+|===
+|Genre |Requête |Exemple URL
+
+|Science Fiction
+|`subject:"science fiction"`
+|`/search.json?q=subject:"science fiction"`
+
+|Fantasy
+|`subject:"fantasy"`
+|`/search.json?q=subject:"fantasy"`
+
+|Mystery
+|`subject:"mystery"`
+|`/search.json?q=subject:"mystery"`
+|===
+
+=== 4. Réponse Type
+
+[source,json]
+----
+{
+  "genre": "science-fiction",
+  "books": [
+    {
+      "key": "/works/OL17365M",
+      "title": "Dune",
+      "author_name": ["Frank Herbert"],
+      "cover_i": 93739,
+      "first_publish_year": 1965,
+      "isbn": ["0441013597"],
+      "subject": ["Science fiction", "Desert planets", "Political fiction"]
+    },
+    {
+      "key": "/works/OL456M",
+      "title": "Foundation",
+      "author_name": ["Isaac Asimov"],
+      "cover_i": 18525,
+      "first_publish_year": 1951,
+      "isbn": ["0553293354"],
+      "subject": ["Science fiction", "Galactic Empire", "Psychohistory"]
+    }
+    // ... autres livres du genre
+  ]
+}
+----
+
+== Mapping des Genres
+
+=== Genres Français → Anglais
+Pour une meilleure compatibilité avec OpenLibrary, un mapping peut être appliqué :
+
+[cols="2,2,2"]
+|===
+|Français |Anglais |Recherche OpenLibrary
+
+|Science-fiction
+|Science fiction
+|`subject:"science fiction"`
+
+|Fantaisie
+|Fantasy
+|`subject:"fantasy"`
+
+|Policier
+|Mystery
+|`subject:"mystery"`
+
+|Romance
+|Romance
+|`subject:"romance"`
+
+|Thriller
+|Thriller
+|`subject:"thriller"`
+|===
+
+== Avantages du Flux Genre
+
+=== Découverte Enrichie
+* **Accès complet** aux genres OpenLibrary
+* **Pas de limitation** aux genres en DB locale
+* **Découverte de nouveaux livres** par thématique
+
+=== Performance Optimisée
+* **1 seul appel API** pour récupérer 50+ livres
+* **Pas de jointures DB** complexes
+* **Temps de réponse constant** indépendant de la taille de la DB
+
+=== Flexibilité
+* **Genres dynamiques** : Pas besoin de créer le genre en DB
+* **Recherche libre** : L'utilisateur peut chercher n'importe quel sujet
+* **Évolutivité** : Bénéficie automatiquement des nouveaux contenus OpenLibrary
+
+== Navigation Utilisateur
+
+=== Flux Complet de Navigation
+
+1. **Page Genres** → Affiche les genres populaires/suggérés
+2. **Sélection Genre** → `GET /genres/search/{genre}/books`
+3. **Affichage Résultats** → Liste des livres du genre
+4. **Clic sur Livre** → Lance le flux de recherche livre classique :
+   * Recherche en DB locale
+   * Si absent → Recherche OpenLibrary
+   * Option d'ajout à la bibliothèque
+
+=== Intégration Bibliothèque
+
+Quand un utilisateur ajoute un livre à sa bibliothèque depuis cette recherche :
+
+1. **Création/récupération** du livre en DB locale
+2. **Création/récupération** du genre en DB locale
+3. **Création de la relation** `book-genre`
+4. **Ajout à la bibliothèque** utilisateur
+
+== Comparaison avec l'Ancien Système
+
+[cols="2,3,3"]
+|===
+|Aspect |Ancien (Hypothétique) |Nouveau Flux
+
+|**Source**
+|Requêtes DB avec jointures
+|OpenLibrary direct
+
+|**Genres disponibles**
+|Limité à la DB locale
+|Tous les sujets OpenLibrary
+
+|**Code**
+|Jointures complexes BOOK-GENRE
+|Recherche API simple
+
+|**Maintenance**
+|Gestion manuelle des genres
+|Automatique via OpenLibrary
+
+|**Performance**
+|Dépend de la taille DB
+|Performance constante
+
+|**Découverte**
+|Limitée aux livres possédés
+|Catalogue complet OpenLibrary
+|===
+
+== Exemples d'Utilisation
+
+=== Genres Populaires
+[source,bash]
+----
+# Science Fiction
+GET /genres/search/science-fiction/books
+
+# Fantasy
+GET /genres/search/fantasy/books
+
+# Mystery/Policier
+GET /genres/search/mystery/books
+
+# Romance
+GET /genres/search/romance/books
+----
+
+=== Genres Spécialisés
+[source,bash]
+----
+# Cyberpunk
+GET /genres/search/cyberpunk/books
+
+# Space Opera
+GET /genres/search/space-opera/books
+
+# Urban Fantasy
+GET /genres/search/urban-fantasy/books
+----
+
+== Configuration et Optimisation
+
+=== Limite de Résultats
+* **Par défaut** : 50 livres par genre
+* **Configurable** via le paramètre `limit`
+* **Pagination** possible via OpenLibrary offset
+
+=== Cache et Performance
+* Possibilité d'ajouter un **cache Redis** pour les genres populaires
+* **TTL court** (15 min) pour équilibrer fraîcheur/performance
+
+== Conclusion
+
+Le flux de recherche par genre offre une **expérience de découverte riche** tout en maintenant la **simplicité du code**. L'approche hybride permet de bénéficier du meilleur des deux mondes :
+
+* **Découverte illimitée** via OpenLibrary
+* **Gestion précise** des collections personnelles via la DB locale
+
+Cette architecture pose les bases pour des fonctionnalités avancées comme les **recommandations par genre** et l'**exploration thématique**.

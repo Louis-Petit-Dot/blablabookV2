@@ -1,0 +1,345 @@
+@use '../../styles/variables' as *;
+@use '../../styles/fonts' as *;
+
+.adminPageContainer {
+    h1 {
+        color: var(--text-primary);
+        font-size: 2rem;
+        text-align: center;
+    }
+}
+
+.resultsSection,
+.trendingSection {
+    padding: 2rem 1rem;
+    max-width: 1200px;
+    margin: 0 auto;
+
+    @include tablet {
+        padding: 2rem;
+    }
+}
+
+.sectionTitle {
+
+    font-family: $font-heading;
+    font-size: 1.75rem;
+    font-weight: 600;
+    color: var(--text-primary);
+    margin-bottom: 1.5rem;
+    text-align: center;
+
+    @include tablet {
+        font-size: 2rem;
+        text-align: left;
+    }
+}
+
+.resultsGrid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 1.5rem;
+
+    @include tablet {
+        grid-template-columns: repeat(3, 1fr);
+        gap: 2rem;
+    }
+
+    @include desktop {
+        grid-template-columns: repeat(4, 1fr);
+    }
+}
+
+.noResults,
+.loading {
+    text-align: center;
+    padding: 3rem 1rem;
+    font-family: $font-base;
+    font-size: 1.125rem;
+    color: var(--text-quaternary);
+}
+
+.welcomeSection {
+max-width: 1400px;
+color: var(--text-primary);
+margin: 2rem auto 3rem;
+padding: 0 2rem;
+text-align: center;
+
+h1 {
+    font-size: 2.5rem;
+    margin-bottom: 1rem;
+    color: var(--text-primary);
+}
+
+p {
+    font-size: 1.2rem;
+    color: var(--text-secondary);
+}
+}
+
+.section {
+max-width: 1400px;
+margin: 0 auto 4rem;
+padding: 0 2rem;
+
+h2 {
+    font-size: 2rem;
+    margin-bottom: 2rem;
+    color: var(--text-primary);
+}
+}
+
+.cardsGrid {
+display: grid;
+grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+gap: 2rem;
+}
+
+.card {
+background: var(--bg-secondary);
+padding: 2rem;
+border-radius: 12px;
+transition: transform 0.3s ease, box-shadow 0.3s ease;
+position: relative;
+
+&:hover {
+    transform: translateY(-5px);
+}
+
+h3 {
+    font-size: 1.5rem;
+    margin-bottom: 1rem;
+    color: var(--text-primary);
+}
+
+p {
+    font-size: 0.95rem;
+    color: var(--text-secondary);
+    margin-bottom: 1rem;
+}
+
+&.public {
+    box-shadow: 0 2px 8px rgba(94, 139, 126, 0.4), 0 0 0 2px rgba(94, 139, 126, 0.2);
+
+    &:hover {
+    box-shadow: 0 4px 16px rgba(94, 139, 126, 0.6), 0 0 0 2px rgba(94, 139, 126, 0.3);
+    }
+}
+
+&.private {
+    box-shadow: 0 2px 8px rgba(165, 91, 91, 0.4), 0 0 0 2px rgba(165, 91, 91, 0.2);
+
+    &:hover {
+    box-shadow: 0 4px 16px rgba(165, 91, 91, 0.6), 0 0 0 2px rgba(165, 91, 91, 0.3);
+    }
+}
+}
+
+.cardHeader {
+display: flex;
+justify-content: space-between;
+align-items: center;
+margin-bottom: 1rem;
+padding-bottom: 0.5rem;
+border-bottom: 1px solid var(--bg-secondary);
+}
+
+.username {
+font-size: 0.9rem;
+font-weight: 700;
+color: var(--text-primary);
+font-style: italic;
+opacity: 0.8;
+}
+
+.badge {
+display: inline-block;
+padding: 0.5rem 1rem;
+background: var(--text-primary);
+color: var(--bg-primary);
+border-radius: 20px;
+font-size: 0.85rem;
+font-weight: 600;
+}
+
+.badges {
+display: flex;
+gap: 0.5rem;
+flex-wrap: wrap;
+}
+
+// Styles spécifiques admin
+.adminSection {
+background: linear-gradient(135deg, rgba(255, 193, 7, 0.05), rgba(255, 152, 0, 0.05));
+border-left: 4px solid #ff9800;
+padding: 2rem;
+border-radius: 8px;
+}
+
+.sectionHeader {
+display: flex;
+justify-content: space-between;
+align-items: center;
+margin-bottom: 2rem;
+
+.sectionTitle {
+    margin-bottom: 0;
+}
+}
+
+.adminBadge {
+display: inline-block;
+padding: 0.5rem 1rem;
+background: linear-gradient(135deg, #ff9800, #ff6f00);
+color: white;
+border-radius: 20px;
+font-size: 0.85rem;
+font-weight: 600;
+box-shadow: 0 2px 8px rgba(255, 152, 0, 0.3);
+}
+
+.systemCard {
+border: 2px solid #ff9800;
+background: linear-gradient(135deg, rgba(255, 193, 7, 0.05), rgba(255, 255, 255, 0.02));
+
+&:hover {
+    border-color: #ff6f00;
+    box-shadow: 0 4px 16px rgba(255, 152, 0, 0.4);
+}
+}
+
+// Placeholder pour fonctionnalités à venir
+.placeholder {
+text-align: center;
+padding: 3rem 1rem;
+font-family: $font-base;
+font-size: 1.125rem;
+color: var(--text-quaternary);
+font-style: italic;
+background: var(--bg-tertiary);
+border-radius: 8px;
+margin: 2rem 0;
+}
+
+// ============================================
+// ADMIN REVIEWS - MODERATION
+// ============================================
+
+.statsBar {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 1rem;
+  margin-bottom: 2rem;
+  padding: 1.5rem;
+  background: var(--bg-tertiary);
+  border-radius: 12px;
+}
+
+.statItem {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 1rem;
+  background: var(--bg-primary);
+  border-radius: 8px;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.05);
+}
+
+.statValue {
+  font-size: 2rem;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.statLabel {
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.adminControls {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  margin-bottom: 2rem;
+
+  @include tablet {
+    flex-direction: row;
+    justify-content: space-between;
+    align-items: center;
+  }
+}
+
+.searchFilters {
+  display: flex;
+  gap: 1rem;
+  flex-wrap: wrap;
+  flex: 1;
+}
+
+.searchInput {
+  flex: 1;
+  min-width: 200px;
+  padding: 0.75rem 1rem;
+  border: 2px solid var(--text-quaternary);
+  border-radius: 8px;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font-size: 0.95rem;
+  transition: all 0.2s;
+
+  &:focus {
+    outline: none;
+    border-color: var(--text-primary);
+    box-shadow: 0 0 0 3px rgba(139, 94, 80, 0.1);
+  }
+
+  &::placeholder {
+    color: var(--text-quaternary);
+  }
+}
+
+.filters {
+  display: flex;
+  gap: 1rem;
+  flex-wrap: wrap;
+
+  select {
+    padding: 0.75rem 1rem;
+    border: 2px solid var(--text-quaternary);
+    border-radius: 8px;
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    font-size: 0.95rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s;
+
+    &:hover {
+      border-color: var(--text-primary);
+    }
+
+    &:focus {
+      outline: none;
+      border-color: var(--text-primary);
+      box-shadow: 0 0 0 3px rgba(139, 94, 80, 0.1);
+    }
+  }
+}
+
+.reviewUser {
+  font-size: 0.85rem;
+  color: var(--text-primary);
+  font-weight: 600;
+  margin: 0;
+  cursor: pointer;
+  transition: all 0.2s;
+
+  &:hover {
+    text-decoration: underline;
+    color: var(--text-secondary);
+  }
+}

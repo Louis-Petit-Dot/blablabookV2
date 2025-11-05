@@ -1,0 +1,291 @@
+= Système de Gestion des Erreurs - BlablaBookV2
+:toc:
+:toclevels: 3
+
+== Vue d'ensemble
+
+Le système de gestion des erreurs de BlablaBookV2 est conçu pour être **centralisé, intelligent et cohérent**. Il suit une approche en couches où chaque niveau a sa responsabilité spécifique.
+
+== Architecture du Système
+
+=== Principe de Fonctionnement
+
+```
+┌─────────────────┐    ┌──────────────────┐    ┌─────────────────┐    ┌──────────────────┐
+│   Controller    │────│     Service      │────│   Validator     │────│   ErrorHandler   │
+│                 │    │                  │    │                 │    │   (Middleware)   │
+│ - Validation    │    │ - Business Logic │    │ - EntityExists  │    │ - Status Mapping │
+│   basique       │    │ - Calls Entity   │    │ - Permissions   │    │ - Response Format│
+│ - throw Error() │    │   Validator      │    │ - throw Error() │    │ - Logging        │
+│                 │    │ - throw Error()  │    │                 │    │                  │
+└─────────────────┘    └──────────────────┘    └─────────────────┘    └──────────────────┘
+```
+
+=== Flux de Traitement des Erreurs
+
+. **Controller** : Validation des paramètres requis
+. **Service** : Logique métier et appel aux validateurs
+. **EntityValidator** : Validation d'existence et permissions
+. **ErrorHandler** : Centralisation et formatage des réponses
+
+== Workflow détaillé du ErrorHandler
+
+=== 1. Capture de l'Erreur
+
+```typescript
+export async function errorHandler(c: Context, next: Next) {
+    try {
+        await next(); // ← Exécution de la chaîne middleware/controller/service
+    } catch (error) {
+        // ← Toutes les erreurs arrivent ici
+```
+
+=== 2. Logging Structuré
+
+```typescript
+console.error('Error captured:', {
+    message: error instanceof Error ? error.message : 'Unknown error',
+    stack: error instanceof Error ? error.stack : undefined,
+    url: c.req.url,        // ← URL de la requête
+    method: c.req.method   // ← Méthode HTTP
+});
+```
+
+**Informations capturées :**
+- Message d'erreur
+- Stack trace (développement)
+- URL et méthode de la requête
+- Timestamp automatique
+
+=== 3. Traitement des Erreurs de Validation (Zod)
+
+```typescript
+// Handle Zod validation errors
+if (validationError.details) {
+    return c.json({
+        success: false,
+        error: 'Validation failed',
+        details: validationError.details // ← Détails spécifiques par champ
+    }, 400);
+}
+```
+
+**Cas d'usage :** Erreurs venant du middleware `validateSchema()`
+
+=== 4. Détection Intelligente des Status Codes
+
+```typescript
+// Smart status code detection based on message
+let status = validationError.status || 500;
+
+if (!validationError.status) {
+    const message = error.message.toLowerCase();
+
+    if (message.includes('not found')) {
+        status = 404;
+    } else if (message.includes('already exists') || message.includes('duplicate')) {
+        status = 409;
+    } else if (message.includes('required') || message.includes('invalid') || message.includes('missing')) {
+        status = 400;
+    } else if (message.includes('unauthorized') || message.includes('token')) {
+        status = 401;
+    } else if (message.includes('forbidden') || message.includes('access denied')) {
+        status = 403;
+    }
+}
+```
+
+**Mapping automatique :**
+- `"User not found"` → **404**
+- `"Email already exists"` → **409**
+- `"Password is required"` → **400**
+- `"Invalid token"` → **401**
+- `"Access denied"` → **403**
+- Autres → **500**
+
+=== 5. Formatage de la Réponse
+
+```typescript
+const message = Deno.env.get('NODE_ENV') === 'production' && status >= 500
+    ? 'Internal server error'  // ← Masquage en production
+    : error.message;           // ← Message complet en développement
+
+return c.json({
+    success: false,
+    error: message
+}, status);
+```
+
+== Types d'Erreurs Gérées
+
+=== 1. Erreurs de Validation (Controllers)
+
+```typescript
+// Dans un controller
+if (!data.id_book || !data.user_id) {
+    throw new Error('id_book and user_id are required.');
+    // ← Auto-détecté comme 400
+}
+```
+
+=== 2. Erreurs de Validation Zod (Middleware)
+
+```typescript
+// Dans validateSchema middleware
+if (error instanceof z.ZodError) {
+    const validationError = new Error('Validation failed');
+    validationError.details = error.issues.map(issue => ({
+        field: issue.path.join('.'),
+        message: issue.message
+    }));
+    throw validationError; // ← Géré spécialement par errorHandler
+}
+```
+
+=== 3. Erreurs Métier (Services)
+
+```typescript
+// Dans un service
+const user = await EntityValidator.validateUser(userId);
+// Si user n'existe pas, EntityValidator throw Error("User not found")
+// ← Auto-détecté comme 404
+```
+
+=== 4. Erreurs de Permissions (EntityValidator)
+
+```typescript
+// Dans EntityValidator
+if (user.deleted_at !== null) {
+    throw new Error('User not found'); // ← Soft delete = 404
+}
+
+if (!hasPermission) {
+    throw new Error('Access denied to this library'); // ← Auto-détecté comme 403
+}
+```
+
+== Avantages de cette Architecture
+
+=== ✅ Centralisée
+- **Une seule source de vérité** pour la gestion d'erreurs
+- Formatage cohérent sur toute l'API
+- Logging centralisé
+
+=== ✅ Intelligente
+- **Détection automatique des status codes** basée sur les messages
+- Pas besoin de définir manuellement `error.status = 404`
+- Gestion spéciale des erreurs Zod avec détails
+
+=== ✅ Sécurisée
+- **Masquage des erreurs serveur** en production
+- Stack traces uniquement en développement
+- Messages d'erreur appropriés par environnement
+
+=== ✅ Maintenable
+- Controllers simplifiés (plus de `CustomError`)
+- Services focalisés sur la logique métier
+- Validation centralisée via `EntityValidator`
+
+== Exemples Concrets
+
+=== Exemple 1: User not found
+
+```typescript
+// Controller
+async getById(c: Context) {
+    const userId = c.req.param('id');
+    const result = await userService.getById(userId); // ← Peut throw
+    return c.json(result);
+}
+
+// Service
+async getById(userId: string) {
+    const user = await EntityValidator.validateUser(userId); // ← Peut throw "User not found"
+    return { user };
+}
+
+// EntityValidator
+static async validateUser(userId: string) {
+    const users = await db.select().from(User)
+        .where(and(eq(User.id_user, userId), isNull(User.deleted_at)));
+
+    if (users.length === 0) {
+        throw new Error('User not found'); // ← Détecté comme 404
+    }
+    return users[0];
+}
+
+// ErrorHandler → Réponse automatique
+{
+    "success": false,
+    "error": "User not found"  // Status: 404
+}
+```
+
+=== Exemple 2: Validation Zod
+
+```typescript
+// Route avec validation
+userRoutes.post('/', validateSchema(createUserSchema), userController.create);
+
+// Si email manquant dans le body
+// validateSchema middleware → throw avec details
+// errorHandler →
+{
+    "success": false,
+    "error": "Validation failed",
+    "details": [
+        {
+            "field": "email",
+            "message": "Email invalide"
+        }
+    ]
+}  // Status: 400
+```
+
+=== Exemple 3: Duplicate Resource
+
+```typescript
+// Service
+const existingUser = await db.select().from(User)
+    .where(eq(User.email, userData.email));
+
+if (existingUser.length > 0) {
+    throw new Error('User already exists'); // ← Détecté comme 409
+}
+
+// ErrorHandler →
+{
+    "success": false,
+    "error": "User already exists"  // Status: 409
+}
+```
+
+== Configuration et Environnement
+
+=== Variables d'Environnement
+
+- `NODE_ENV=production` : Masque les erreurs serveur (500+)
+- `NODE_ENV=development` : Affiche tous les messages d'erreur
+
+=== Logging
+
+En développement : Messages complets + stack traces
+En production : Messages sécurisés + logging structuré
+
+== Evolution Future
+
+=== Améliorations Possibles
+
+1. **Rate limiting errors** (429)
+2. **Database constraint errors** mapping
+3. **Sentry/monitoring integration**
+4. **Error metrics collection**
+5. **Custom error types** pour cas spécifiques
+
+=== Maintien de la Cohérence
+
+- Utiliser les **messages conventionnels** ("not found", "already exists")
+- Centraliser les **nouvelles validations** dans `EntityValidator`
+- Garder les **controllers simples** (throw Error uniquement)
+- **Tester les mappings** de status codes

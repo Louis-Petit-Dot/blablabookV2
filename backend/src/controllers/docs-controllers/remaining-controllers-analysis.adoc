@@ -1,0 +1,450 @@
+= Controllers Restants - Analyse Consolidée
+:toc:
+:toclevels: 3
+
+== Vue d'ensemble
+
+Cette documentation couvre les 6 controllers restants de l'API BlaBlaBook V2 qui partagent des patterns communs mais présentent chacun des spécificités architecturales. Ces controllers utilisent tous l'authentification middleware et appliquent des validations métier spécialisées.
+
+== Patterns architecturaux communs
+
+=== Authentification middleware systématique
+Tous les controllers utilisent `c.get('user')` pour récupérer l'utilisateur authentifié :
+```typescript
+const currentUser = c.get('user');
+```
+
+=== Interface CustomError
+Définition d'une interface d'erreur étendue :
+```typescript
+interface CustomError extends Error {
+    status?: number;
+}
+```
+
+=== Gestion d'erreurs avec null checking
+Pattern de vérification des résultats null :
+```typescript
+if (!result) {
+    const error = new Error('Entity not found.');
+    throw error;
+}
+```
+
+== AdminController
+
+=== Endpoints disponibles
+- **GET /admin/users** - `getAllUsers()` : Liste des utilisateurs avec leurs rôles
+- **GET /admin/reviews** - `getAllReviews()` : Tous les avis avec infos détaillées
+- **DELETE /admin/reviews/:id** - `deleteReview()` : Supprimer un avis (bypass propriétaire)
+
+=== Caractéristiques d'administration
+
+**Récupération utilisateurs avec rôles :**
+```typescript
+async getAllUsers(c: Context) {
+    // Récupérer tous les utilisateurs non supprimés avec leurs rôles
+    const usersWithRoles = await db()
+        .select({
+            id_user: User.id_user,
+            username: User.username,
+            email: User.email,
+            firstname: User.firstname,
+            lastname: User.lastname,
+            created_at: User.created_at,
+            role_id: Role.id_role,
+            role_name: Role.role_name
+        })
+        .from(User)
+        .leftJoin(UserRole, eq(User.id_user, UserRole.id_user))
+        .leftJoin(Role, eq(UserRole.id_role, Role.id_role))
+        .where(isNull(User.deleted_at));
+
+    // Transformer pour regrouper les rôles par utilisateur
+    const usersMap = new Map();
+    usersWithRoles.forEach(row => {
+        if (!usersMap.has(row.id_user)) {
+            usersMap.set(row.id_user, {
+                id_user: row.id_user,
+                username: row.username,
+                email: row.email,
+                firstname: row.firstname,
+                lastname: row.lastname,
+                created_at: row.created_at,
+                roles: []
+            });
+        }
+        if (row.role_id) {
+            usersMap.get(row.id_user).roles.push({
+                id_role: row.role_id,
+                role_name: row.role_name
+            });
+        }
+    });
+
+    const users = Array.from(usersMap.values());
+    return c.json({ users });
+}
+```
+
+**Récupération reviews avec détails complets :**
+```typescript
+async getAllReviews(c: Context) {
+    const reviews = await db()
+        .select({
+            id_review: Review.id_review,
+            title: Review.title,
+            comment: Review.comment,
+            is_public: Review.is_public,
+            is_spoiler: Review.is_spoiler,
+            created_at: Review.created_at,
+            updated_at: Review.updated_at,
+            // User info
+            user_id: User.id_user,
+            user_username: User.username,
+            user_email: User.email,
+            // Book info
+            book_id: Book.id_book,
+            book_title: Book.title,
+            book_image: Book.image
+        })
+        .from(Review)
+        .innerJoin(User, eq(Review.id_user, User.id_user))
+        .innerJoin(Book, eq(Review.id_book, Book.id_book))
+        .where(isNull(User.deleted_at))
+        .orderBy(Review.created_at);
+
+    return c.json({ reviews, total: reviews.length });
+}
+```
+
+**Suppression review admin (bypass ownership) :**
+```typescript
+async deleteReview(c: Context) {
+    const reviewId = c.req.param('id');
+
+    // Vérifier que le review existe
+    const review = await db()
+        .select()
+        .from(Review)
+        .where(eq(Review.id_review, reviewId))
+        .limit(1);
+
+    if (review.length === 0) {
+        return c.json({ error: 'Review not found' }, 404);
+    }
+
+    // Supprimer le review (admin bypass ownership check)
+    await db()
+        .delete(Review)
+        .where(eq(Review.id_review, reviewId));
+
+    return c.json({
+        message: 'Review deleted successfully',
+        review: review[0]
+    });
+}
+```
+
+**Fonctionnalités administratives :**
+- **Vue utilisateurs enrichie** : Requêtes JOIN pour agréger les rôles par utilisateur
+- **Vue reviews complète** : Agrégation des informations user, book et review
+- **Suppression admin** : Bypass des contrôles de propriété
+- **Filtrage soft delete** : Exclusion des utilisateurs supprimés (`deleted_at`)
+- **Transformation données** : Map pour regrouper relations one-to-many
+
+**Sécurité et permissions :**
+- **Endpoints admin uniquement** : Middleware ADMIN requis (non visible dans le code)
+- **Accès données sensibles** : Emails et informations complètes des utilisateurs
+- **Bypass ownership** : Admin peut supprimer n'importe quel review
+- **Audit trail** : Retour de l'entité supprimée pour traçabilité
+
+**Codes de réponse :**
+- **200** : Consultation ou suppression réussie
+- **404** : Review non trouvé
+- **500** : Erreur serveur (base de données)
+
+== PermissionController
+
+=== Endpoints disponibles
+- **GET /permissions** - `getAll()` : Liste toutes les permissions
+- **GET /permissions/:id** - `getById()` : Récupère une permission spécifique
+
+=== Caractéristiques
+- **Service simple** : Délégation directe vers permissionService
+- **Gestion d'erreurs basique** : Null check pour getById
+- **Interface RBAC** : Base pour la gestion des droits d'accès
+
+**Code type :**
+```typescript
+async getById(c: Context) {
+    const permissionId = c.req.param('id');
+    const permission = await permissionService.getById(permissionId);
+
+    if (!permission) {
+        const error = new Error('Permission not found.');
+        throw error;
+    }
+
+    return c.json(permission);
+}
+```
+
+== RateController
+
+=== Endpoints disponibles
+- **GET /books/:id/rates** - `getBookRates()` : Notes d'un livre
+- **POST /rates** - `createOrUpdateRate()` : Créer/modifier une note
+- **DELETE /rates/:id** - `deleteRate()` : Supprimer une note
+
+=== Caractéristiques spécialisées
+
+**Validation de notation :**
+```typescript
+if (!rateData.id_book || !rateData.rating) {
+    const error = new Error('id_book and rating are required.');
+    throw error;
+}
+```
+
+**Logic métier de mise à jour :**
+```typescript
+const result = await rateService.createOrUpdateRate({
+    ...rateData,
+    id_user: currentUser.id
+});
+const message = result.updated ? 'Rating updated successfully.' : 'Rating created successfully.';
+const status = result.updated ? 200 : 201;
+```
+
+**Sécurité propriétaire :**
+- Seul l'auteur peut supprimer sa note
+- ID utilisateur injecté automatiquement via middleware
+- Validation de la note (1-5) déléguée au service
+
+== ReadingListController
+
+=== Endpoints disponibles
+- **GET /reading-lists** - `getAccessibleLists()` : Listes accessibles
+- **GET /users/:id/reading-lists** - `getUserLists()` : Listes d'un utilisateur
+- **GET /reading-lists/:id** - `getById()` : Détails d'une liste
+- **POST /reading-lists** - `create()` : Créer une liste
+- **PUT /reading-lists/:id** - `update()` : Modifier une liste
+- **DELETE /reading-lists/:id** - `delete()` : Supprimer une liste
+
+=== Caractéristiques avancées
+
+**Système de permissions sophistiqué :**
+- Consultation des listes publiques vs privées
+- Navigation entre profils utilisateurs
+- Contrôle d'accès granulaire par le service
+
+**Protection des données sensibles :**
+```typescript
+const updateData = { ...listData };
+delete updateData.id_user;    // Pas de changement de propriétaire
+delete updateData.is_system;  // Pas de modification du flag système
+```
+
+**Validation minimale ciblée :**
+```typescript
+if (!listData.list_name) {
+    throw new Error('list_name is required.');
+}
+```
+
+== ReviewController
+
+=== Endpoints disponibles
+- **GET /books/:id/reviews** - `getBookReviews()` : Critiques d'un livre
+- **POST /reviews** - `create()` : Créer une critique
+- **PUT /reviews/:id** - `update()` : Modifier une critique
+- **DELETE /reviews/:id** - `delete()` : Supprimer une critique
+
+=== Caractéristiques
+
+**Validation des champs critiques :**
+```typescript
+if (!reviewData.id_book || !reviewData.title) {
+    const error = new Error('id_book and title are required.');
+    throw error;
+}
+```
+
+**CRUD complet avec propriété :**
+- Seul l'auteur peut modifier/supprimer ses critiques
+- Injection automatique de l'ID utilisateur
+- Messages de succès enrichis
+
+**Pattern de mise à jour sécurisé :**
+```typescript
+const updatedReview = await reviewService.update(reviewId, updateData, currentUser.id);
+```
+
+== RoleController
+
+=== Endpoints disponibles
+- **GET /roles** - `getAll()` : Tous les rôles avec statistiques
+- **GET /roles/:id** - `getById()` : Rôle avec permissions
+- **POST /roles** - `create()` : Créer un rôle
+- **PUT /roles/:id** - `update()` : Modifier un rôle
+- **DELETE /roles/:id** - `delete()` : Supprimer un rôle
+- **POST /roles/:id/permissions** - `addPermission()` : Ajouter permission
+- **DELETE /roles/:id/permissions/:permissionId** - `removePermission()` : Retirer permission
+
+=== Caractéristiques RBAC avancées
+
+**Validation de format de nom :**
+```typescript
+if (!/^[A-Z_]+$/.test(roleData.name)) {
+    const error = new Error('Role name must be uppercase with underscores (e.g., ADMIN, MODERATOR).');
+    throw error;
+}
+```
+
+**Gestion des permissions :**
+- Association/dissociation de permissions aux rôles
+- Protection des rôles système (ADMIN, USER, MODERATOR)
+- Statistiques d'utilisation (nombre d'utilisateurs par rôle)
+
+**Services enrichis :**
+- `getAllWithStats()` : Rôles avec compteurs
+- `getByIdWithPermissions()` : Détails complets avec permissions
+
+== UserRoleController
+
+=== Endpoints disponibles
+- **GET /users/:id/roles** - `getUserRoles()` : Rôles d'un utilisateur
+- **GET /roles/:id/users** - `getRoleUsers()` : Utilisateurs d'un rôle
+- **POST /users/roles** - `assignRole()` : Assigner un rôle
+- **DELETE /users/roles** - `removeRole()` : Retirer un rôle
+- **GET /users/:id/permissions** - `getUserPermissions()` : Permissions effectives
+- **POST /users/roles/bulk** - `bulkAssignRoles()` : Assignation en lot
+
+=== Caractéristiques sophistiquées
+
+**Flexibilité d'assignation :**
+```typescript
+// Support both id_role and role_name
+let { id_user, id_role, user_id, role_name } = body;
+
+// Normalize parameter names
+const userId = id_user || user_id;
+let roleId = id_role;
+
+// If role_name is provided, find the role_id
+if (role_name && !roleId) {
+    const roleResult = await userRoleService.getRoleByName(role_name);
+    if (!roleResult) {
+        const error = new Error(`Role '${role_name}' not found.`);
+        throw error;
+    }
+    roleId = roleResult.id_role;
+}
+```
+
+**Assignation en lot :**
+```typescript
+if (!id_user || !role_ids || !Array.isArray(role_ids) || role_ids.length === 0) {
+    const error = new Error('id_user and role_ids (array) are required.');
+    throw error;
+}
+```
+
+**Audit trail complet :**
+- Enregistrement de qui assigne quoi (`currentUser.id`)
+- Traçabilité des modifications de permissions
+- Gestion des cas d'erreur avec messages explicites
+
+== Patterns de sécurité
+
+=== Injection d'identité automatique
+```typescript
+// Pattern commun pour les opérations utilisateur
+const result = await service.operation({
+    ...data,
+    id_user: currentUser.id
+});
+```
+
+=== Protection des champs sensibles
+```typescript
+// Suppression des champs non modifiables
+delete updateData.id_user;
+delete updateData.is_system;
+```
+
+=== Validation des permissions par délégation
+- Controller : Validation des champs obligatoires
+- Service : Règles métier et permissions
+- Middleware : Authentification et autorisation
+
+== Codes de réponse standards
+
+[cols="1,1,1"]
+|===
+|Code |Usage |Contexte
+
+|200
+|Consultation, modification
+|GET, PUT réussis
+
+|201
+|Création, assignation
+|POST réussis
+
+|400
+|Validation échouée
+|Champs manquants, format invalide
+
+|404
+|Entité non trouvée
+|ID inexistant, null result
+
+|403
+|Permissions insuffisantes
+|Accès refusé (géré par service)
+
+|409
+|Conflit métier
+|Doublons, contraintes (géré par service)
+|===
+
+== Gestion d'erreurs unifiée
+
+=== Pattern de null checking
+```typescript
+if (!result) {
+    const error = new Error('Entity not found.');
+    throw error;
+}
+```
+
+=== Validation précoce
+```typescript
+if (!requiredField) {
+    const error = new Error('requiredField is required.');
+    throw error;
+}
+```
+
+=== Messages enrichis
+```typescript
+return c.json({
+    message: 'Operation completed successfully.',
+    ...result
+}, statusCode);
+```
+
+== Résumé
+
+Les 6 controllers restants illustrent l'**évolution architecturale** de l'API BlaBlaBook V2 vers :
+
+- **Authentification middleware** : Récupération automatique de l'utilisateur connecté
+- **Sécurité renforcée** : Protection des données sensibles et audit trail
+- **Validation métier** : Contrôles spécialisés selon le domaine
+- **Gestion d'erreurs unifiée** : Patterns cohérents avec CustomError
+- **RBAC sophistiqué** : Gestion complète des rôles et permissions
+- **Flexibilité d'API** : Support de multiples formats de paramètres
+
+**Ils représentent la maturité de l'architecture avec sécurité avancée et gestion des erreurs robuste.**

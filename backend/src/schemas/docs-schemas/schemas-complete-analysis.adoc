@@ -1,0 +1,354 @@
+= Schemas - Analyse Complète
+:toc:
+:toclevels: 3
+
+== Vue d'ensemble
+
+Les schemas de l'API BlaBlaBook V2 constituent la couche de validation des données d'entrée utilisant Zod pour la validation runtime et TypeScript pour la sécurité de types. Ils définissent les contrats d'interface pour les opérations CRUD avec validation stricte et messages d'erreur localisés.
+
+== Architecture des schemas
+
+=== Design pattern de validation Zod
+- **Validation runtime** : Contrôles dynamiques des données d'entrée
+- **Génération de types** : Inférence automatique des types TypeScript
+- **Messages localisés** : Erreurs en français pour UX optimisée
+- **Schemas dérivés** : Réutilisation et composition de validations
+- **Intégration Drizzle** : Génération automatique depuis les modèles de données
+
+=== Stratégies de validation
+1. **Schemas Drizzle-Zod** : Génération automatique depuis les modèles
+2. **Schemas manuels Zod** : Validation métier complexe avec règles spécialisées
+3. **Schemas dérivés** : Omission et modification de champs selon le contexte
+4. **Validation croisée** : Contrôles inter-champs avec `refine()`
+5. **Types inférés** : Export des types TypeScript pour usage applicatif
+
+== Schemas par domaine
+
+=== authorSchemas.ts - Validation des auteurs
+
+**Architecture simplifiée :**
+```typescript
+import { createInsertSchema } from "drizzle-zod";
+import { Author } from "../models/author.ts";
+
+const authorInsertSchema = createInsertSchema(Author);
+
+export const authorCreateSchema = authorInsertSchema.omit({
+    id_author: true
+});
+```
+
+**Caractéristiques :**
+- **Génération automatique** : Schema dérivé du modèle Drizzle Author
+- **Omission d'ID** : id_author exclu pour création (auto-généré)
+- **Validation héritée** : Contraintes du modèle automatiquement appliquées
+- **Simplicité maximale** : Pas de logique métier supplémentaire
+
+**Utilisation typique :**
+```typescript
+// Validation en controller
+const validatedData = authorCreateSchema.parse(requestData);
+```
+
+=== genreSchemas.ts - Validation des genres
+
+**Architecture similaire aux auteurs :**
+```typescript
+import { createInsertSchema } from "drizzle-zod";
+import { Genre } from "../models/genre.ts";
+
+const genreInsertSchema = createInsertSchema(Genre);
+
+export const genreCreateSchema = genreInsertSchema.omit({
+    id_genre: true
+});
+```
+
+**Caractéristiques :**
+- **Pattern cohérent** : Même approche que authorSchemas
+- **Génération Drizzle** : Schema dérivé du modèle Genre
+- **ID exclu** : id_genre auto-généré côté base de données
+- **Validation standard** : Contraintes de base (longueur, type, nullabilité)
+
+=== userSchemas.ts - Validation complexe des utilisateurs
+
+**Architecture avancée avec 5 schemas spécialisés :**
+
+==== createUserSchema - Création d'utilisateur (inscription)
+```typescript
+export const createUserSchema = z.object({
+    firstname: z.string()
+        .min(1, 'Le prenom est requis')
+        .max(50, 'Le prenom ne peut pas depasser 50 caracteres')
+        .trim(),
+
+    lastname: z.string()
+        .min(1, 'Le nom est requis')
+        .max(50, 'Le nom ne peut pas depasser 50 caracteres')
+        .trim(),
+
+    username: z.string()
+        .min(3, 'Le nom d\'utilisateur doit faire au moins 3 caracteres')
+        .max(50, 'Le nom d\'utilisateur ne peut pas depasser 50 caracteres')
+        .regex(/^[a-zA-Z0-9_-]+$/, 'Le nom d\'utilisateur ne peut contenir que des lettres, chiffres, _ et -')
+        .trim(),
+
+    email: z.string()
+        .email('Email invalide')
+        .max(100, 'L\'email ne peut pas depasser 100 caracteres')
+        .toLowerCase()
+        .trim(),
+
+    password: z.string()
+        .min(8, 'Le mot de passe doit faire au moins 8 caracteres')
+        .max(128, 'Le mot de passe ne peut pas depasser 128 caracteres')
+        .regex(/(?=.*[a-z])/, 'Le mot de passe doit contenir au moins une minuscule')
+        .regex(/(?=.*[A-Z])/, 'Le mot de passe doit contenir au moins une majuscule')
+        .regex(/(?=.*\d)/, 'Le mot de passe doit contenir au moins un chiffre')
+        .regex(/(?=.*[@$!%*?&])/, 'Le mot de passe doit contenir au moins un caractere special (@$!%*?&)'),
+
+    passwordConfirm: z.string()
+        .min(1, 'La confirmation du mot de passe est requise')
+        .max(128, 'La confirmation du mot de passe ne peut pas depasser 128 caracteres')
+}).refine(data => data.password === data.passwordConfirm, {
+    message: 'La confirmation du mot de passe ne correspond pas',
+    path: ['passwordConfirm']
+});
+```
+
+**Validations appliquées :**
+- **firstname/lastname** : Requis, 1-50 caractères, trimming automatique
+- **username** : 3-50 caractères, regex alphanumérique + _ et -, trimming
+- **email** : Format email, max 100 caractères, toLowerCase + trim automatique
+- **password** : 8-128 caractères, complexité renforcée (maj+min+chiffre+spécial)
+- **passwordConfirm** : 1-128 caractères, validation croisée avec password
+
+==== updateProfileSchema - Mise à jour de profil
+```typescript
+export const updateProfileSchema = z.object({
+    firstname: z.string()
+        .min(1, 'Le prenom est requis')
+        .max(50, 'Le prenom ne peut pas depasser 50 caracteres')
+        .trim()
+        .optional(),
+    // ... autres champs similaires en .optional()
+});
+```
+
+**Caractéristiques :**
+- **Champs optionnels** : Tous les champs en `.optional()`
+- **Même validation** : Règles identiques à createUserSchema
+- **Pas d'email** : Email non modifiable après création
+- **Pas de password** : Modification séparée pour sécurité
+
+==== patchProfileSchema - Modification partielle
+```typescript
+export const patchProfileSchema = z.object({
+    // ... champs optionnels
+}).refine(data => Object.keys(data).length > 0, {
+    message: 'Au moins un champ doit etre modifie'
+});
+```
+
+**Validation croisée :**
+- **Refine global** : Au moins un champ doit être fourni
+- **Flexibilité maximale** : Tous champs optionnels
+- **Validation de présence** : Empêche les requêtes vides
+
+==== changePasswordSchema - Changement de mot de passe
+```typescript
+export const changePasswordSchema = z.object({
+    current_password: z.string()
+        .min(1, 'Le mot de passe actuel est requis'),
+
+    new_password: z.string()
+        .min(8, 'Le nouveau mot de passe doit faire au moins 8 caracteres')
+        .max(128, 'Le nouveau mot de passe ne peut pas depasser 128 caracteres')
+        .regex(/(?=.*[a-z])/, 'Le nouveau mot de passe doit contenir au moins une minuscule')
+        .regex(/(?=.*[A-Z])/, 'Le nouveau mot de passe doit contenir au moins une majuscule')
+        .regex(/(?=.*\d)/, 'Le nouveau mot de passe doit contenir au moins un chiffre')
+        .regex(/(?=.*[@$!%*?&])/, 'Le nouveau mot de passe doit contenir au moins un caractere special (@$!%*?&)'),
+
+    confirm_password: z.string()
+}).refine(data => data.new_password === data.confirm_password, {
+    message: 'La confirmation du mot de passe ne correspond pas',
+    path: ['confirm_password']
+});
+```
+
+**Sécurité renforcée :**
+- **Mot de passe actuel** : Vérification de l'ancien mot de passe
+- **Nouvelle complexité** : Mêmes règles strictes que création
+- **Confirmation** : Validation croisée new_password === confirm_password
+- **Path d'erreur** : Erreur ciblée sur confirm_password
+
+==== loginSchema - Authentification
+```typescript
+export const loginSchema = z.object({
+    email: z.string()
+        .email('Email invalide')
+        .toLowerCase()
+        .trim(),
+
+    password: z.string()
+        .min(1, 'Le mot de passe est requis')
+});
+```
+
+**Validation minimaliste :**
+- **Email simple** : Format email + normalisation
+- **Password minimal** : Juste présence requise (complexité vérifiée au hash)
+- **Performance** : Validation légère pour authentification rapide
+
+== Patterns de conception
+
+=== Génération automatique Drizzle-Zod
+```typescript
+// Pattern pour schemas simples
+const modelInsertSchema = createInsertSchema(Model);
+export const modelCreateSchema = modelInsertSchema.omit({
+    id_field: true
+});
+```
+
+**Avantages :**
+- **Cohérence automatique** : Schemas toujours synchronisés avec modèles
+- **Maintenance réduite** : Pas de duplication de validation
+- **Evolution facilitée** : Changements modèles propagés automatiquement
+- **Type safety** : Validation runtime + types TypeScript
+
+=== Validation progressive par use case
+```typescript
+// Création : tous champs requis
+createUserSchema
+// Mise à jour : champs optionnels
+updateProfileSchema
+// Patch : au moins un champ + validation croisée
+patchProfileSchema.refine(...)
+```
+
+**Granularité d'usage :**
+- **Schemas spécialisés** : Validation adaptée au contexte d'usage
+- **Réutilisation de règles** : Même validation base, optionalité variable
+- **Validation croisée** : `refine()` pour contraintes inter-champs
+- **Messages ciblés** : Erreurs contextuelles selon l'opération
+
+=== Normalisation automatique des données
+```typescript
+// Transformations appliquées automatiquement
+.trim()           // Suppression espaces début/fin
+.toLowerCase()    // Email en minuscules
+.optional()       // Champ optionnel selon contexte
+```
+
+**Nettoyage automatique :**
+- **trim()** : Suppression espaces parasites
+- **toLowerCase()** : Normalisation email pour unicité
+- **Validation + transformation** : Données nettoyées lors de la validation
+- **Cohérence garantie** : Format uniforme des données stockées
+
+=== Messages d'erreur localisés
+```typescript
+// Messages en français pour UX optimisée
+.min(1, 'Le prenom est requis')
+.email('Email invalide')
+.regex(/pattern/, 'Le format est incorrect')
+```
+
+**UX française :**
+- **Langue française** : Messages utilisateur dans la langue de l'application
+- **Messages explicites** : Description claire des erreurs de validation
+- **Guidance utilisateur** : Indication de ce qui est attendu
+- **Cohérence linguistique** : Même ton et style sur tous les schemas
+
+== Types TypeScript générés
+
+=== Export des types inférés
+```typescript
+// Types TypeScript automatiquement générés
+export type CreateUserInput = z.infer<typeof createUserSchema>;
+export type UpdateProfileInput = z.infer<typeof updateProfileSchema>;
+export type PatchProfileInput = z.infer<typeof patchProfileSchema>;
+export type ChangePasswordInput = z.infer<typeof changePasswordSchema>;
+export type LoginInput = z.infer<typeof loginSchema>;
+```
+
+**Intégration TypeScript :**
+- **z.infer<>** : Génération automatique de types depuis schemas Zod
+- **Type safety** : Vérification compile-time + runtime
+- **Documentation vivante** : Types toujours synchronisés avec validation
+- **Autocomplétion** : Support IDE pour développement facilité
+
+== Sécurité et validation
+
+=== Contraintes de sécurité mot de passe
+```typescript
+// Règles de complexité strictes
+.min(8, 'Le mot de passe doit faire au moins 8 caracteres')
+.max(128, 'Le mot de passe ne peut pas depasser 128 caracteres')
+.regex(/(?=.*[a-z])/, 'au moins une minuscule')
+.regex(/(?=.*[A-Z])/, 'au moins une majuscule')
+.regex(/(?=.*\d)/, 'au moins un chiffre')
+.regex(/(?=.*[@$!%*?&])/, 'au moins un caractere special')
+```
+
+**Sécurité renforcée :**
+- **Longueur minimum** : 8 caractères minimum
+- **Longueur maximum** : 128 caractères maximum (compatible Argon2)
+- **Complexité** : Majuscule + minuscule + chiffre + spécial obligatoires
+- **Caractères spéciaux** : Liste restreinte pour compatibilité (@$!%*?&)
+
+=== Validation des identifiants
+```typescript
+// Username sécurisé
+.regex(/^[a-zA-Z0-9_-]+$/, 'lettres, chiffres, _ et - uniquement')
+// Email normalisé
+.email('Email invalide').toLowerCase().trim()
+```
+
+**Prévention d'attaques :**
+- **Username filtré** : Caractères alphanumérique + _ et - uniquement
+- **Email normalisé** : Prévention doublons casse différente
+- **Trimming** : Suppression caractères parasites
+- **Longueurs limitées** : Protection contre overflow
+
+== Performance et optimisation
+
+=== Validation légère pour authentification
+```typescript
+// loginSchema minimal pour performance
+password: z.string().min(1, 'Le mot de passe est requis')
+```
+
+**Optimisation auth :**
+- **Validation minimale** : Seule présence vérifiée
+- **Performance** : Pas de regex complexes lors du login
+- **Sécurité déléguée** : Complexité vérifiée au hash stocké
+- **UX fluide** : Validation rapide pour connexion
+
+=== Schemas dérivés pour réutilisation
+```typescript
+// Génération depuis modèles pour cohérence
+const authorInsertSchema = createInsertSchema(Author);
+export const authorCreateSchema = authorInsertSchema.omit({ id_author: true });
+```
+
+**Maintenance optimisée :**
+- **Source unique** : Modèles Drizzle comme référence
+- **Pas de duplication** : Schemas générés automatiquement
+- **Evolution synchronisée** : Changements modèles propagés
+- **Cohérence garantie** : Validation alignée sur structure données
+
+== Résumé
+
+Les schemas de l'API BlaBlaBook V2 constituent la **couche de validation d'entrée** avec **3 fichiers** couvrant :
+
+- **authorSchemas** : Validation automatique depuis modèle Drizzle avec omission d'ID
+- **genreSchemas** : Pattern identique aux auteurs pour cohérence architecturale
+- **userSchemas** : 5 schemas spécialisés avec validation complexe et messages localisés
+- **Validation runtime** : Zod pour contrôles dynamiques avec génération de types
+- **Messages français** : UX optimisée avec erreurs localisées
+- **Sécurité renforcée** : Contraintes strictes mot de passe et validation croisée
+- **Performance adaptée** : Validation légère auth vs validation complète création
+
+**Ils assurent la validation robuste et l'UX française avec type safety TypeScript complète.**

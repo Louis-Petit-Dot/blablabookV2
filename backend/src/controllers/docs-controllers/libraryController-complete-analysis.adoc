@@ -1,0 +1,239 @@
+= Controller LibraryController - Analyse Complète
+:toc:
+:toclevels: 3
+
+== Vue d'ensemble
+
+Le controller libraryController constitue la couche de présentation pour la gestion des bibliothèques personnelles dans l'API BlaBlaBook V2. Il expose des endpoints HTTP RESTful pour la consultation, création, suppression et gestion de la visibilité des collections de livres avec protection des bibliothèques système.
+
+== Architecture du controller
+
+=== Design pattern de validation progressive
+- **getUserLibraries** : Validation user_id obligatoire
+- **getById** : Délégation pure sans validation
+- **create** : Validation des champs obligatoires
+- **delete** : Validation user_id + protection système
+- **toggleVisibility** : Utilisation du middleware d'authentification
+
+=== Intégration middleware d'authentification
+L'endpoint `toggleVisibility` utilise `c.get('user')` :
+```typescript
+const currentUser = c.get('user');
+```
+Indique l'utilisation d'un middleware d'authentification qui enrichit le contexte.
+
+== Endpoints disponibles
+
+=== GET /libraries - getUserLibraries()
+**Objectif:** Récupérer les bibliothèques d'un utilisateur
+**Paramètres:** `user_id` (query parameter obligatoire)
+
+**Code avec validation :**
+```typescript
+async getUserLibraries(c: Context) {
+    const userId = c.req.query('user_id');
+    if (!userId) {
+        throw new Error('user_id query parameter is required.');
+    }
+
+    const result = await libraryService.getUserLibraries(userId);
+    return c.json(result);
+}
+```
+
+=== GET /libraries/:id - getById()
+**Objectif:** Récupérer une bibliothèque spécifique
+**Flux:** Délégation directe vers `libraryService.getById(libraryId)`
+
+=== POST /libraries - create()
+**Objectif:** Créer une nouvelle bibliothèque
+**Body requis:**
+```json
+{
+  "lib_name": "string (obligatoire)",
+  "id_user": "string (obligatoire)",
+  "description": "string (optionnel)",
+  "is_public": "boolean (optionnel)"
+}
+```
+
+**Code avec validation :**
+```typescript
+async create(c: Context) {
+    const data = await c.req.json();
+
+    if (!data.lib_name || !data.id_user) {
+        throw new Error('lib_name and id_user are required.');
+    }
+
+    const result = await libraryService.create(data);
+    return c.json(result, 201);
+}
+```
+
+=== PUT /libraries/:id - update()
+**Objectif:** Mettre à jour les informations d'une bibliothèque
+**Méthode HTTP:** PUT
+**Paramètres:** `id` (URL parameter)
+**Authentification:** Middleware d'authentification requis
+**Body JSON:** Champs modifiables (lib_name, description, etc.)
+
+**Code avec middleware :**
+```typescript
+async update(c: Context) {
+    const libraryId = c.req.param('id');
+    const currentUser = c.get('user');
+    const data = await c.req.json();
+
+    const result = await libraryService.update(libraryId, currentUser.id, data);
+    return c.json({ message: 'Library updated successfully.', ...result });
+}
+```
+
+**Fonctionnalités :**
+- **Utilisateur authentifié** : Extraction via middleware
+- **Contrôle de propriété** : Seul le propriétaire peut modifier
+- **Mise à jour partielle** : Seuls les champs fournis sont modifiés
+- **Protection système** : Bibliothèques spéciales non modifiables (côté service)
+
+**Exemple de body :**
+```json
+{
+  "lib_name": "Nouveau nom",
+  "description": "Nouvelle description"
+}
+```
+
+**Réponse de succès :**
+```json
+{
+  "message": "Library updated successfully.",
+  "library": {
+    "id_library": "uuid",
+    "lib_name": "Nouveau nom",
+    "description": "Nouvelle description"
+  }
+}
+```
+
+**Codes de réponse :**
+- `200` : Mise à jour réussie
+- `403` : Pas propriétaire
+- `404` : Bibliothèque non trouvée
+- `400` : Données invalides ou bibliothèque système
+
+=== DELETE /libraries/:id - delete()
+**Objectif:** Supprimer une bibliothèque (soft delete)
+**Paramètres:** `id` (URL parameter)
+**Body requis:** `user_id`
+
+**Code avec validation :**
+```typescript
+async delete(c: Context) {
+    const libraryId = c.req.param('id');
+    const { user_id } = await c.req.json();
+
+    if (!user_id) {
+        throw new Error('user_id is required.');
+    }
+
+    const result = await libraryService.delete(libraryId, user_id);
+    return c.json({
+        message: 'Library deleted successfully.',
+        ...result
+    });
+}
+```
+
+**Protections appliquées :**
+- **Propriété requise** : Seul le propriétaire peut supprimer
+- **Bibliothèques système** : Protection contre suppression (côté service)
+- **Soft delete** : Préservation de l'intégrité référentielle
+
+=== PUT /libraries/:id/visibility - toggleVisibility()
+**Objectif:** Basculer la visibilité publique/privée
+**Authentification:** Middleware d'authentification requis
+
+**Code avec middleware :**
+```typescript
+async toggleVisibility(c: Context) {
+    const libraryId = c.req.param('id');
+    const currentUser = c.get('user');
+
+    const result = await libraryService.toggleVisibility(libraryId, currentUser.id);
+    return c.json({
+        message: 'Visibility toggled successfully.',
+        ...result
+    });
+}
+```
+
+**Fonctionnalités :**
+- **Utilisateur authentifié** : Extraction via middleware
+- **Protection système** : Bibliothèque "À partager" non privatisable
+- **Toggle intelligent** : Basculement automatique public ↔ privé
+
+== Patterns de conception
+
+=== Validation des champs métier critiques
+```typescript
+// Validation des champs essentiels pour création
+if (!data.lib_name || !data.id_user) {
+    throw new Error('lib_name and id_user are required.');
+}
+```
+
+=== Utilisation mixte d'authentification
+- **Paramètres explicites** : user_id pour create/delete
+- **Middleware d'authentification** : currentUser pour toggleVisibility
+- **Flexibilité d'API** : Adaptation selon le contexte d'usage
+
+=== Enrichissement des réponses
+```typescript
+return c.json({
+    message: 'Operation completed successfully.',
+    ...result
+});
+```
+
+== Sécurité et contrôle d'accès
+
+=== Niveaux de protection
+1. **Controller** : Validation présence des paramètres d'identification
+2. **Service** : Contrôle de propriété et règles métier
+3. **Middleware** : Authentification pour opérations sensibles
+4. **Database** : Contraintes d'intégrité et soft delete
+
+=== Protection des bibliothèques système
+- **Suppression interdite** : Gérée par le service
+- **Visibilité protégée** : "À partager" ne peut pas devenir privée
+- **Règles métier** : Préservation des bibliothèques essentielles
+
+== Gestion d'erreurs
+
+=== Stratégie par endpoint
+- **getUserLibraries** : 400 si user_id manquant
+- **create** : 400 si champs obligatoires manquants, 409 si nom déjà utilisé
+- **delete** : 403 si pas propriétaire, 400 si bibliothèque système
+- **toggleVisibility** : 403 si pas propriétaire, 400 si protection système
+
+=== Codes de réponse
+- **200** : Consultation, suppression, toggle réussis
+- **201** : Bibliothèque créée
+- **400** : Paramètres manquants, opération interdite
+- **403** : Accès refusé
+- **404** : Bibliothèque non trouvée
+- **409** : Nom de bibliothèque déjà utilisé
+
+== Résumé
+
+Le controller libraryController est l'**interface HTTP pour les bibliothèques personnelles** de l'API BlaBlaBook V2. Il expose **5 endpoints** avec :
+
+- **Validation progressive** : Contrôles adaptés à la criticité de chaque endpoint
+- **Protection des bibliothèques système** : Sauvegarde des collections essentielles
+- **Authentification hybride** : Paramètres explicites + middleware selon le contexte
+- **Soft delete** : Suppression logique pour préservation de l'intégrité
+- **Gestion de visibilité** : Toggle public/privé avec protections spéciales
+- **Messages enrichis** : Feedback explicite des opérations
+
+**Il assure la gestion complète des collections personnelles avec sécurité multi-niveaux.**

@@ -1,0 +1,415 @@
+= Service LibraryService (Version Simplifiée) - Analyse Complète
+:toc:
+:toclevels: 3
+
+== Vue d'ensemble
+
+Le service libraryService gère les bibliothèques personnelles des utilisateurs dans l'API BlaBlaBook V2. Il s'occupe de la création, consultation, modification, suppression et gestion de la visibilité des collections de livres.
+
+NOTE: Ce service utilise `.select()` **sans projections explicites** car la table Library ne contient **aucune donnée sensible**. Toutes les informations (nom, description, visibilité) sont appropriées pour l'exposition. L'utilisation de `.select().from(Library)` est donc appropriée et optimale pour ce cas d'usage.
+
+== Fonctions principales
+
+=== getUserLibraries
+**Objectif:** Récupérer toutes les bibliothèques d'un utilisateur spécifique
+**Quand:** Utilisé pour afficher les collections personnelles d'un utilisateur
+**Pourquoi important:** Permet la navigation dans les bibliothèques personnelles et l'organisation des livres
+
+=== getById
+**Objectif:** Récupérer les informations détaillées d'une bibliothèque spécifique
+**Quand:** Utilisé pour afficher la page détaillée d'une bibliothèque
+**Pourquoi important:** Fournit les données nécessaires pour l'affichage des détails d'une collection
+
+=== create
+**Objectif:** Créer une nouvelle bibliothèque personnelle
+**Quand:** Utilisé lorsqu'un utilisateur souhaite créer une nouvelle collection
+**Pourquoi important:** Permet l'organisation personnalisée des livres en collections thématiques
+
+=== update
+**Objectif:** Modifier les informations d'une bibliothèque existante
+**Quand:** Utilisé lorsqu'un utilisateur souhaite renommer ou modifier une collection
+**Pourquoi important:** Permet l'évolution et la personnalisation continue des collections
+
+=== delete
+**Objectif:** Supprimer logiquement une bibliothèque (soft delete)
+**Quand:** Utilisé pour retirer une bibliothèque du catalogue personnel
+**Pourquoi important:** Maintient la propreté des collections tout en préservant l'intégrité des données
+
+=== toggleVisibility
+**Objectif:** Basculer la visibilité publique/privée d'une bibliothèque
+**Quand:** Utilisé pour partager ou privatiser une collection
+**Pourquoi important:** Permet le contrôle de la confidentialité et le partage sélectif des collections
+
+== Fonctionnement du service libraryService
+
+=== Rôle de gestionnaire de collections personnelles
+Le service libraryService fonctionne comme un système de gestion de bibliothèques :
+
+1. **Collections personnalisées** : Chaque utilisateur peut créer ses propres bibliothèques thématiques
+2. **Contrôle de visibilité** : Gestion fine de la confidentialité des collections
+3. **Unicité par utilisateur** : Prévention des doublons de noms au niveau utilisateur
+4. **Modification flexible** : Renommage et mise à jour des collections existantes
+5. **Suppression logique** : Préservation de l'intégrité référentielle via soft delete
+
+=== Intégration avec EntityValidator
+Le service s'appuie sur EntityValidator pour :
+- **validateUser** : Confirmer l'existence de l'utilisateur
+- **validateLibrary** : Confirmer l'existence de la bibliothèque
+- **validateLibraryAccess** : Contrôler les droits d'accès en lecture/écriture
+
+== Opérations détaillées
+
+=== Consultation des bibliothèques utilisateur (getUserLibraries)
+
+**Fonctionnement en mots simples :**
+Cette fonction agit comme un gestionnaire personnel qui liste toutes les collections d'un utilisateur spécifique.
+
+**Processus de récupération :**
+1. **Validation utilisateur** : Vérification que l'utilisateur existe via EntityValidator
+2. **Filtrage par propriétaire** : Récupération des bibliothèques appartenant à l'utilisateur
+3. **Exclusion des supprimées** : Filtre avec `isNull(deleted_at)` pour ignorer les bibliothèques supprimées
+4. **Calcul des métadonnées** : Comptage automatique du nombre total de bibliothèques
+
+**Données retournées :**
+- Liste complète des bibliothèques actives de l'utilisateur
+- Compteur total pour statistiques personnelles
+- Informations de visibilité et type (système/utilisateur)
+
+**Filtrage intelligent :**
+```sql
+WHERE id_user = userId AND deleted_at IS NULL
+```
+
+=== Consultation d'une bibliothèque (getById)
+
+**Fonctionnement en mots simples :**
+Cette fonction agit comme un lecteur de fiche qui récupère les détails complets d'une collection spécifique.
+
+**Processus de récupération :**
+1. **Validation de la bibliothèque** : Vérification que la bibliothèque existe via EntityValidator
+2. **Retour des données** : Fourniture des informations complètes de la bibliothèque
+3. **Contrôle d'accès** : EntityValidator gère automatiquement les permissions d'accès
+
+**Données retournées :**
+- Informations complètes de la bibliothèque
+- Statut de visibilité et type système
+- Métadonnées de création et modification
+
+=== Création de bibliothèque (create)
+
+**Fonctionnement en mots simples :**
+Cette fonction agit comme un bureau d'enregistrement qui crée une nouvelle collection après vérification d'unicité.
+
+**Processus de création :**
+1. **Validation utilisateur** : Vérification que l'utilisateur propriétaire existe
+2. **Contrôle d'unicité** : Recherche de bibliothèques avec le même nom chez l'utilisateur
+3. **Filtrage des supprimées** : Exclusion des bibliothèques avec `deleted_at` non null
+4. **Prévention des doublons** : Rejet si une bibliothèque active avec ce nom existe
+5. **Création sécurisée** : Insertion avec données validées et RETURNING
+
+**Protection contre les doublons :**
+```sql
+WHERE id_user = userId
+AND lib_name = libName
+AND deleted_at IS NULL
+```
+
+**Données acceptées :**
+- **lib_name** : Nom obligatoire, unique par utilisateur
+- **description** : Description optionnelle de la collection
+- **is_public** : Visibilité optionnelle (défaut : privé)
+- **id_user** : Propriétaire obligatoire (validé)
+
+=== Modification de bibliothèque (update)
+
+**Fonctionnement en mots simples :**
+Cette fonction agit comme un bureau de modification qui met à jour les informations d'une collection existante.
+
+**Processus de modification :**
+1. **Validation de la bibliothèque** : Vérification que la bibliothèque existe via EntityValidator
+2. **Contrôle d'accès** : Validation que l'utilisateur a les droits d'écriture (propriétaire)
+3. **Contrôle d'unicité du nom** : Si le nom change, vérification qu'aucune autre bibliothèque n'a ce nom
+4. **Exclusion de la bibliothèque actuelle** : Le nom actuel est autorisé (via `excludeLibraryId`)
+5. **Mise à jour sécurisée** : Application des modifications avec timestamp `updated_at`
+
+**Protection contre les doublons lors du renommage :**
+```typescript
+// Vérifie qu'aucune autre bibliothèque (sauf celle-ci) n'a le même nom
+await helpers.checkDuplicateName(userId, data.lib_name, libraryId);
+// WHERE id_user = userId
+// AND lib_name = newName
+// AND id_library != libraryId  ← Exclut la bibliothèque actuelle
+// AND deleted_at IS NULL
+```
+
+**Données modifiables :**
+- **lib_name** : Nouveau nom de la bibliothèque (avec contrôle d'unicité)
+- **description** : Nouvelle description
+- **is_public** : Nouvelle visibilité (public/privé)
+
+**Mise à jour automatique :**
+- `updated_at` est automatiquement mis à jour avec l'heure actuelle
+
+=== Suppression de bibliothèque (delete)
+
+**Fonctionnement en mots simples :**
+Cette fonction agit comme un archiveur qui retire logiquement une collection tout en préservant les données.
+
+**Processus de suppression :**
+1. **Validation de la bibliothèque** : Vérification que la bibliothèque existe via EntityValidator
+2. **Contrôle d'accès** : Validation que l'utilisateur a les droits d'écriture (propriétaire)
+3. **Soft delete** : Marquage avec `deleted_at` au lieu de suppression physique
+4. **Mise à jour temporelle** : `updated_at` mis à jour automatiquement
+
+**Soft delete appliqué :**
+```typescript
+const [deletedLibrary] = await db
+    .update(Library)
+    .set({
+        deleted_at: new Date(),
+        updated_at: new Date()
+    })
+    .where(eq(Library.id_library, libraryId))
+    .returning();
+```
+
+**Avantages du soft delete :**
+- Préservation de l'intégrité référentielle (livres, listes de lecture liés)
+- Possibilité de restauration future si nécessaire
+- Audit trail conservé pour traçabilité
+- Les bibliothèques supprimées n'apparaissent plus dans les requêtes (filtre `deleted_at IS NULL`)
+
+=== Basculement de visibilité (toggleVisibility)
+
+**Fonctionnement en mots simples :**
+Cette fonction agit comme un commutateur de confidentialité qui bascule entre public et privé.
+
+**Processus de basculement :**
+1. **Validation de la bibliothèque** : Vérification que la bibliothèque existe via EntityValidator
+2. **Contrôle d'accès** : Validation des droits d'écriture du propriétaire
+3. **Calcul de la nouvelle visibilité** : Inversion de l'état actuel (`!is_public`)
+4. **Mise à jour sécurisée** : Application du changement avec timestamp `updated_at`
+
+**Logique de basculement :**
+```typescript
+const [updatedLibrary] = await db
+    .update(Library)
+    .set({
+        is_public: !library.is_public,  // ← Inversion simple
+        updated_at: new Date()
+    })
+    .where(eq(Library.id_library, libraryId))
+    .returning();
+```
+
+**Comportement :**
+- `is_public: true` → `is_public: false` (public devient privé)
+- `is_public: false` → `is_public: true` (privé devient public)
+- Aucune restriction : toutes les bibliothèques peuvent changer de visibilité
+
+== Validation et contrôles qualité
+
+=== EntityValidator integration
+Le service s'appuie sur EntityValidator pour :
+- **validateUser** : Confirmer l'existence de l'utilisateur propriétaire
+- **validateLibrary** : Confirmer l'existence de la bibliothèque
+- **validateLibraryAccess** : Contrôler les permissions d'accès (lecture/écriture)
+- **Gestion cohérente** : Messages d'erreur standardisés
+
+=== Contrôles métier spécifiques
+Le service applique ses propres règles :
+- **Unicité par utilisateur** : Noms de bibliothèques uniques par propriétaire (via `helpers.checkDuplicateName`)
+- **Exclusion lors du renommage** : La bibliothèque en cours de modification est exclue du contrôle d'unicité
+- **Soft delete** : Suppression logique pour préserver l'intégrité référentielle
+- **Visibilité par défaut** : Nouvelles bibliothèques créées privées (`is_public: false`) si non spécifié
+
+=== Gestion des bibliothèques supprimées
+Le service filtre automatiquement les bibliothèques supprimées via :
+- **Conditions WHERE** : `isNull(deleted_at)` dans toutes les requêtes de consultation
+- **Exclusion transparente** : Les bibliothèques supprimées n'apparaissent pas dans les listes
+- **Préservation des données** : Données conservées pour l'intégrité référentielle
+
+== Gestion des erreurs spécialisées
+
+=== Erreurs de duplication
+- **Bibliothèque déjà existante** : "A library with this name already exists."
+- **Validation préalable** : Vérification avant insertion pour éviter les conflits
+- **Scope utilisateur** : Unicité limitée au niveau de chaque utilisateur
+
+
+=== Erreurs de validation
+- **Utilisateur inexistant** : Gérée par EntityValidator
+- **Bibliothèque inexistante** : Gérée par EntityValidator
+- **Accès refusé** : Gérée par EntityValidator avec contrôle des permissions
+
+=== Gestion des cas limites
+- **Utilisateur sans bibliothèques** : Retourne une liste vide sans erreur
+- **Changements concurrents** : `updated_at` pour tracking des modifications
+- **Données optionnelles** : Gestion gracieuse des champs non obligatoires
+
+== Performance et optimisation
+
+=== Requêtes optimisées
+- **Filtrage efficace** : Conditions WHERE optimisées avec index recommandés
+- **Sélections ciblées** : Pas de SELECT * inutiles
+- **LIMIT pour unicité** : LIMIT 1 pour les vérifications d'existence
+- **Index recommandés** : Sur (id_user, lib_name, deleted_at)
+
+=== Gestion des timestamps
+- **Automatisation** : `updated_at` mis à jour automatiquement
+- **Soft delete** : `deleted_at` pour marquage de suppression
+- **Audit trail** : Conservation de l'historique des modifications
+
+=== Optimisation mémoire
+- **Pas de JOIN complexes** : Service simple sans jointures coûteuses
+- **Calculs légers** : Compteurs via .length pour éviter COUNT()
+- **Requêtes directes** : Accès direct aux tables sans sous-requêtes
+
+== Interaction avec d'autres services
+
+=== Dépendances directes
+- **EntityValidator** : Validation des entités et contrôle d'accès
+- **Database connection** : Opérations CRUD via Drizzle ORM
+- **Library model** : Structure de données des bibliothèques
+
+=== Services connexes
+- **bookLibraryService** : Gestion des livres dans les bibliothèques
+- **userService** : Gestion des propriétaires de bibliothèques
+- **readingListService** : Listes de lecture associées aux bibliothèques
+
+=== Impact sur d'autres fonctionnalités
+- **Collections personnelles** : Base pour l'organisation des livres utilisateur
+- **Partage de collections** : Mécanisme de visibilité publique/privée
+- **Intégrité système** : Préservation des bibliothèques essentielles
+- **Audit et traçabilité** : Historique des modifications via timestamps
+
+== Exemple de flux complet
+
+=== Scénario : Création et gestion d'une collection "Science-Fiction" partagée
+
+**Situation de départ :**
+Un utilisateur souhaite créer une collection "Science-Fiction" publique, puis décider de la privatiser temporairement.
+
+**Traitement par le service :**
+1. **Création de la collection** :
+   - Validation de l'utilisateur propriétaire
+   - Vérification qu'aucune bibliothèque "Science-Fiction" n'existe
+   - Création avec `is_public: true`
+2. **Partage initial** : La collection est immédiatement visible publiquement
+3. **Changement de visibilité** :
+   - Validation des droits de propriétaire
+   - Basculement vers `is_public: false`
+   - Collection devient privée
+
+**Évolution de la visibilité :**
+- Création → Public (partagé avec la communauté)
+- Toggle → Privé (collection personnelle)
+- Toggle → Public (partage à nouveau)
+
+**Résultat :**
+L'utilisateur obtient un contrôle complet sur la visibilité de sa collection, permettant un partage flexible selon ses préférences.
+
+== Diagramme de séquence - Workflow LibraryService
+
+[mermaid]
+----
+sequenceDiagram
+    participant Controller
+    participant LibraryService
+    participant EntityValidator
+    participant Database
+
+    Note over Controller, Database: Exemple: Création d'une nouvelle bibliothèque
+
+    Controller->>LibraryService: create({lib_name, description, is_public, id_user})
+    LibraryService->>EntityValidator: validateUser(id_user)
+    EntityValidator->>Database: SELECT FROM users WHERE id_user = ?
+    EntityValidator-->>LibraryService: userData
+
+    LibraryService->>LibraryService: Set is_public = false if undefined
+    LibraryService->>LibraryService: helpers.checkDuplicateName(id_user, lib_name)
+    LibraryService->>Database: SELECT FROM libraries WHERE id_user = ? AND lib_name = ? AND deleted_at IS NULL
+    Database-->>LibraryService: existingLibrary || []
+
+    alt Si bibliothèque déjà existante
+        LibraryService-->>Controller: throw Error("A library with this name already exists.")
+    else Nom unique
+        LibraryService->>Database: INSERT INTO libraries VALUES(libraryData) RETURNING
+        Database-->>LibraryService: newLibrary
+        LibraryService-->>Controller: {library: newLibrary}
+    end
+
+    Note over Controller, Database: Exemple: Modification d'une bibliothèque
+
+    Controller->>LibraryService: update(libraryId, userId, {lib_name, description, is_public})
+    LibraryService->>EntityValidator: validateLibrary(libraryId)
+    EntityValidator-->>LibraryService: libraryData
+    LibraryService->>EntityValidator: validateLibraryAccess(library, userId, true)
+
+    alt Si nouveau nom fourni
+        LibraryService->>LibraryService: helpers.checkDuplicateName(userId, lib_name, libraryId)
+        LibraryService->>Database: SELECT FROM libraries WHERE id_user = ? AND lib_name = ? AND id_library != ? AND deleted_at IS NULL
+        Database-->>LibraryService: existingLibrary || []
+
+        alt Si nom déjà pris par une autre bibliothèque
+            LibraryService-->>Controller: throw Error("A library with this name already exists.")
+        end
+    end
+
+    LibraryService->>Database: UPDATE libraries SET {...data, updated_at = NOW()} WHERE id_library = ? RETURNING
+    Database-->>LibraryService: updatedLibrary
+    LibraryService-->>Controller: {library: updatedLibrary}
+
+    Note over Controller, Database: Exemple: Suppression logique d'une bibliothèque
+
+    Controller->>LibraryService: delete(libraryId, userId)
+    LibraryService->>EntityValidator: validateLibrary(libraryId)
+    EntityValidator-->>LibraryService: libraryData
+    LibraryService->>EntityValidator: validateLibraryAccess(library, userId, true)
+
+    LibraryService->>Database: UPDATE libraries SET deleted_at = NOW(), updated_at = NOW() WHERE id_library = ?
+    Database-->>LibraryService: deletedLibrary
+    LibraryService-->>Controller: {library: deletedLibrary}
+
+    Note over Controller, Database: Exemple: Basculement de visibilité
+
+    Controller->>LibraryService: toggleVisibility(libraryId, userId)
+    LibraryService->>EntityValidator: validateLibrary(libraryId)
+    EntityValidator-->>LibraryService: libraryData
+    LibraryService->>EntityValidator: validateLibraryAccess(library, userId, true)
+
+    LibraryService->>LibraryService: newVisibility = !library.is_public
+    LibraryService->>Database: UPDATE libraries SET is_public = ?, updated_at = NOW() WHERE id_library = ?
+    Database-->>LibraryService: updatedLibrary
+    LibraryService-->>Controller: {library: updatedLibrary}
+
+    Note over Controller, Database: Exemple: Consultation des bibliothèques utilisateur
+
+    Controller->>LibraryService: getUserLibraries(userId)
+    LibraryService->>EntityValidator: validateUser(userId)
+    EntityValidator-->>LibraryService: userData
+    LibraryService->>Database: SELECT FROM libraries WHERE id_user = ? AND deleted_at IS NULL
+    Database-->>LibraryService: libraries[]
+    LibraryService->>LibraryService: Calculate libraries.length
+    LibraryService-->>Controller: {libraries, total_libraries}
+----
+
+== Résumé
+
+Le service libraryService est le **gestionnaire de collections personnelles** de l'API BlaBlaBook V2. Il gère **6 opérations principales** avec :
+- **Collections personnalisées** : Création libre de bibliothèques thématiques par utilisateur
+- **Modification flexible** : Renommage et mise à jour des bibliothèques avec contrôle d'unicité intelligent
+- **Contrôle de visibilité** : Basculement public/privé sans restriction
+- **Unicité par utilisateur** : Prévention des doublons de noms au niveau individuel (avec exclusion lors du renommage)
+- **Suppression logique** : Soft delete pour préserver l'intégrité référentielle via `deleted_at`
+- **EntityValidator** : Validation cohérente et contrôle d'accès intégré
+
+**Points clés d'optimisation :**
+- ✅ `.select()` complet approprié (pas de données sensibles dans Library)
+- ✅ Filtrage `isNull(deleted_at)` pour exclure les bibliothèques supprimées
+- ✅ `LIMIT 1` pour les vérifications d'unicité (helpers.checkDuplicateName)
+- ✅ `.returning()` complet pour toutes les opérations de modification
+- ✅ Helpers centralisés pour logique réutilisable (checkDuplicateName)
+- ✅ Constante `LIBRARY_NOT_DELETED` pour cohérence des conditions WHERE
+
+**Il assure la gestion flexible et sécurisée des collections personnelles de livres.**

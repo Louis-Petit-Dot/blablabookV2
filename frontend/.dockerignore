@@ -1,0 +1,66 @@
+# Dependencies (will be regenerated in Docker)
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Next.js build (will be regenerated in Docker)
+.next/
+out/
+build/
+
+# Testing
+coverage/
+.nyc_output/
+**/*.test.ts
+**/*.test.tsx
+**/*.spec.ts
+**/*.spec.tsx
+
+# Environment variables (secrets)
+.env.local
+.env.production
+.env*.local
+!.env.example
+
+# Git
+.git/
+.gitignore
+.gitattributes
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+.editorconfig
+
+# Logs
+*.log
+logs/
+
+# OS files
+.DS_Store
+Thumbs.db
+*.sublime-project
+*.sublime-workspace
+
+# Docker files (not needed in image)
+Dockerfile*
+docker-compose*.yml
+.dockerignore
+
+# Documentation
+*.md
+README.md
+docs/
+
+# Turbo (Next.js 15)
+.turbo/
+
+# Vercel
+.vercel/
+
+# TypeScript
+*.tsbuildinfo

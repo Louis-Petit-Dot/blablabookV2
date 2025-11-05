@@ -1,0 +1,501 @@
+= Flux d'Authentification - auth.ts
+:toc:
+:toclevels: 3
+
+== Vue d'ensemble
+
+Le fichier `auth.ts` contient les utilitaires d'authentification et le middleware JWT pour sécuriser l'API BlaBlaBook V2.
+
+**Architecture de sécurité V2 :**
+
+* **JWT httpOnly Cookie** : Token stocké dans un cookie sécurisé (protection XSS)
+* **Expiration 8h** : Session travail complète sans refresh token
+* **SameSite=Strict** : Protection CSRF automatique
+* **Secure flag** : HTTPS obligatoire en production
+* **Centralisé** : `authUtils` gère set/clear/verify token
+
+== Composants
+
+=== authUtils
+
+Objet contenant 6 fonctions utilitaires pour l'authentification :
+
+==== 1. hashPassword(password: string)
+
+[source,typescript]
+----
+async hashPassword(password: string): Promise<string>
+----
+
+* **Entrée** : Mot de passe en clair (string)
+* **Traitement** : Utilise `argon2.hash()` pour hasher le mot de passe
+* **Sortie** : Hash sécurisé (string)
+* **Usage** : Lors de la création d'un utilisateur (register)
+
+==== 2. verifyPassword(hash: string, password: string)
+
+[source,typescript]
+----
+async verifyPassword(hash: string, password: string): Promise<boolean>
+----
+
+* **Entrée** : Hash stocké en DB + mot de passe saisi
+* **Traitement** : Utilise `argon2.verify()` pour comparer
+* **Sortie** : `true` si valide, `false` sinon
+* **Usage** : Lors de la connexion (login)
+
+==== 3. generateJWT(user)
+
+[source,typescript]
+----
+generateJWT(user: { id_user: string; email: string; username: string }): string
+----
+
+* **Entrée** : Objet utilisateur avec id, email, username
+* **Traitement** : Crée un token JWT signé avec `JWT_SECRET`
+* **Sortie** : Token JWT (expire dans 8h)
+* **Payload** : `{ id, email, username, iat, exp }`
+* **Usage** : Après login/register réussi
+
+==== 4. verifyJWT(token: string)
+
+[source,typescript]
+----
+verifyJWT(token: string): object | null
+----
+
+* **Entrée** : Token JWT
+* **Traitement** : Vérifie la signature avec `JWT_SECRET`
+* **Sortie** : Payload décodé ou `null` si invalide
+* **Usage** : Dans le middleware pour valider les tokens
+
+==== 5. setCookieToken(c: Context, token: string) 🆕
+
+[source,typescript]
+----
+setCookieToken(c: Context, token: string): void
+----
+
+* **Entrée** : Hono Context + token JWT
+* **Traitement** : Définit le header `Set-Cookie` avec flags de sécurité
+* **Cookie** : `access_token=<JWT>; HttpOnly; SameSite=Strict; Path=/; Max-Age=28800`
+* **Secure flag** : Automatiquement ajouté en production (`NODE_ENV=production`)
+* **Usage** : Appelé dans `login()` et `create()` controllers après génération JWT
+* **Sécurité** :
+  - `HttpOnly` : JavaScript ne peut pas lire (protection XSS)
+  - `SameSite=Strict` : Cookie non envoyé sur requêtes cross-origin (protection CSRF)
+  - `Max-Age=28800` : 8 heures (8 × 60 × 60 secondes)
+  - `Secure` : HTTPS uniquement en production
+
+==== 6. clearCookieToken(c: Context) 🆕
+
+[source,typescript]
+----
+clearCookieToken(c: Context): void
+----
+
+* **Entrée** : Hono Context
+* **Traitement** : Définit le header `Set-Cookie` avec `Max-Age=0` pour supprimer le cookie
+* **Cookie** : `access_token=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0`
+* **Usage** : Appelé dans `logout()` controller
+* **Effet** : Le navigateur supprime immédiatement le cookie
+
+=== jwtMiddleware
+
+Middleware Hono pour protéger les routes :
+
+[source,typescript]
+----
+export async function jwtMiddleware(c: Context, next: Next)
+----
+
+* **Extraction** : Lit le cookie `access_token` depuis le header `Cookie`
+* **Parsing** : Parse le header Cookie (format: `cookie1=value1; cookie2=value2`)
+* **Validation** : Utilise `verifyJWT()` pour vérifier signature et expiration
+* **Résultat** : Ajoute `user` au contexte (`c.set('user', decoded)`) ou retourne 401
+
+**Flow :**
+```
+1. Récupère header Cookie → "access_token=eyJhbGc...; csrf_token=abc123"
+2. Split par "; " → ["access_token=eyJhbGc...", "csrf_token=abc123"]
+3. Find cookie startsWith "access_token=" → "access_token=eyJhbGc..."
+4. Split par "=" et prend [1] → "eyJhbGc..."
+5. Vérifie JWT → { id, email, username } ou null
+6. Si valid → tente d'enrichir le contexte utilisateur depuis le cache (Deno KV) :
+  - Récupère `roles` via `cacheService.getUserRoles(id)`
+  - Récupère `permissions` via `cacheService.getUserPermissions(id)`
+  - Si absent du cache, appelle `userRoleService.getUserRoles(id)` et `userRoleService.getUserPermissions(id)` et met en cache les résultats
+  - Calcule `is_admin = roles.some(r => r.role_name.toUpperCase() === 'ADMIN')`
+  - Définit `c.set('user', { ...decoded, roles, permissions, is_admin })`
+7. Si invalid → return 401 Unauthorized
+```
+
+== Flux d'authentification
+
+=== 1. Inscription (Register) - Flow httpOnly Cookie
+
+[mermaid]
+----
+sequenceDiagram
+    participant Client
+    participant Controller
+    participant Service
+    participant AuthUtils
+    participant DB
+
+    Client->>Controller: POST /users (email, password)
+    Controller->>Service: userService.create(userData)
+    Service->>AuthUtils: hashPassword(password)
+    AuthUtils->>Service: hashedPassword
+    Service->>DB: INSERT user avec hash
+    DB->>Service: newUser
+    Service->>AuthUtils: generateJWT(user)
+    AuthUtils->>Service: token JWT
+    Service->>Controller: { user, token }
+    Controller->>AuthUtils: setCookieToken(c, token)
+    AuthUtils->>Controller: Set-Cookie header défini
+    Controller->>Client: 201 Created + Set-Cookie: access_token=JWT; HttpOnly
+    Note over Client: Navigateur stocke automatiquement le cookie
+----
+
+=== 2. Connexion (Login) - Flow httpOnly Cookie
+
+[mermaid]
+----
+sequenceDiagram
+    participant Client
+    participant Controller
+    participant Service
+    participant AuthUtils
+    participant DB
+
+    Client->>Controller: POST /users/login (email, password)
+    Controller->>Service: userService.login(email, password)
+    Service->>DB: SELECT user by email
+    DB->>Service: user with hash
+    Service->>AuthUtils: verifyPassword(hash, password)
+    AuthUtils->>Service: true/false
+    alt Password valide
+        Service->>AuthUtils: generateJWT(user)
+        AuthUtils->>Service: token JWT
+        Service->>Controller: { user, token }
+        Controller->>AuthUtils: setCookieToken(c, token)
+        AuthUtils->>Controller: Set-Cookie header défini
+        Controller->>Client: 200 OK + Set-Cookie: access_token=JWT; HttpOnly
+        Note over Client: Navigateur stocke automatiquement le cookie
+    else Password invalide
+        Service->>Controller: null
+        Controller->>Client: 401 Unauthorized
+    end
+----
+
+=== 3. Route protégée - Flow avec Cookie
+
+[mermaid]
+----
+sequenceDiagram
+    participant Client
+    participant Middleware
+    participant AuthUtils
+    participant Controller
+
+    Note over Client: Navigateur envoie automatiquement le cookie
+    Client->>Middleware: GET /protected (Cookie: access_token=JWT)
+    Middleware->>Middleware: Parse header Cookie
+    Middleware->>Middleware: Extract access_token value
+    Middleware->>AuthUtils: verifyJWT(token)
+    alt Token valide
+        AuthUtils->>Middleware: decoded payload { id, email, username }
+        Middleware->>Middleware: c.set('user', decoded)
+        Middleware->>Controller: next()
+        Controller->>Client: 200 OK + données protégées
+    else Token invalide/expiré
+        AuthUtils->>Middleware: null
+        Middleware->>Client: 401 Unauthorized
+    end
+----
+
+=== 4. Logout - Clear Cookie
+
+[mermaid]
+----
+sequenceDiagram
+    participant Client
+    participant Controller
+    participant AuthUtils
+
+    Client->>Controller: POST /logout (Cookie: access_token=JWT)
+    Controller->>AuthUtils: clearCookieToken(c)
+    AuthUtils->>Controller: Set-Cookie: access_token=; Max-Age=0
+    Controller->>Client: 200 OK + Set-Cookie (Max-Age=0)
+    Note over Client: Navigateur supprime automatiquement le cookie
+----
+
+== Transport des données
+
+=== Anatomie d'une requête HTTP (avec Cookie)
+
+[source,http]
+----
+POST /users/login HTTP/1.1          ← URL + méthode
+Host: localhost:8000                ← Headers
+Content-Type: application/json      ← Headers
+Cookie: access_token=eyJhbGc...     ← Headers (cookie envoyé automatiquement)
+
+{                                   ← BODY (contenu JSON)
+  "email": "user@example.com",
+  "password": "secret123"
+}
+----
+
+**Réponse avec Set-Cookie :**
+[source,http]
+----
+HTTP/1.1 200 OK
+Content-Type: application/json
+Set-Cookie: access_token=eyJhbGc...; HttpOnly; SameSite=Strict; Path=/; Max-Age=28800
+
+{
+  "message": "Login successful",
+  "user": { "id_user": "123", "email": "user@example.com", ... }
+}
+----
+
+NOTE: Le token n'est **jamais** retourné dans le JSON, uniquement dans le cookie Set-Cookie
+
+=== Récupération des données
+
+[cols="1,1,1,1"]
+|===
+|Méthode |Usage |Exemple |Sécurité
+
+|`c.req.param()`
+|URL parameters
+|`/users/:id` → `c.req.param('id')`
+|❌ Visible dans logs
+
+|`c.req.json()`
+|Body JSON
+|`{"password": "..."}` → `c.req.json()`
+|✅ Chiffré HTTPS
+
+|`c.req.header()`
+|Headers HTTP
+|`Authorization: Bearer token`
+|✅ Chiffré HTTPS
+
+|`c.req.query()`
+|Query parameters
+|`?filter=value` → `c.req.query('filter')`
+|❌ Visible dans logs
+|===
+
+=== Sécurité du transport
+
+* **Password** : TOUJOURS dans le body JSON (`c.req.json()`)
+* **Token JWT** : Dans un cookie httpOnly (envoi automatique par navigateur)
+* **IDs** : Peuvent être dans l'URL (`c.req.param('id')`)
+* **Filtres** : Query parameters acceptable (`c.req.query('filter')`)
+
+IMPORTANT: Les passwords ne passent JAMAIS par l'URL !
+
+=== Architecture httpOnly Cookie vs localStorage
+
+[cols="1,2,2"]
+|===
+|Critère |localStorage (❌ V1) |httpOnly Cookie (✅ V2)
+
+|**Stockage**
+|`localStorage.setItem('token', jwt)`
+|Automatique via `Set-Cookie` header
+
+|**Lecture**
+|`localStorage.getItem('token')`
+|Automatique par navigateur (header `Cookie`)
+
+|**Exposition XSS**
+|❌ JavaScript peut lire le token
+|✅ JavaScript ne peut pas lire (HttpOnly)
+
+|**Protection CSRF**
+|✅ Requêtes manuelles uniquement
+|✅ SameSite=Strict bloque cross-origin
+
+|**Expiration**
+|⚠️ Gérée manuellement côté client
+|✅ Max-Age géré par navigateur
+
+|**HTTPS obligatoire**
+|⚠️ Recommandé mais non forcé
+|✅ Secure flag force HTTPS en prod
+
+|**Logout**
+|`localStorage.removeItem('token')`
+|`Set-Cookie: Max-Age=0`
+|===
+
+**Pourquoi httpOnly Cookie ?**
+
+* **Protection XSS** : Même si un script malveillant s'exécute (injection), il ne peut pas lire le token
+* **Simplicité frontend** : Le navigateur gère automatiquement l'envoi du cookie
+* **Sécurité OWASP** : Recommandation officielle pour tokens sensibles
+
+== Configuration
+
+=== Variables d'environnement
+
+* `JWT_SECRET` : Clé secrète pour signer les tokens JWT
+* Définie dans `.env` et documentée dans `.env.example`
+
+=== Sécurité
+
+* **Argon2** : Algorithme de hashage résistant aux attaques
+* **JWT** : Tokens stateless avec expiration (8h)
+* **httpOnly Cookie** : Protection XSS (JavaScript ne peut pas lire)
+* **SameSite=Strict** : Protection CSRF (pas d'envoi cross-origin)
+* **Secure flag** : HTTPS uniquement en production
+* **Gestion d'erreurs** : try/catch pour les tokens invalides
+* **Transport HTTPS** : Body, headers et cookies chiffrés
+
+=== Cycle de vie du token
+
+```
+T0    : Login → Set-Cookie: access_token=JWT; Max-Age=28800
+T+1h  : Requête → Cookie envoyé automatiquement → JWT valide
+T+4h  : Requête → Cookie envoyé automatiquement → JWT valide
+T+8h  : Requête → Cookie envoyé automatiquement → JWT expiré → 401
+T+8h1m: User doit se re-login
+```
+
+**Avantages JWT simple 8h :**
+
+* ✅ Pas de table refresh_tokens en DB
+* ✅ Pas de Redis requis
+* ✅ Stateless maintenu
+* ✅ Session complète (journée travail)
+* ✅ Sécurité suffisante pour MVP
+* ⚠️ Re-login après 8h (acceptable pour UX)
+
+=== Fonctionnement d'Argon2
+
+==== Au Register
+[source,typescript]
+----
+password = "secret123"
+
+// Argon2 génère automatiquement un salt aléatoire unique
+salt = "randomSalt123xyz" (généré automatiquement)
+
+// Hash final contient TOUT
+hash = "$argon2id$v=19$m=65536,t=3,p=4$randomSalt123xyz$iughbciugeiughfhoeyhzdhuzh"
+//     |version|  |paramètres mémoire/temps| |salt inclus| |hash final|
+----
+
+==== Au Login
+[source,typescript]
+----
+passwordSaisi = "secret123"
+hashStocké = "$argon2id$v=19$m=65536,t=3,p=4$randomSalt123xyz$iughbciugeiughfhoeyhzdhuzh"
+
+argon2.verify(hashStocké, passwordSaisi)
+// 1. Extrait le salt du hash : "randomSalt123xyz"
+// 2. Refait le calcul : argon2("secret123" + "randomSalt123xyz" + params)
+// 3. Compare avec le hash stocké → true/false
+----
+
+==== Sécurité Argon2
+* **Salt unique** : Chaque password a un salt différent
+* **Salt inclus** : Pas besoin de stocker le salt séparément
+* **Auto-suffisant** : Le hash contient toute l'information nécessaire
+* **Résistant** : Temps/mémoire configurables contre les attaques
+
+==== Transport vs Stockage
+[cols="1,1,1"]
+|===
+|Phase |HTTP |HTTPS
+
+|**Transport Client→Serveur**
+|❌ Password visible en clair
+|✅ Password chiffré TLS
+
+|**Stockage en DB**
+|✅ Hash Argon2 (jamais le password)
+|✅ Hash Argon2 (jamais le password)
+
+|**Vérification**
+|✅ Argon2.verify() sécurisé
+|✅ Argon2.verify() sécurisé
+|===
+
+IMPORTANT: En production, TOUJOURS utiliser HTTPS !
+
+== Usage dans l'application
+
+=== Backend (Deno + Hono)
+
+[source,typescript]
+----
+// Dans les routes protégées (users-routes.ts)
+import { jwtMiddleware } from '../middlewares/auth.ts';
+userRoutes.get('/', jwtMiddleware, userController.getAll);
+
+// Dans les controllers (userController.ts)
+import { authUtils } from '../middlewares/auth.ts';
+
+// Login: Set cookie
+async login(c: Context) {
+  const result = await userService.login(email, password);
+  authUtils.setCookieToken(c, result.token); // 🆕 Helper centralisé
+  return c.json({ message: 'Login successful', user });
+}
+
+// Logout: Clear cookie
+async logout(c: Context) {
+  authUtils.clearCookieToken(c); // 🆕 Helper centralisé
+  return c.json({ message: 'Logout successful' });
+}
+
+// Route protégée: Récupérer user
+async getById(c: Context) {
+  const currentUser = c.get('user'); // { id, email, username }
+  // currentUser est disponible grâce à jwtMiddleware
+}
+----
+
+=== Frontend (Next.js + Axios)
+
+[source,typescript]
+----
+// Configuration Axios (lib/axios.ts)
+import axios from 'axios';
+
+const api = axios.create({
+  baseURL: 'http://localhost:3000/api',
+  withCredentials: true, // ⚠️ OBLIGATOIRE pour envoyer les cookies
+  headers: {
+    'Content-Type': 'application/json'
+  }
+});
+
+// Login
+await api.post('/users/login', { email, password });
+// → Navigateur reçoit Set-Cookie et stocke automatiquement
+
+// Requête protégée
+const response = await api.get('/users');
+// → Navigateur envoie automatiquement Cookie: access_token=JWT
+
+// Logout
+await api.post('/users/logout');
+// → Navigateur reçoit Set-Cookie: Max-Age=0 et supprime le cookie
+----
+
+**Configuration CORS backend (security.ts) :**
+```typescript
+app.use('*', cors({
+  origin: 'http://localhost:3001', // Frontend URL
+  credentials: true, // ⚠️ OBLIGATOIRE pour les cookies
+}));
+```
+
+NOTE: Le frontend **ne lit jamais** le token. Tout est géré automatiquement par le navigateur.

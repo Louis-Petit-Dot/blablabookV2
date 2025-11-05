@@ -1,0 +1,379 @@
+= Controller AuthorController - Analyse Complète
+:toc:
+:toclevels: 3
+
+== Vue d'ensemble
+
+Le controller authorController constitue la couche de présentation pour la gestion des auteurs dans l'API BlaBlaBook V2. Il expose les endpoints HTTP RESTful pour la consultation, création, suppression des auteurs et la découverte de leurs œuvres via l'intégration OpenLibrary.
+
+== Architecture du controller
+
+=== Rôle dans l'architecture MVC
+Le controller authorController agit comme l'interface HTTP entre le client et la logique métier :
+
+1. **Réception des requêtes** : Parsing des paramètres URL et body JSON
+2. **Validation d'entrée** : Contrôles de base des données reçues
+3. **Délégation métier** : Appel des méthodes d'authorService
+4. **Formatage de réponse** : Sérialisation JSON et codes de statut HTTP
+5. **Gestion d'erreurs** : Transformation des exceptions en réponses HTTP appropriées
+
+=== Intégration avec Hono
+Utilise le framework Hono avec le pattern Context pour :
+- **Type safety** : Typage strict avec `Context` de Hono
+- **Parsing automatique** : `c.req.json()`, `c.req.param()`, `c.req.query()`
+- **Réponses structurées** : `c.json()` avec codes de statut
+- **Gestion middleware** : Support des validations et authentification
+
+== Endpoints disponibles
+
+=== GET /authors - getAll()
+**Objectif:** Récupérer la liste complète des auteurs
+**Méthode HTTP:** GET
+**Paramètres:** Aucun
+**Réponse:** JSON avec liste des auteurs et métadonnées
+
+**Flux de traitement :**
+1. Appel direct à `authorService.getAll()`
+2. Retour JSON immédiat sans transformation
+3. Code de statut 200 (succès)
+
+**Exemple de réponse :**
+```json
+{
+  "authors": [...],
+  "total_authors": 150
+}
+```
+
+=== GET /authors/:id - getById()
+**Objectif:** Récupérer un auteur spécifique par son ID
+**Méthode HTTP:** GET
+**Paramètres:**
+- `id` (URL parameter) : Identifiant de l'auteur
+
+**Flux de traitement :**
+1. Extraction de l'ID depuis `c.req.param('id')`
+2. Appel à `authorService.getById(authorId)`
+3. Gestion d'erreurs avec codes de statut personnalisés
+4. Retour JSON de l'auteur ou erreur
+
+**Gestion d'erreurs spécialisée :**
+```typescript
+try {
+    const result = await authorService.getById(authorId);
+    return c.json(result);
+} catch (error: any) {
+    if (error.status) {
+        return c.json({
+            success: false,
+            error: error.message
+        }, error.status);
+    }
+    throw error; // Re-throw si pas de status personnalisé
+}
+```
+
+**Codes de réponse :**
+- `200` : Auteur trouvé et retourné
+- `404` : Auteur non trouvé
+- `500` : Erreur serveur
+
+=== POST /authors - create()
+**Objectif:** Créer un nouveau auteur
+**Méthode HTTP:** POST
+**Body JSON requis:**
+```json
+{
+  "author_name": "string (obligatoire)",
+  "bio": "string (optionnel)",
+  "wikipedia_url": "string (optionnel, validé)"
+}
+```
+
+**Validations appliquées :**
+1. **Champ obligatoire** : Vérification présence d'`author_name`
+2. **URL Wikipedia** : Validation format si fournie via `authorService.isValidWikipediaUrl()`
+3. **Délégation service** : Appel à `authorService.create()`
+
+**Flux de validation :**
+```typescript
+const authorData = await c.req.json();
+
+if (!authorData.author_name) {
+    throw new Error('author_name is required.');
+}
+
+if (authorData.wikipedia_url && !authorService.isValidWikipediaUrl(authorData.wikipedia_url)) {
+    throw new Error('Invalid Wikipedia URL.');
+}
+```
+
+**Codes de réponse :**
+- `201` : Auteur créé avec succès
+- `400` : Données invalides
+- `409` : Auteur déjà existant (nom en conflit)
+
+=== GET /authors/:name/works - getWorks()
+**Objectif:** Récupérer les œuvres d'un auteur via OpenLibrary
+**Méthode HTTP:** GET
+**Paramètres:**
+- `name` (URL parameter) : Nom de l'auteur
+
+**Flux de traitement :**
+1. Extraction du nom depuis `c.req.param('name')`
+2. Appel à `authorService.getWorks(authorName)`
+3. Retour JSON des œuvres découvertes avec URL Wikipedia
+
+**Données retournées :**
+```json
+{
+  "author": {
+    "name": "string",
+    "wikipediaUrl": "string"
+  },
+  "works": [...] // Œuvres depuis OpenLibrary
+}
+```
+
+**Usage typique :** Découverte d'œuvres pour enrichissement du catalogue local.
+
+=== DELETE /authors/:id - delete()
+**Objectif:** Supprimer définitivement un auteur
+**Méthode HTTP:** DELETE
+**Paramètres:**
+- `id` (URL parameter) : Identifiant de l'auteur
+
+**Flux de traitement :**
+1. Extraction de l'ID depuis `c.req.param('id')`
+2. Appel à `authorService.delete(authorId)`
+3. Retour message de confirmation avec données supprimées
+
+**Réponse de succès :**
+```json
+{
+  "message": "Author deleted successfully.",
+  "author": { /* Données de l'auteur supprimé */ }
+}
+```
+
+**Codes de réponse :**
+- `200` : Suppression réussie
+- `404` : Auteur non trouvé
+- `500` : Erreur serveur
+
+== Gestion des erreurs
+
+=== Stratégie d'erreurs par endpoint
+
+**getById() - Gestion fine :**
+- Capture des erreurs avec `error.status` personnalisé
+- Transformation en réponses JSON structurées
+- Re-throw des erreurs sans status pour handling global
+
+**create() - Validation précoce :**
+- Vérifications côté controller avant appel service
+- Erreurs de validation lancées directement
+- Délégation au service pour erreurs métier
+
+**Autres endpoints - Délégation simple :**
+- Pas de try/catch spécifique
+- Gestion par middleware global d'erreurs
+- Erreurs du service propagées directement
+
+=== Format d'erreur standard
+```json
+{
+  "success": false,
+  "error": "Message d'erreur explicite"
+}
+```
+
+== Patterns de validation
+
+=== Validation côté controller
+Le controller applique des validations de surface :
+- **Champs obligatoires** : Vérification présence des données critiques
+- **Format d'URLs** : Validation Wikipedia via service
+- **Types de base** : Contrôle que les paramètres sont présents
+
+=== Délégation au service
+Les validations métier sont déléguées :
+- **Unicité** : Contrôle des doublons par le service
+- **Existence des entités** : Validation via EntityValidator
+- **Règles métier** : Logique complexe dans la couche service
+
+== Intégration avec les middlewares
+
+=== Middlewares implicites (potentiels)
+- **Authentification** : Vérification des tokens JWT
+- **Autorisation** : Contrôle des permissions par rôle
+- **Validation Zod** : Parsing et validation des schémas d'entrée
+- **Logging** : Enregistrement des requêtes et réponses
+
+=== Utilisation du Context Hono
+```typescript
+// Extraction des paramètres
+const authorId = c.req.param('id');
+const authorName = c.req.param('name');
+
+// Parsing du body JSON
+const authorData = await c.req.json();
+
+// Réponses typées
+return c.json(result, 201);
+```
+
+== Performance et optimisation
+
+=== Délégation efficace
+- **Pas de logique lourde** : Controller léger, logique dans le service
+- **Appels directs** : Pas de transformations de données inutiles
+- **Gestion d'erreurs ciblée** : Try/catch seulement où nécessaire
+
+=== Réponses optimisées
+- **JSON direct** : Retour immédiat des données du service
+- **Codes de statut appropriés** : 200, 201, 404, 500 selon le contexte
+- **Pas de sérialisation complexe** : Données déjà formatées par le service
+
+== Interaction avec authorService
+
+=== Mapping direct des méthodes
+```typescript
+// Controller → Service
+getAll() → authorService.getAll()
+getById(id) → authorService.getById(id)
+create(data) → authorService.create(data)
+getWorks(name) → authorService.getWorks(name)
+delete(id) → authorService.delete(id)
+```
+
+=== Validations partagées
+- **isValidWikipediaUrl()** : Appel direct de la méthode utilitaire du service
+- **Logique métier** : Entièrement déléguée au service
+- **Gestion des erreurs** : Service lève, controller transforme en HTTP
+
+== Sécurité
+
+=== Validations d'entrée
+- **author_name obligatoire** : Prévention des créations incomplètes
+- **URL Wikipedia** : Validation format pour éviter les liens malformés
+- **Sanitisation** : Parsing JSON automatique par Hono
+
+=== Gestion des paramètres
+- **Extraction sécurisée** : Via Hono Context API
+- **Pas de manipulation directe** : Pas d'accès aux headers/query raw
+- **Type safety** : Utilisation des types TypeScript
+
+== Exemple de flux complet
+
+=== Scénario : Création d'un auteur avec découverte d'œuvres
+
+**1. Création de l'auteur :**
+```http
+POST /authors
+Content-Type: application/json
+
+{
+  "author_name": "Brandon Sanderson",
+  "bio": "Auteur de fantasy américain",
+  "wikipedia_url": "https://fr.wikipedia.org/wiki/Brandon_Sanderson"
+}
+```
+
+**Traitement controller :**
+1. Parse du JSON body via `c.req.json()`
+2. Validation `author_name` présent
+3. Validation URL Wikipedia via `authorService.isValidWikipediaUrl()`
+4. Appel `authorService.create(authorData)`
+5. Retour JSON avec code 201
+
+**2. Découverte des œuvres :**
+```http
+GET /authors/Brandon%20Sanderson/works
+```
+
+**Traitement controller :**
+1. Extraction nom via `c.req.param('name')`
+2. Appel `authorService.getWorks("Brandon Sanderson")`
+3. Retour œuvres OpenLibrary + URL Wikipedia générée
+
+== Diagramme de séquence - Création d'auteur
+
+[mermaid]
+----
+sequenceDiagram
+    participant Client
+    participant AuthorController
+    participant AuthorService
+    participant Database
+    participant OpenLibrary
+
+    Note over Client, OpenLibrary: POST /authors
+
+    Client->>AuthorController: POST /authors {author_name, bio, wikipedia_url}
+    AuthorController->>AuthorController: Parse JSON body
+    AuthorController->>AuthorController: Validate author_name présent
+
+    alt Si author_name manquant
+        AuthorController-->>Client: 400 "author_name is required"
+    else Si wikipedia_url fournie
+        AuthorController->>AuthorService: isValidWikipediaUrl(url)
+        AuthorService-->>AuthorController: boolean
+
+        alt Si URL invalide
+            AuthorController-->>Client: 400 "Invalid Wikipedia URL"
+        else URL valide ou pas d'URL
+            AuthorController->>AuthorService: create(authorData)
+            AuthorService->>Database: Validation unicité + création
+            Database-->>AuthorService: newAuthor
+            AuthorService-->>AuthorController: {author: newAuthor}
+            AuthorController-->>Client: 201 {author: newAuthor}
+        end
+    end
+
+    Note over Client, OpenLibrary: GET /authors/:name/works
+
+    Client->>AuthorController: GET /authors/Brandon%20Sanderson/works
+    AuthorController->>AuthorController: Extract name parameter
+    AuthorController->>AuthorService: getWorks("Brandon Sanderson")
+    AuthorService->>OpenLibrary: searchBooks({author: "Brandon Sanderson"})
+    OpenLibrary-->>AuthorService: {docs: [...works]}
+    AuthorService->>AuthorService: buildWikipediaUrl("Brandon Sanderson")
+    AuthorService-->>AuthorController: {author: {name, wikipediaUrl}, works: [...]}
+    AuthorController-->>Client: 200 {author, works}
+----
+
+== Tests et validation
+
+=== Points de test recommandés
+
+**Tests unitaires :**
+- Validation des paramètres d'entrée
+- Gestion des erreurs avec codes de statut
+- Appels corrects aux méthodes du service
+- Format des réponses JSON
+
+**Tests d'intégration :**
+- Endpoints complets avec base de données
+- Validation des workflows création → consultation → suppression
+- Intégration OpenLibrary pour getWorks
+- Gestion des cas d'erreur réseau
+
+**Tests de sécurité :**
+- Validation URL Wikipedia contre XSS
+- Gestion des paramètres malformés
+- Limitation des tailles de requête
+
+== Résumé
+
+Le controller authorController est l'**interface HTTP pour la gestion des auteurs** de l'API BlaBlaBook V2. Il expose **5 endpoints RESTful** avec :
+
+- **Délégation efficace** : Logique métier entièrement dans authorService
+- **Validation d'entrée** : Contrôles de base côté controller, métier côté service
+- **Gestion d'erreurs différenciée** : Fine pour getById, globale pour les autres
+- **Intégration OpenLibrary** : Endpoint de découverte d'œuvres externes
+- **Type safety** : Utilisation complète des types Hono et TypeScript
+- **Codes de statut appropriés** : 200, 201, 400, 404, 409, 500 selon le contexte
+- **Réponses structurées** : JSON cohérent avec métadonnées
+
+**Il assure l'exposition HTTP sécurisée et efficace de la logique de gestion des auteurs.**

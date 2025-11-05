@@ -1,0 +1,101 @@
+@use '../../../styles/variables' as *;
+
+.inputWrapper {
+    width: 100%;
+}
+
+.label {
+    display: block;
+    font-family: $font-base;
+    font-size: 0.875rem;
+    font-weight: 500;
+    color: var(--text-primary);
+    margin-bottom: 0.5rem;
+}
+
+.required {
+    color: var(--error);
+}
+
+.input {
+    width: 100%;
+    padding: 0.75rem 1rem;
+    font-family: $font-base;
+    font-size: 1rem;
+    color: var(--text-primary);
+    background: var(--bg-primary);
+    border: 1px solid var(--text-primary);
+    border-radius: 8px;
+    transition: all 200ms ease;
+
+    // WCAG Focus visible
+    &:focus {
+        outline: none;
+        border-color: var(--error);
+        box-shadow: 0 0 0 3px rgba(193, 119, 103, 0.1);
+    }
+
+    &:focus-visible {
+        outline: 2px solid var(--error);
+        outline-offset: 2px;
+    }
+
+    // Hover
+    &:hover:not(:disabled) {
+        border-color: var(--text-primary);
+    }
+
+    // Disabled
+    &:disabled {
+        background: var(--bg-secondary);
+        color: var(--text-quaternary);
+        cursor: not-allowed;
+        opacity: 0.6;
+    }
+
+    // Placeholder
+    &::placeholder {
+        color: var(--text-quaternary);
+        opacity: 0.7;
+    }
+}
+
+// Etat erreur
+.input.error {
+    border-color: var(--error);
+
+    &:focus {
+        border-color: var(--error);
+        box-shadow: 0 0 0 3px rgba(165, 91, 91, 0.1);
+    }
+}
+
+.errorText {
+    margin-top: 0.5rem;
+    font-size: 0.875rem;
+    color: var(--error);
+    font-weight: 500;
+}
+
+// Etat success
+.input.success {
+    border-color: var(--success);
+
+    &:focus {
+        border-color: var(--success);
+        box-shadow: 0 0 0 3px rgba(94, 139, 126, 0.1);
+    }
+}
+
+.successText {
+    margin-top: 0.5rem;
+    font-size: 0.875rem;
+    color: var(--success);
+    font-weight: 500;
+}
+
+.helperText {
+    margin-top: 0.5rem;
+    font-size: 0.875rem;
+    color: var(--text-quaternary);
+}

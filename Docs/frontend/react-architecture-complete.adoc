@@ -1,0 +1,1199 @@
+= Architecture React Complète - BlaBlaBookV2
+:toc:
+:toc-title: Table des matières
+:sectnums:
+
+== Introduction
+
+Ce document explique en détail comment s'articule l'application React : Vite, React Router, la structure des composants, le flow de données, et les bonnes pratiques.
+
+== Vue d'ensemble du Flow
+
+[source,text]
+----
+Navigateur
+    ↓
+index.html (Point d'entrée HTML)
+    ↓
+main.tsx (Point d'entrée JS/React)
+    ↓
+    ├─→ BrowserRouter (Contexte de routage)
+    └─→ App.tsx (Définition des routes)
+            ↓
+            └─→ Routes (React Router)
+                    ↓
+                    ├─→ Page Component (ex: DemoPage)
+                    │       ↓
+                    │       ├─→ Composants enfants (ex: ApiTest)
+                    │       ├─→ Appels API (via api.ts)
+                    │       └─→ State management (useState, Zustand, etc.)
+                    │
+                    └─→ Styles (SCSS)
+----
+
+== 1. Vite - Le Build Tool
+
+=== Qu'est-ce que Vite ?
+
+**Vite** est un outil de build moderne qui remplace Create React App (CRA).
+
+**Avantages** :
+- ⚡ **Démarrage instantané** : pas de bundling initial
+- 🔥 **Hot Module Replacement (HMR)** ultra-rapide
+- 📦 **Build optimisé** : utilise Rollup en production
+- 🛠️ **Configuration simple**
+
+=== Configuration : vite.config.ts
+
+[source,typescript]
+----
+import { defineConfig } from 'vite'
+import react from '@vitejs/plugin-react'
+
+export default defineConfig({
+    // Plugin React (JSX, Fast Refresh)
+    plugins: [react()],
+
+    // Configuration du serveur de dev
+    server: {
+        port: 3001,  // Port du frontend
+        proxy: {
+            // Redirection des appels /api vers le backend
+            '/api': {
+                target: 'http://localhost:3000',
+                changeOrigin: true
+            }
+        }
+    },
+
+    // Alias de chemins
+    resolve: {
+        alias: {
+            '@': '/src'  // Permet d'écrire import X from '@/components/X'
+        }
+    },
+
+    // Configuration CSS/SCSS
+    css: {
+        preprocessorOptions: {
+            scss: {
+                api: 'modern-compiler'
+            }
+        }
+    }
+})
+----
+
+=== Fonctionnalités clés
+
+==== Hot Module Replacement (HMR)
+
+Lorsque tu modifies un fichier :
+1. Vite détecte le changement
+2. Seul le module modifié est rechargé
+3. L'état de l'application est **préservé**
+4. Pas de rechargement complet de la page
+
+==== Proxy API
+
+[source,typescript]
+----
+proxy: {
+    '/api': {
+        target: 'http://localhost:3000',
+        changeOrigin: true
+    }
+}
+----
+
+**Permet** :
+- Appeler `/api/users` depuis le frontend
+- Vite redirige automatiquement vers `http://localhost:3000/api/users`
+- Évite les problèmes CORS en développement
+
+**Exemple** :
+[source,typescript]
+----
+// Au lieu de :
+await api.get('http://localhost:3000/api/users')
+
+// Tu peux écrire :
+await api.get('/api/users')
+----
+
+==== Alias de chemins
+
+[source,typescript]
+----
+resolve: {
+    alias: {
+        '@': '/src'
+    }
+}
+----
+
+**Permet** :
+[source,typescript]
+----
+// Au lieu de :
+import Button from '../../../components/Button'
+
+// Tu peux écrire :
+import Button from '@/components/Button'
+----
+
+==== Variables d'environnement
+
+Vite expose les variables `VITE_*` via `import.meta.env` :
+
+[source,bash]
+----
+# .env
+VITE_API_URL=http://localhost:3000
+VITE_APP_NAME=BlaBlaBookV2
+----
+
+[source,typescript]
+----
+// Utilisation dans le code
+const apiUrl = import.meta.env.VITE_API_URL
+const appName = import.meta.env.VITE_APP_NAME
+
+// Variables par défaut
+import.meta.env.MODE      // 'development' | 'production'
+import.meta.env.DEV       // true en dev
+import.meta.env.PROD      // true en prod
+----
+
+⚠️ **Important** :
+- Seules les variables `VITE_*` sont exposées au frontend
+- Elles sont **publiques** dans le bundle final
+- Ne jamais y mettre de secrets (API keys, tokens, etc.)
+
+=== Scripts NPM
+
+[source,json]
+----
+"scripts": {
+    "dev": "vite --port 3001",        // Démarre le serveur de dev
+    "build": "tsc && vite build",     // Build de production
+    "preview": "vite preview --port 3001",  // Prévisualise le build
+    "lint": "tsc --noEmit"            // Vérifie les types TypeScript
+}
+----
+
+**`npm run dev`** :
+- Lance Vite en mode développement
+- Active le HMR
+- Serveur disponible sur `http://localhost:3001`
+
+**`npm run build`** :
+1. `tsc` : Vérifie les types TypeScript
+2. `vite build` : Crée le bundle optimisé dans `dist/`
+
+**`npm run preview`** :
+- Sert le build de production localement
+- Permet de tester le bundle avant déploiement
+
+---
+
+== 2. React Router - La Navigation
+
+=== Installation
+
+[source,json]
+----
+"dependencies": {
+    "react-router": "^7.9.3",
+    "react-router-dom": "^7.9.3"
+}
+----
+
+=== Intégration dans main.tsx
+
+[source,typescript]
+----
+import { BrowserRouter } from 'react-router-dom'
+
+createRoot(document.getElementById('root')!).render(
+    <StrictMode>
+        <BrowserRouter>  {/* Fournit le contexte de routage */}
+            <App />
+        </BrowserRouter>
+    </StrictMode>,
+)
+----
+
+**`<BrowserRouter>`** :
+- Utilise l'API `History` du navigateur
+- URL propres : `/about`, `/users/123`
+- Nécessite une config serveur pour les routes (redirections vers index.html)
+
+**Alternatives** :
+- `<HashRouter>` : URLs avec `#` → `/#!/about` (pas de config serveur nécessaire)
+- `<MemoryRouter>` : Pour les tests, pas d'URL dans le navigateur
+
+=== Définition des routes dans App.tsx
+
+[source,typescript]
+----
+import { Routes, Route } from 'react-router-dom'
+import DemoPage from './components/DemoPage'
+
+function App() {
+  return (
+    <div className="app">
+      <Routes>
+        <Route path="/" element={<DemoPage />} />
+      </Routes>
+    </div>
+  )
+}
+----
+
+**Composants React Router** :
+- `<Routes>` : Conteneur de toutes les routes
+- `<Route>` : Définit une route (path → component)
+
+=== Structure de routage avancée
+
+[source,typescript]
+----
+import { Routes, Route, Navigate } from 'react-router-dom'
+
+function App() {
+  return (
+    <div className="app">
+      {/* Layout persistant (optionnel) */}
+      <Header />
+
+      <Routes>
+        {/* Route simple */}
+        <Route path="/" element={<Home />} />
+
+        {/* Route avec paramètre */}
+        <Route path="/users/:id" element={<UserProfile />} />
+
+        {/* Routes imbriquées */}
+        <Route path="/dashboard" element={<DashboardLayout />}>
+          <Route index element={<DashboardHome />} />
+          <Route path="stats" element={<Stats />} />
+          <Route path="settings" element={<Settings />} />
+        </Route>
+
+        {/* Route protégée */}
+        <Route element={<ProtectedRoute />}>
+          <Route path="/profile" element={<Profile />} />
+        </Route>
+
+        {/* Redirection */}
+        <Route path="/old-path" element={<Navigate to="/new-path" replace />} />
+
+        {/* 404 - Doit être en dernier */}
+        <Route path="*" element={<NotFound />} />
+      </Routes>
+
+      <Footer />
+    </div>
+  )
+}
+----
+
+=== Paramètres de route
+
+[source,typescript]
+----
+// Route définie
+<Route path="/users/:id" element={<UserProfile />} />
+
+// Composant UserProfile
+import { useParams } from 'react-router-dom'
+
+function UserProfile() {
+  const { id } = useParams()  // Récupère le paramètre "id" de l'URL
+
+  return <div>Profil de l'utilisateur {id}</div>
+}
+----
+
+**URL** : `/users/123` → `id = "123"`
+
+=== Navigation programmatique
+
+[source,typescript]
+----
+import { useNavigate } from 'react-router-dom'
+
+function LoginForm() {
+  const navigate = useNavigate()
+
+  const handleLogin = async () => {
+    await loginUser()
+    navigate('/dashboard')  // Redirige vers /dashboard
+  }
+
+  return <button onClick={handleLogin}>Se connecter</button>
+}
+----
+
+=== Liens de navigation
+
+[source,typescript]
+----
+import { Link, NavLink } from 'react-router-dom'
+
+function Navigation() {
+  return (
+    <nav>
+      {/* Link simple */}
+      <Link to="/">Accueil</Link>
+      <Link to="/about">À propos</Link>
+
+      {/* NavLink avec classe active */}
+      <NavLink
+        to="/dashboard"
+        className={({ isActive }) => isActive ? 'active' : ''}
+      >
+        Dashboard
+      </NavLink>
+    </nav>
+  )
+}
+----
+
+**Différence Link vs NavLink** :
+- `<Link>` : Navigation simple
+- `<NavLink>` : Ajoute automatiquement une classe `active` quand l'URL correspond
+
+=== Routes protégées
+
+[source,typescript]
+----
+import { Navigate, Outlet } from 'react-router-dom'
+
+function ProtectedRoute() {
+  const isAuthenticated = useAuthStore(state => state.isAuthenticated)
+
+  if (!isAuthenticated) {
+    return <Navigate to="/login" replace />
+  }
+
+  return <Outlet />  // Affiche les routes enfants
+}
+
+// Utilisation
+<Route element={<ProtectedRoute />}>
+  <Route path="/profile" element={<Profile />} />
+  <Route path="/settings" element={<Settings />} />
+</Route>
+----
+
+---
+
+== 3. Structure de l'Application
+
+=== Arborescence recommandée
+
+[source,text]
+----
+frontend/src/
+├── main.tsx                    # Point d'entrée
+├── App.tsx                     # Composant racine + routage
+├── vite-env.d.ts              # Types Vite
+│
+├── components/                 # Composants réutilisables
+│   ├── ui/                    # Composants UI basiques
+│   │   ├── Button.tsx
+│   │   ├── Input.tsx
+│   │   └── Modal.tsx
+│   ├── layout/                # Composants de layout
+│   │   ├── Header.tsx
+│   │   ├── Footer.tsx
+│   │   └── Sidebar.tsx
+│   ├── ApiTest.tsx            # Composants spécifiques
+│   └── DemoPage.tsx
+│
+├── pages/                      # Pages (une par route)
+│   ├── Home.tsx
+│   ├── Login.tsx
+│   ├── Dashboard.tsx
+│   └── NotFound.tsx
+│
+├── features/                   # Fonctionnalités (organisation par domaine)
+│   ├── auth/
+│   │   ├── components/
+│   │   ├── hooks/
+│   │   ├── services/
+│   │   └── stores/
+│   └── users/
+│       ├── components/
+│       ├── hooks/
+│       └── services/
+│
+├── lib/                        # Utilitaires et config
+│   ├── api.ts                 # Instance Axios
+│   └── utils.ts               # Fonctions utilitaires
+│
+├── hooks/                      # Custom hooks globaux
+│   ├── useAuth.ts
+│   └── useFetch.ts
+│
+├── stores/                     # State management (Zustand)
+│   ├── authStore.ts
+│   └── userStore.ts
+│
+├── types/                      # Types TypeScript
+│   ├── api.ts
+│   └── user.ts
+│
+└── styles/                     # Styles globaux
+    ├── index.scss             # Point d'entrée des styles
+    ├── _variables.scss        # Variables SCSS
+    └── demo.scss
+----
+
+=== Différence Pages vs Components
+
+**Pages** (`pages/`) :
+- Un composant par route
+- Contient la structure de la page
+- Orchestre les composants
+- Gère les données (fetch, state)
+
+**Components** (`components/`) :
+- Composants réutilisables
+- Pas de logique métier lourde
+- Props pour la configuration
+- Agnostiques du contexte
+
+**Exemple** :
+
+[source,typescript]
+----
+// pages/Users.tsx (Page)
+function UsersPage() {
+  const [users, setUsers] = useState([])
+
+  useEffect(() => {
+    fetchUsers().then(setUsers)
+  }, [])
+
+  return (
+    <div>
+      <PageHeader title="Utilisateurs" />
+      <UserList users={users} />
+      <Pagination total={users.length} />
+    </div>
+  )
+}
+
+// components/UserList.tsx (Composant)
+interface Props {
+  users: User[]
+}
+
+function UserList({ users }: Props) {
+  return (
+    <ul>
+      {users.map(user => (
+        <UserCard key={user.id} user={user} />
+      ))}
+    </ul>
+  )
+}
+----
+
+---
+
+== 4. Anatomie d'un Composant React
+
+=== Structure de base
+
+[source,typescript]
+----
+import { useState, useEffect } from 'react'
+import './MyComponent.scss'
+
+// 1. Types/Interfaces (si TypeScript)
+interface Props {
+  title: string
+  count?: number  // Optionnel
+}
+
+// 2. Composant fonctionnel
+function MyComponent({ title, count = 0 }: Props) {
+  // 3. Hooks (toujours au début)
+  const [isOpen, setIsOpen] = useState(false)
+
+  useEffect(() => {
+    console.log('Composant monté')
+  }, [])
+
+  // 4. Fonctions handlers
+  const handleClick = () => {
+    setIsOpen(!isOpen)
+  }
+
+  // 5. Render
+  return (
+    <div className="my-component">
+      <h2>{title}</h2>
+      <p>Count: {count}</p>
+      <button onClick={handleClick}>
+        {isOpen ? 'Fermer' : 'Ouvrir'}
+      </button>
+    </div>
+  )
+}
+
+// 6. Export
+export default MyComponent
+----
+
+=== Props (Propriétés)
+
+Les props permettent de passer des données du parent vers l'enfant.
+
+[source,typescript]
+----
+// Parent
+function ParentComponent() {
+  return (
+    <ChildComponent
+      name="Alice"
+      age={25}
+      isActive={true}
+      onUpdate={() => console.log('Updated')}
+    />
+  )
+}
+
+// Enfant
+interface ChildProps {
+  name: string
+  age: number
+  isActive: boolean
+  onUpdate: () => void
+}
+
+function ChildComponent({ name, age, isActive, onUpdate }: ChildProps) {
+  return (
+    <div>
+      <p>{name} - {age} ans</p>
+      {isActive && <span>Actif</span>}
+      <button onClick={onUpdate}>Mettre à jour</button>
+    </div>
+  )
+}
+----
+
+⚠️ **Les props sont en lecture seule** (immutables)
+
+=== State (État local)
+
+Le state gère les données dynamiques du composant.
+
+[source,typescript]
+----
+import { useState } from 'react'
+
+function Counter() {
+  const [count, setCount] = useState(0)  // État initial = 0
+
+  const increment = () => {
+    setCount(count + 1)  // Mise à jour du state
+  }
+
+  return (
+    <div>
+      <p>Count: {count}</p>
+      <button onClick={increment}>+1</button>
+    </div>
+  )
+}
+----
+
+**Règles** :
+- Ne jamais modifier le state directement : ❌ `count++`
+- Toujours utiliser le setter : ✅ `setCount(count + 1)`
+- Le state est local au composant
+
+=== Hooks principaux
+
+==== useState - État local
+
+[source,typescript]
+----
+const [value, setValue] = useState(initialValue)
+----
+
+==== useEffect - Effets de bord
+
+[source,typescript]
+----
+// Exécuté après chaque render
+useEffect(() => {
+  console.log('Render')
+})
+
+// Exécuté une seule fois au montage
+useEffect(() => {
+  console.log('Monté')
+}, [])
+
+// Exécuté quand 'count' change
+useEffect(() => {
+  console.log('Count a changé:', count)
+}, [count])
+
+// Cleanup (nettoyage)
+useEffect(() => {
+  const timer = setInterval(() => console.log('tick'), 1000)
+
+  return () => clearInterval(timer)  // Cleanup
+}, [])
+----
+
+==== Custom hooks
+
+Extraction de logique réutilisable :
+
+[source,typescript]
+----
+// hooks/useFetch.ts
+function useFetch<T>(url: string) {
+  const [data, setData] = useState<T | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<Error | null>(null)
+
+  useEffect(() => {
+    fetch(url)
+      .then(res => res.json())
+      .then(setData)
+      .catch(setError)
+      .finally(() => setLoading(false))
+  }, [url])
+
+  return { data, loading, error }
+}
+
+// Utilisation
+function UserProfile() {
+  const { data: user, loading } = useFetch<User>('/api/users/123')
+
+  if (loading) return <p>Chargement...</p>
+
+  return <div>{user?.name}</div>
+}
+----
+
+---
+
+== 5. Exemple Complet : DemoPage
+
+Analysons le composant `DemoPage.tsx` de ton projet :
+
+[source,typescript]
+----
+import * as Dialog from '@radix-ui/react-dialog'
+import * as DropdownMenu from '@radix-ui/react-dropdown-menu'
+import * as Tabs from '@radix-ui/react-tabs'
+import ApiTest from './ApiTest'
+import '../styles/demo.scss'
+
+function DemoPage() {
+  return (
+    <div className="demo-page">
+      <header className="demo-header">
+        <h1>Démo Radix UI + SCSS</h1>
+        <p>Exemples de composants Radix stylés avec SCSS</p>
+      </header>
+
+      <main className="demo-content">
+        {/* Composant enfant */}
+        <section className="demo-section">
+          <h2>Connexion Backend</h2>
+          <ApiTest />
+        </section>
+
+        {/* Composant Radix Tabs */}
+        <section className="demo-section">
+          <h2>Tabs (Onglets)</h2>
+          <Tabs.Root defaultValue="tab1" className="tabs-root">
+            <Tabs.List className="tabs-list">
+              <Tabs.Trigger value="tab1" className="tabs-trigger">
+                Profil
+              </Tabs.Trigger>
+              <Tabs.Trigger value="tab2" className="tabs-trigger">
+                Messages
+              </Tabs.Trigger>
+            </Tabs.List>
+
+            <Tabs.Content value="tab1" className="tabs-content">
+              <p>Contenu de l'onglet Profil</p>
+            </Tabs.Content>
+            <Tabs.Content value="tab2" className="tabs-content">
+              <p>Contenu de l'onglet Messages</p>
+            </Tabs.Content>
+          </Tabs.Root>
+        </section>
+
+        {/* Dialog (Modale) */}
+        <section className="demo-section">
+          <h2>Dialog (Modale)</h2>
+          <Dialog.Root>
+            <Dialog.Trigger className="button button-primary">
+              Ouvrir la modale
+            </Dialog.Trigger>
+
+            <Dialog.Portal>
+              <Dialog.Overlay className="dialog-overlay" />
+              <Dialog.Content className="dialog-content">
+                <Dialog.Title className="dialog-title">
+                  Titre de la modale
+                </Dialog.Title>
+                <Dialog.Close className="button button-primary">
+                  Confirmer
+                </Dialog.Close>
+              </Dialog.Content>
+            </Dialog.Portal>
+          </Dialog.Root>
+        </section>
+      </main>
+    </div>
+  )
+}
+
+export default DemoPage
+----
+
+**Structure** :
+1. **Imports** : Composants Radix UI, composant enfant, styles
+2. **Composant** : Fonction qui retourne du JSX
+3. **JSX** : Structure HTML-like avec composants React
+4. **Styles** : Classes CSS/SCSS appliquées
+5. **Export** : Rend le composant disponible pour import
+
+---
+
+== 6. Communication entre Composants
+
+=== 1. Props (Parent → Enfant)
+
+[source,typescript]
+----
+function Parent() {
+  const user = { name: 'Alice', age: 25 }
+
+  return <Child user={user} />
+}
+
+function Child({ user }) {
+  return <p>{user.name}</p>
+}
+----
+
+=== 2. Callbacks (Enfant → Parent)
+
+[source,typescript]
+----
+function Parent() {
+  const handleChildClick = (data) => {
+    console.log('Enfant a cliqué:', data)
+  }
+
+  return <Child onAction={handleChildClick} />
+}
+
+function Child({ onAction }) {
+  return <button onClick={() => onAction('test')}>Cliquer</button>
+}
+----
+
+=== 3. Context API (Global)
+
+[source,typescript]
+----
+// Création du contexte
+const AuthContext = createContext(null)
+
+// Provider
+function App() {
+  const [user, setUser] = useState(null)
+
+  return (
+    <AuthContext.Provider value={{ user, setUser }}>
+      <Routes>
+        {/* ... */}
+      </Routes>
+    </AuthContext.Provider>
+  )
+}
+
+// Consommation dans un composant
+function Profile() {
+  const { user } = useContext(AuthContext)
+
+  return <p>{user?.name}</p>
+}
+----
+
+=== 4. Zustand (State global simplifié)
+
+[source,typescript]
+----
+// stores/authStore.ts
+import { create } from 'zustand'
+
+interface AuthState {
+  user: User | null
+  login: (user: User) => void
+  logout: () => void
+}
+
+export const useAuthStore = create<AuthState>((set) => ({
+  user: null,
+  login: (user) => set({ user }),
+  logout: () => set({ user: null })
+}))
+
+// Utilisation dans un composant
+function Profile() {
+  const user = useAuthStore(state => state.user)
+  const logout = useAuthStore(state => state.logout)
+
+  return (
+    <div>
+      <p>{user?.name}</p>
+      <button onClick={logout}>Déconnexion</button>
+    </div>
+  )
+}
+----
+
+---
+
+== 7. Styles avec SCSS
+
+=== Structure SCSS
+
+[source,scss]
+----
+// styles/_variables.scss
+$primary-color: #6366f1;
+$spacing-base: 1rem;
+
+// styles/index.scss
+@import './variables';
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  font-family: system-ui;
+  margin: 0;
+}
+
+// styles/demo.scss
+@import './variables';
+
+.demo-page {
+  padding: $spacing-base * 2;
+
+  .demo-header {
+    text-align: center;
+    margin-bottom: $spacing-base * 3;
+  }
+}
+----
+
+=== Import dans les composants
+
+[source,typescript]
+----
+// Import global (main.tsx)
+import './styles/index.scss'
+
+// Import local (composant)
+import './MyComponent.scss'
+----
+
+=== CSS Modules (alternative)
+
+[source,typescript]
+----
+// MyComponent.module.scss
+.container {
+  padding: 1rem;
+}
+
+// MyComponent.tsx
+import styles from './MyComponent.module.scss'
+
+function MyComponent() {
+  return <div className={styles.container}>...</div>
+}
+----
+
+**Avantages** : Classes scoped automatiquement (pas de conflits)
+
+---
+
+== 8. Appels API
+
+=== Via Axios (api.ts)
+
+[source,typescript]
+----
+import api from '../lib/api'
+
+function UserList() {
+  const [users, setUsers] = useState([])
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    api.get('/api/users')
+      .then(response => setUsers(response.data))
+      .catch(error => console.error(error))
+      .finally(() => setLoading(false))
+  }, [])
+
+  if (loading) return <p>Chargement...</p>
+
+  return (
+    <ul>
+      {users.map(user => (
+        <li key={user.id}>{user.name}</li>
+      ))}
+    </ul>
+  )
+}
+----
+
+=== Avec async/await
+
+[source,typescript]
+----
+useEffect(() => {
+  const fetchUsers = async () => {
+    try {
+      const response = await api.get('/api/users')
+      setUsers(response.data)
+    } catch (error) {
+      console.error(error)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  fetchUsers()
+}, [])
+----
+
+---
+
+== 9. Bonnes Pratiques
+
+=== Organisation
+
+1. **Un composant = Un fichier**
+2. **Nommage** : PascalCase pour les composants (`UserCard.tsx`)
+3. **Props** : Interface TypeScript pour chaque composant
+4. **Décomposition** : Composants petits et réutilisables
+
+=== Performance
+
+1. **Éviter les re-renders inutiles** :
+   [source,typescript]
+   ----
+   const MemoizedComponent = React.memo(MyComponent)
+   ----
+
+2. **useCallback pour les fonctions** :
+   [source,typescript]
+   ----
+   const handleClick = useCallback(() => {
+     // logique
+   }, [dependencies])
+   ----
+
+3. **useMemo pour les calculs lourds** :
+   [source,typescript]
+   ----
+   const expensiveValue = useMemo(() => {
+     return computeExpensiveValue(data)
+   }, [data])
+   ----
+
+=== TypeScript
+
+1. **Typer toutes les props**
+2. **Typer les states complexes**
+3. **Typer les réponses API**
+
+=== Accessibilité
+
+1. **Labels pour les inputs**
+2. **Alt text pour les images**
+3. **ARIA attributes si nécessaire**
+4. **Navigation au clavier**
+
+---
+
+== 10. Workflow de Développement
+
+=== Ajout d'une nouvelle page
+
+1. **Créer le composant** : `pages/NewPage.tsx`
+2. **Ajouter la route** : Dans `App.tsx`
+3. **Créer les composants nécessaires** : `components/`
+4. **Styliser** : Fichier SCSS associé
+5. **Tester** : Naviguer vers `/new-page`
+
+**Exemple complet** :
+
+[source,typescript]
+----
+// 1. pages/About.tsx
+function About() {
+  return (
+    <div className="about-page">
+      <h1>À propos</h1>
+      <p>BlaBlaBook V2</p>
+    </div>
+  )
+}
+
+export default About
+
+// 2. App.tsx
+import About from './pages/About'
+
+function App() {
+  return (
+    <Routes>
+      <Route path="/" element={<Home />} />
+      <Route path="/about" element={<About />} />
+    </Routes>
+  )
+}
+
+// 3. styles/about.scss
+.about-page {
+  padding: 2rem;
+  text-align: center;
+}
+----
+
+=== Ajout d'un composant réutilisable
+
+[source,typescript]
+----
+// components/ui/Button.tsx
+interface ButtonProps {
+  variant?: 'primary' | 'secondary'
+  onClick?: () => void
+  children: React.ReactNode
+}
+
+function Button({ variant = 'primary', onClick, children }: ButtonProps) {
+  return (
+    <button
+      className={`button button-${variant}`}
+      onClick={onClick}
+    >
+      {children}
+    </button>
+  )
+}
+
+export default Button
+
+// Utilisation
+import Button from '@/components/ui/Button'
+
+<Button variant="primary" onClick={() => alert('Cliqué')}>
+  Cliquer ici
+</Button>
+----
+
+---
+
+== 11. Débogage
+
+=== React DevTools
+
+Extension navigateur pour :
+- Inspecter la hiérarchie des composants
+- Voir les props et state en temps réel
+- Profiler les performances
+
+=== Console logs
+
+[source,typescript]
+----
+useEffect(() => {
+  console.log('Composant monté')
+  console.log('Props:', props)
+  console.log('State:', state)
+}, [])
+----
+
+=== React Error Boundaries
+
+[source,typescript]
+----
+class ErrorBoundary extends React.Component {
+  state = { hasError: false }
+
+  static getDerivedStateFromError(error) {
+    return { hasError: true }
+  }
+
+  componentDidCatch(error, errorInfo) {
+    console.error('Error:', error, errorInfo)
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return <h1>Une erreur est survenue</h1>
+    }
+
+    return this.props.children
+  }
+}
+
+// Utilisation
+<ErrorBoundary>
+  <App />
+</ErrorBoundary>
+----
+
+---
+
+== Résumé du Flow Complet
+
+[source,text]
+----
+1. Navigateur charge index.html
+2. index.html charge main.tsx via <script type="module">
+3. main.tsx monte React dans #root avec BrowserRouter
+4. App.tsx définit les routes
+5. User navigue vers /dashboard
+6. React Router affiche le composant Dashboard
+7. Dashboard fait un appel API via api.ts
+8. Axios envoie la requête au backend (avec intercepteurs)
+9. Backend répond avec des données JSON
+10. Dashboard met à jour son state avec les données
+11. React re-render Dashboard avec les nouvelles données
+12. Vite HMR permet de voir les changements instantanément
+----
+
+== Ressources
+
+- link:https://vitejs.dev/[Vite Documentation]
+- link:https://react.dev/[React Documentation]
+- link:https://reactrouter.com/[React Router Documentation]
+- link:https://www.radix-ui.com/[Radix UI Components]
+- link:https://zustand-demo.pmnd.rs/[Zustand State Management]

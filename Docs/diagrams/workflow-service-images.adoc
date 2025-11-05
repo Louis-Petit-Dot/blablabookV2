@@ -1,0 +1,343 @@
+= Workflow Service Images - BlaBlaBook V2
+:toc:
+:toc-title: Sommaire
+:sectnums:
+:icons: font
+:version: 2.0
+:date: {docdate}
+
+// Navigation inter-documents
+link:../README.adoc[📚 Documentation Hub] |
+link:../architecture/service-images.adoc[🏗️ Service Images Architecture] |
+link:../database/BBBV2.sql[🗄️ Database Schema]
+
+---
+
+== Vue d'ensemble
+
+Ce document présente les workflows détaillés du service images de BlaBlaBook V2, couvrant la gestion hybride **Cloudinary + OpenLibrary** avec optimisation éco-responsable.
+
+== Workflow 1 : Upload Avatar Utilisateur
+
+[source,mermaid]
+----
+sequenceDiagram
+    participant U as User
+    participant F as Frontend
+    participant API as Deno/Hono API
+    participant C as Cloudinary
+    participant DB as PostgreSQL
+
+    U->>F: Sélectionne image avatar
+    F->>F: Validation côté client (taille, format)
+    F->>API: POST /api/upload/avatar + FormData
+    API->>API: Validation serveur
+    API->>C: Upload image + transformations
+    C-->>API: URL + metadata
+    API->>DB: UPDATE users SET avatar_url = cloudinary_url
+    API-->>F: Success + avatar_url
+    F-->>U: Affichage nouvel avatar
+----
+
+**Points clés :**
+* ✅ Upload immédiat vers Cloudinary (pas temporaire)
+* ✅ Transformations automatiques (resize, format WebP)
+* ✅ URL Cloudinary stockée en DB
+* ✅ CDN global immédiatement disponible
+
+== Workflow 2A : Ajout Livre Temporaire (OpenLibrary)
+
+[source,mermaid]
+----
+sequenceDiagram
+    participant U as User
+    participant F as Frontend
+    participant API as Deno/Hono API
+    participant OL as OpenLibrary API
+    participant DB as PostgreSQL
+
+    U->>F: Recherche livre par ISBN/titre
+    F->>API: GET /api/books/search?isbn=xxx
+    API->>OL: GET /api/books?bibkeys=ISBN:xxx
+    OL-->>API: Book metadata + cover_id
+    API->>API: Construct OpenLibrary cover URL (taille L)
+    API->>DB: INSERT book (is_temporary=true, image=openlibrary_url)
+    API-->>F: Book data + openlibrary_cover_url
+    F->>F: Affichage avec CSS resize (500px → 256px)
+    F-->>U: Livre affiché avec couverture OpenLibrary
+----
+
+**URLs générées :**
+```typescript
+const coverUrl = `https://covers.openlibrary.org/b/id/${cover_id}-L.jpg`
+// Exemple: https://covers.openlibrary.org/b/id/8552835-L.jpg
+```
+
+== Workflow 2B : Confirmation Livre (Migration vers Cloudinary)
+
+[source,mermaid]
+----
+sequenceDiagram
+    participant U as User
+    participant F as Frontend
+    participant API as Deno/Hono API
+    participant OL as OpenLibrary
+    participant C as Cloudinary
+    participant DB as PostgreSQL
+
+    U->>F: Confirme ajout livre (bouton "Ajouter")
+    F->>API: POST /api/books/:id/confirm
+    API->>DB: SELECT book WHERE is_temporary=true
+    API->>OL: Fetch image depuis openlibrary_url
+    API->>C: Upload image vers Cloudinary
+    C-->>API: cloudinary_url optimisé
+    API->>DB: UPDATE book SET is_temporary=false, image=cloudinary_url
+    API-->>F: Success + new cloudinary_url
+    F->>F: Update src image (OpenLibrary → Cloudinary)
+    F-->>U: Image optimisée via CDN
+----
+
+**Optimisations Cloudinary appliquées :**
+```typescript
+// Transformations automatiques lors de l'upload
+cloudinary.uploader.upload(openlibrary_url, {
+  folder: "blablabookv2/covers",
+  format: "webp",
+  quality: "auto",
+  transformation: [
+    { width: 500, height: 500, crop: "fill" }
+  ]
+})
+```
+
+== Workflow 3 : Cleanup Livres Temporaires (Cron Job)
+
+[source,mermaid]
+----
+sequenceDiagram
+    participant CRON as Cron Job
+    participant API as Cleanup Service
+    participant DB as PostgreSQL
+
+    CRON->>API: Trigger cleanup (daily 2AM)
+    API->>DB: SELECT books WHERE is_temporary=true AND created_at < NOW() - INTERVAL '72 hours'
+    DB-->>API: Liste livres expirés
+
+    loop Pour chaque livre expiré
+        API->>DB: DELETE book WHERE id = expired_book_id
+        Note over API: Pas de nettoyage Cloudinary nécessaire<br/>(jamais uploadé)
+    end
+
+    API->>API: Log cleanup statistics
+----
+
+**Avantage éco-responsable :** Pas de pollution Cloudinary car pas d'upload pour les temporaires !
+
+== Workflow 4 : Affichage Images Multi-Sources
+
+[source,mermaid]
+----
+flowchart TD
+    A[Client demande image] --> B{Type de livre ?}
+    B -->|is_temporary = true| C[Image OpenLibrary]
+    B -->|is_temporary = false| D[Image Cloudinary CDN]
+
+    C --> E[CSS Resize<br/>500px → 256px]
+    D --> E
+
+    E --> F[Affichage uniforme]
+
+    G[Responsive Design] --> H{Taille écran ?}
+    H -->|Mobile| I[128px]
+    H -->|Tablet| J[256px]
+    H -->|Desktop| K[400px]
+
+    I --> L[CSS: object-fit: cover]
+    J --> L
+    K --> L
+----
+
+== Workflow 5 : Gestion Erreurs et Fallbacks
+
+[source,mermaid]
+----
+sequenceDiagram
+    participant F as Frontend
+    participant API as API
+    participant OL as OpenLibrary
+    participant C as Cloudinary
+
+    F->>API: Demande image livre
+
+    alt Image Cloudinary (livre confirmé)
+        API-->>F: cloudinary_url
+        F->>C: GET image
+        alt Cloudinary disponible
+            C-->>F: Image optimisée
+        else Cloudinary en panne
+            F->>F: Fallback placeholder
+        end
+    else Image OpenLibrary (livre temporaire)
+        API-->>F: openlibrary_url
+        F->>OL: GET image
+        alt OpenLibrary disponible
+            OL-->>F: Image originale
+        else OpenLibrary en panne
+            F->>F: Fallback placeholder
+        end
+    end
+
+    F->>F: CSS resize + object-fit
+    F-->>User: Affichage final
+----
+
+**Images de fallback :**
+```css
+.book-cover {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  position: relative;
+}
+
+.book-cover::after {
+  content: "📚";
+  font-size: 4rem;
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+}
+```
+
+== Workflow 6 : Monitoring et Métriques
+
+[source,mermaid]
+----
+graph TB
+    A[Service Images] --> B[Métriques Cloudinary]
+    A --> C[Métriques OpenLibrary]
+    A --> D[Métriques Base de Données]
+
+    B --> B1[Crédits utilisés/25]
+    B --> B2[Bande passante]
+    B --> B3[Transformations]
+    B --> B4[Temps de réponse CDN]
+
+    C --> C1[Taux de succès API]
+    C --> C2[Images manquantes]
+    C --> C3[Temps de réponse]
+
+    D --> D1[Livres temporaires actifs]
+    D --> D2[Livres confirmés]
+    D --> D3[Nettoyages effectués]
+
+    B1 --> E[Dashboard Monitoring]
+    B2 --> E
+    B3 --> E
+    C1 --> E
+    D1 --> E
+----
+
+== Cas d'Usage Spéciaux
+
+=== Migration en masse (si nécessaire)
+
+Si besoin de migrer tous les livres temporaires vers Cloudinary :
+
+[source,typescript]
+----
+// Script de migration
+async function migrateTemporaryBooks() {
+  const temporaryBooks = await db.books.findMany({
+    where: { is_temporary: true }
+  })
+
+  for (const book of temporaryBooks) {
+    try {
+      // Upload vers Cloudinary
+      const result = await cloudinary.uploader.upload(book.image, {
+        folder: "blablabookv2/covers"
+      })
+
+      // Update DB
+      await db.books.update({
+        where: { id: book.id },
+        data: {
+          is_temporary: false,
+          image: result.secure_url
+        }
+      })
+
+    } catch (error) {
+      console.error(`Migration failed for book ${book.id}:`, error)
+    }
+  }
+}
+----
+
+=== Pré-chargement intelligent
+
+Pour améliorer l'UX, pré-charger les couvertures populaires :
+
+[source,typescript]
+----
+// Service de pré-chargement
+async function preloadPopularCovers() {
+  const popularBooks = await db.books.findMany({
+    where: {
+      is_temporary: false,
+      // Critères de popularité : notes, ajouts récents, etc.
+    },
+    take: 100
+  })
+
+  // Warm up du cache Cloudinary
+  popularBooks.forEach(book => {
+    // Fetch silencieux pour mise en cache CDN
+    fetch(book.image).catch(() => {})
+  })
+}
+----
+
+== Configuration Environnement
+
+=== Variables requises
+
+[source,env]
+----
+# Cloudinary
+CLOUDINARY_CLOUD_NAME=blablabookv2
+CLOUDINARY_API_KEY=123456789012345
+CLOUDINARY_API_SECRET=AbCdEfGhIjKlMnOpQrStUvWxYz
+
+# OpenLibrary (pas d'auth requise)
+OPENLIBRARY_BASE_URL=https://openlibrary.org
+OPENLIBRARY_COVERS_URL=https://covers.openlibrary.org
+
+# Upload limits
+MAX_AVATAR_SIZE=5MB
+ALLOWED_FORMATS=jpeg,jpg,png,webp
+----
+
+=== Sécurité
+
+[source,typescript]
+----
+// Validation upload avatar
+const uploadValidation = {
+  maxSize: 5 * 1024 * 1024, // 5MB
+  allowedFormats: ['jpeg', 'jpg', 'png', 'webp'],
+  maxDimensions: { width: 2000, height: 2000 }
+}
+
+// Rate limiting
+const rateLimiter = {
+  upload: '5 requests per minute per IP',
+  search: '100 requests per minute per IP'
+}
+----
+
+---
+
+*Document généré le {date}*
+
+*BlaBlaBook V2 - Service Images Hybride*

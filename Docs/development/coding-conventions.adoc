@@ -1,0 +1,699 @@
+= BlaBlaBook V2 - Coding Conventions / Conventions de Code
+:toc: left
+:toclevels: 3
+:sectanchors:
+:icons: font
+:version: 2.0
+:date: {docdate}
+
+// Navigation inter-documents
+link:../README.adoc[📚 Documentation Hub] |
+link:../cdc/business-requirements.adoc[📋 Business] |
+link:../cdc/technical-architecture.adoc[🏗️ Architecture] |
+link:../cdc/api-specifications.adoc[🛣️ API] |
+link:../cdc/risk-analysis.adoc[⚠️ Risks]
+
+// Navigation langues
+<<section-fr,🇫🇷 Version Française>> | <<section-en,🇬🇧🇺🇸 English Version>>
+
+---
+
+[[section-fr]]
+== 🇫🇷 Conventions de Code
+
+<<section-en,🇬🇧🇺🇸 Switch to English>> | 🇫🇷 *Français*
+
+=== 📋 Règles Générales
+
+==== Langue et Encodage
+
+[cols="2,3,2"]
+|===
+|Élément |Convention |Exemple
+
+|**Code source**
+|100% anglais, sans accents, sans emojis
+|`getUserLibrary()`, `bookStatus`
+
+|**Commentaires**
+|Français, première personne singulier, sans accents
+|`// Je recupere la liste des livres`
+
+|**Documentation**
+|Français/Anglais selon contexte (voir navigation)
+|Fichiers `.adoc` avec sections FR/EN
+
+|**Variables temporaires**
+|Anglais court, explicite
+|`temp`, `result`, `data`
+
+|**Messages d'erreur**
+|Anglais technique (logs), français utilisateur (UI)
+|`Invalid JWT token` / `Mot de passe incorrect`
+|===
+
+=== 🏗️ Conventions de Nommage
+
+==== Modèles de Données (Drizzle)
+
+**Règle : PascalCase avec majuscule initiale**
+
+```typescript
+// ✅ Correct
+export const User = pgTable('users', { ... });
+export const ReadingList = pgTable('reading_lists', { ... });
+export const BookAuthor = pgTable('book_authors', { ... });
+
+// ❌ Incorrect
+export const user = pgTable('users', { ... });
+export const reading_list = pgTable('reading_lists', { ... });
+```
+
+==== Variables et Fonctions
+
+**Règle : camelCase sauf incompatibilités techno**
+
+```typescript
+// ✅ Variables et fonctions
+const userId = 123;
+const bookTitle = "Dune";
+function getUserLibrary() { ... }
+async function createReadingList() { ... }
+
+// ✅ Constantes globales
+const JWT_SECRET = "secret";
+const API_BASE_URL = "https://api.blablabook.com";
+
+// ✅ Interfaces TypeScript
+interface UserProfile {
+  firstName: string;
+  lastName: string;
+  createdAt: Date;
+}
+
+// ✅ Types union
+type BookStatus = 'read' | 'toRead' | 'currentlyReading';
+```
+
+==== Fichiers et Dossiers
+
+**Règle : kebab-case pour fichiers, camelCase pour dossiers de composants**
+
+```
+src/
+├── models/
+│   ├── user.ts               # snake_case pour correspondre aux tables
+│   ├── reading-list.ts       # kebab-case général
+│   └── book-author.ts
+├── routes/
+│   ├── auth-routes.ts
+│   ├── user-routes.ts
+│   └── library-routes.ts
+├── middleware/
+│   ├── jwt-validation.ts
+│   └── rate-limiting.ts
+└── utils/
+    ├── password-hash.ts
+    └── api-response.ts
+```
+
+=== 💬 Conventions de Commentaires
+
+==== Style de Commentaires
+
+**Règle : Français, première personne, sans accents, explicatif**
+
+```typescript
+// ✅ Correct - Français 1ère personne sans accents
+function validateUserInput(data: unknown) {
+  // Je verifie que les donnees sont valides avant traitement
+  if (!data) {
+    // Je retourne une erreur si les donnees sont manquantes
+    throw new Error('Missing data');
+  }
+
+  // Je valide le schema avec Drizzle-Zod
+  return userSchema.parse(data);
+}
+
+// ❌ Incorrect - Anglais ou accents
+// I validate the user input data
+// Je vérifie que les données sont valides
+```
+
+==== Documentation de Fonctions
+
+**Règle : JSDoc en français sans accents + types TypeScript**
+
+```typescript
+/**
+ * Je recupere la bibliotheque personnelle d'un utilisateur
+ * @param userId - Identifiant unique de l'utilisateur
+ * @param status - Filtre optionnel par statut de lecture
+ * @returns Promise resolue avec la liste des livres
+ */
+async function getUserLibrary(
+  userId: number,
+  status?: BookStatus
+): Promise<BookWithStatus[]> {
+  // Je construis la requete de base
+  const baseQuery = db
+    .select()
+    .from(UserBooks)
+    .where(eq(UserBooks.userId, userId));
+
+  // J'ajoute le filtre de statut si fourni
+  if (status) {
+    baseQuery.where(eq(UserBooks.status, status));
+  }
+
+  return await baseQuery;
+}
+```
+
+=== 🎯 Conventions Spécifiques par Technologie
+
+==== Deno & TypeScript
+
+**Imports et Exports**
+
+```typescript
+// ✅ Imports groupés et ordonnés
+import { serve } from "https://deno.land/std@0.200.0/http/server.ts";
+import { Hono } from "https://deno.land/x/hono@v3.12.0/mod.ts";
+
+import { User, ReadingList } from "./models/index.ts";
+import { validateJWT } from "./middleware/auth.ts";
+
+// ✅ Exports nommés privilégiés
+export { getUserLibrary, createBook };
+export type { BookStatus, UserProfile };
+```
+
+**Permissions Deno explicites**
+
+```typescript
+// deno.json - Je definis les permissions necessaires
+{
+  "tasks": {
+    "dev": "deno run --allow-net --allow-read --allow-env src/main.ts"
+  }
+}
+```
+
+==== Drizzle ORM
+
+**Schémas de tables**
+
+```typescript
+// ✅ Noms de tables en snake_case (PostgreSQL convention)
+export const User = pgTable('users', {
+  id: serial('id').primaryKey(),
+  firstName: varchar('first_name', { length: 100 }).notNull(),
+  lastName: varchar('last_name', { length: 100 }).notNull(),
+  createdAt: timestamp('created_at').defaultNow(),
+});
+
+// ✅ Relations avec noms explicites
+export const UserRelations = relations(User, ({ many }) => ({
+  libraries: many(Library),
+  readingLists: many(ReadingList),
+}));
+```
+
+**Requêtes Drizzle**
+
+```typescript
+// ✅ Requetes lisibles avec alias explicites
+const userWithBooks = await db
+  .select({
+    userId: User.id,
+    userName: User.firstName,
+    bookTitle: Book.title,
+    readingStatus: UserBooks.status,
+  })
+  .from(User)
+  .leftJoin(UserBooks, eq(User.id, UserBooks.userId))
+  .leftJoin(Book, eq(UserBooks.bookId, Book.id))
+  .where(eq(User.id, userId));
+```
+
+==== Hono Framework
+
+**Routes et Middleware**
+
+```typescript
+// ✅ Routes groupées logiquement
+const authRoutes = new Hono();
+
+authRoutes.post('/login', async (c) => {
+  // Je recupere les donnees de connexion
+  const { email, password } = await c.req.json();
+
+  // Je valide les donnees avec le schema
+  const validatedData = loginSchema.parse({ email, password });
+
+  // Je continue le processus d'authentification...
+});
+
+// ✅ Middleware avec noms explicites
+app.use('/api/*', jwtAuthMiddleware);
+app.use('/api/admin/*', adminOnlyMiddleware);
+```
+
+=== 🔒 Conventions de Sécurité
+
+==== Gestion des Secrets
+
+```typescript
+// ✅ Variables d'environnement en UPPER_SNAKE_CASE
+const JWT_SECRET = Deno.env.get('JWT_SECRET');
+const DATABASE_URL = Deno.env.get('DATABASE_URL');
+
+// ❌ Jamais de secrets en dur
+const jwtSecret = 'mon-secret-super-securise'; // INTERDIT
+```
+
+==== Validation des Données
+
+```typescript
+// ✅ Toujours valider les entrees utilisateur
+app.post('/api/users', async (c) => {
+  try {
+    // Je recupere et valide les donnees
+    const rawData = await c.req.json();
+    const validatedUser = createUserSchema.parse(rawData);
+
+    // Je continue le traitement...
+  } catch (error) {
+    // Je log l'erreur technique en anglais
+    console.error('User validation failed:', error);
+
+    // Je retourne une erreur utilisateur en français
+    return c.json({ error: 'Donnees utilisateur invalides' }, 400);
+  }
+});
+```
+
+=== 📝 Conventions de Documentation
+
+==== Fichiers README
+
+```markdown
+# Nom du Module
+
+## Description
+Je decris brievement le role du module sans accents.
+
+## Installation
+\`\`\`bash
+deno install --allow-net module.ts
+\`\`\`
+
+## Utilisation
+\`\`\`typescript
+// J'importe le module
+import { functionName } from "./module.ts";
+
+// Je l'utilise dans mon code
+const result = functionName();
+\`\`\`
+```
+
+==== Messages de Commit Git
+
+**Format : `type(scope): description en anglais`**
+
+```bash
+# ✅ Commits en anglais, concis
+git commit -m "feat(auth): add JWT stateless authentication"
+git commit -m "fix(db): resolve user query performance issue"
+git commit -m "docs(api): update endpoint specifications"
+
+# ❌ Commits en français ou avec accents
+git commit -m "ajout authentification JWT"
+git commit -m "correction problème performance"
+```
+
+=== 🧪 Conventions de Tests
+
+**Noms de tests explicites**
+
+```typescript
+// ✅ Tests en anglais avec description claire
+Deno.test("getUserLibrary should return user books with correct status", async () => {
+  // J'arrange les donnees de test
+  const userId = 1;
+  const expectedStatus = 'read';
+
+  // J'execute la fonction testee
+  const result = await getUserLibrary(userId, expectedStatus);
+
+  // Je verifie le resultat
+  assertEquals(result.length, 3);
+  assertTrue(result.every(book => book.status === expectedStatus));
+});
+```
+
+---
+
+[[section-en]]
+== 🇬🇧🇺🇸 Coding Conventions
+
+🇬🇧🇺🇸 *English* | <<section-fr,🇫🇷 Passer au Français>>
+
+=== 📋 General Rules
+
+==== Language and Encoding
+
+[cols="2,3,2"]
+|===
+|Element |Convention |Example
+
+|**Source code**
+|100% English, no accents, no emojis
+|`getUserLibrary()`, `bookStatus`
+
+|**Comments**
+|French, first person singular, no accents
+|`// Je recupere la liste des livres`
+
+|**Documentation**
+|French/English depending on context (see navigation)
+|`.adoc` files with FR/EN sections
+
+|**Temporary variables**
+|Short English, explicit
+|`temp`, `result`, `data`
+
+|**Error messages**
+|Technical English (logs), French user (UI)
+|`Invalid JWT token` / `Mot de passe incorrect`
+|===
+
+=== 🏗️ Naming Conventions
+
+==== Data Models (Drizzle)
+
+**Rule: PascalCase with initial capital**
+
+```typescript
+// ✅ Correct
+export const User = pgTable('users', { ... });
+export const ReadingList = pgTable('reading_lists', { ... });
+export const BookAuthor = pgTable('book_authors', { ... });
+
+// ❌ Incorrect
+export const user = pgTable('users', { ... });
+export const reading_list = pgTable('reading_lists', { ... });
+```
+
+==== Variables and Functions
+
+**Rule: camelCase except for tech incompatibilities**
+
+```typescript
+// ✅ Variables and functions
+const userId = 123;
+const bookTitle = "Dune";
+function getUserLibrary() { ... }
+async function createReadingList() { ... }
+
+// ✅ Global constants
+const JWT_SECRET = "secret";
+const API_BASE_URL = "https://api.blablabook.com";
+
+// ✅ TypeScript interfaces
+interface UserProfile {
+  firstName: string;
+  lastName: string;
+  createdAt: Date;
+}
+
+// ✅ Union types
+type BookStatus = 'read' | 'toRead' | 'currentlyReading';
+```
+
+==== Files and Folders
+
+**Rule: kebab-case for files, camelCase for component folders**
+
+```
+src/
+├── models/
+│   ├── user.ts               # snake_case to match tables
+│   ├── reading-list.ts       # general kebab-case
+│   └── book-author.ts
+├── routes/
+│   ├── auth-routes.ts
+│   ├── user-routes.ts
+│   └── library-routes.ts
+├── middleware/
+│   ├── jwt-validation.ts
+│   └── rate-limiting.ts
+└── utils/
+    ├── password-hash.ts
+    └── api-response.ts
+```
+
+=== 💬 Comment Conventions
+
+==== Comment Style
+
+**Rule: French, first person, no accents, explanatory**
+
+```typescript
+// ✅ Correct - French 1st person without accents
+function validateUserInput(data: unknown) {
+  // Je verifie que les donnees sont valides avant traitement
+  if (!data) {
+    // Je retourne une erreur si les donnees sont manquantes
+    throw new Error('Missing data');
+  }
+
+  // Je valide le schema avec Drizzle-Zod
+  return userSchema.parse(data);
+}
+
+// ❌ Incorrect - English or accents
+// I validate the user input data
+// Je vérifie que les données sont valides
+```
+
+==== Function Documentation
+
+**Rule: JSDoc in French without accents + TypeScript types**
+
+```typescript
+/**
+ * Je recupere la bibliotheque personnelle d'un utilisateur
+ * @param userId - Identifiant unique de l'utilisateur
+ * @param status - Filtre optionnel par statut de lecture
+ * @returns Promise resolue avec la liste des livres
+ */
+async function getUserLibrary(
+  userId: number,
+  status?: BookStatus
+): Promise<BookWithStatus[]> {
+  // Je construis la requete de base
+  const baseQuery = db
+    .select()
+    .from(UserBooks)
+    .where(eq(UserBooks.userId, userId));
+
+  // J'ajoute le filtre de statut si fourni
+  if (status) {
+    baseQuery.where(eq(UserBooks.status, status));
+  }
+
+  return await baseQuery;
+}
+```
+
+=== 🎯 Technology-Specific Conventions
+
+==== Deno & TypeScript
+
+**Imports and Exports**
+
+```typescript
+// ✅ Grouped and ordered imports
+import { serve } from "https://deno.land/std@0.200.0/http/server.ts";
+import { Hono } from "https://deno.land/x/hono@v3.12.0/mod.ts";
+
+import { User, ReadingList } from "./models/index.ts";
+import { validateJWT } from "./middleware/auth.ts";
+
+// ✅ Named exports preferred
+export { getUserLibrary, createBook };
+export type { BookStatus, UserProfile };
+```
+
+**Explicit Deno Permissions**
+
+```typescript
+// deno.json - Je definis les permissions necessaires
+{
+  "tasks": {
+    "dev": "deno run --allow-net --allow-read --allow-env src/main.ts"
+  }
+}
+```
+
+==== Drizzle ORM
+
+**Table Schemas**
+
+```typescript
+// ✅ Table names in snake_case (PostgreSQL convention)
+export const User = pgTable('users', {
+  id: serial('id').primaryKey(),
+  firstName: varchar('first_name', { length: 100 }).notNull(),
+  lastName: varchar('last_name', { length: 100 }).notNull(),
+  createdAt: timestamp('created_at').defaultNow(),
+});
+
+// ✅ Relations with explicit names
+export const UserRelations = relations(User, ({ many }) => ({
+  libraries: many(Library),
+  readingLists: many(ReadingList),
+}));
+```
+
+**Drizzle Queries**
+
+```typescript
+// ✅ Readable queries with explicit aliases
+const userWithBooks = await db
+  .select({
+    userId: User.id,
+    userName: User.firstName,
+    bookTitle: Book.title,
+    readingStatus: UserBooks.status,
+  })
+  .from(User)
+  .leftJoin(UserBooks, eq(User.id, UserBooks.userId))
+  .leftJoin(Book, eq(UserBooks.bookId, Book.id))
+  .where(eq(User.id, userId));
+```
+
+==== Hono Framework
+
+**Routes and Middleware**
+
+```typescript
+// ✅ Logically grouped routes
+const authRoutes = new Hono();
+
+authRoutes.post('/login', async (c) => {
+  // Je recupere les donnees de connexion
+  const { email, password } = await c.req.json();
+
+  // Je valide les donnees avec le schema
+  const validatedData = loginSchema.parse({ email, password });
+
+  // Je continue le processus d'authentification...
+});
+
+// ✅ Middleware with explicit names
+app.use('/api/*', jwtAuthMiddleware);
+app.use('/api/admin/*', adminOnlyMiddleware);
+```
+
+=== 🔒 Security Conventions
+
+==== Secret Management
+
+```typescript
+// ✅ Environment variables in UPPER_SNAKE_CASE
+const JWT_SECRET = Deno.env.get('JWT_SECRET');
+const DATABASE_URL = Deno.env.get('DATABASE_URL');
+
+// ❌ Never hardcode secrets
+const jwtSecret = 'my-super-secure-secret'; // FORBIDDEN
+```
+
+==== Data Validation
+
+```typescript
+// ✅ Always validate user input
+app.post('/api/users', async (c) => {
+  try {
+    // Je recupere et valide les donnees
+    const rawData = await c.req.json();
+    const validatedUser = createUserSchema.parse(rawData);
+
+    // Je continue le traitement...
+  } catch (error) {
+    // Je log l'erreur technique en anglais
+    console.error('User validation failed:', error);
+
+    // Je retourne une erreur utilisateur en français
+    return c.json({ error: 'Donnees utilisateur invalides' }, 400);
+  }
+});
+```
+
+=== 📝 Documentation Conventions
+
+==== README Files
+
+```markdown
+# Module Name
+
+## Description
+Je decris brievement le role du module sans accents.
+
+## Installation
+\`\`\`bash
+deno install --allow-net module.ts
+\`\`\`
+
+## Usage
+\`\`\`typescript
+// J'importe le module
+import { functionName } from "./module.ts";
+
+// Je l'utilise dans mon code
+const result = functionName();
+\`\`\`
+```
+
+==== Git Commit Messages
+
+**Format: `type(scope): description in English`**
+
+```bash
+# ✅ English commits, concise
+git commit -m "feat(auth): add JWT stateless authentication"
+git commit -m "fix(db): resolve user query performance issue"
+git commit -m "docs(api): update endpoint specifications"
+
+# ❌ French commits or with accents
+git commit -m "ajout authentification JWT"
+git commit -m "correction problème performance"
+```
+
+=== 🧪 Testing Conventions
+
+**Explicit test names**
+
+```typescript
+// ✅ English tests with clear description
+Deno.test("getUserLibrary should return user books with correct status", async () => {
+  // J'arrange les donnees de test
+  const userId = 1;
+  const expectedStatus = 'read';
+
+  // J'execute la fonction testee
+  const result = await getUserLibrary(userId, expectedStatus);
+
+  // Je verifie le resultat
+  assertEquals(result.length, 3);
+  assertTrue(result.every(book => book.status === expectedStatus));
+});
+```
+
+---
+
+📏 *Conventions d'équipe BlaBlaBook V2 ! Team conventions for BlaBlaBook V2!*

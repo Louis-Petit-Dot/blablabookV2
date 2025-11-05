@@ -1,0 +1,379 @@
+= Service ReviewService - Analyse Complète (Version Optimisée avec Projections)
+:toc:
+:toclevels: 3
+
+== Vue d'ensemble
+
+Le service reviewService gère toutes les opérations liées aux avis et critiques de livres dans l'API BlaBlaBook V2. Il permet aux utilisateurs de partager leurs opinions sur les livres qu'ils ont lus, de consulter les avis d'autres lecteurs et de maintenir un système de critiques fiable et authentique.
+
+Cette version optimisée intègre des projections explicites pour sélectionner uniquement les données nécessaires, améliorer les performances et garantir la sécurité en excluant les données sensibles comme les mots de passe utilisateurs.
+
+== Fonctions principales
+
+=== getBookReviews
+**Objectif:** Récupérer tous les avis publics pour un livre spécifique
+**Quand:** Utilisé pour afficher les critiques d'un livre dans l'interface
+**Pourquoi important:** Permet aux lecteurs de consulter les opinions d'autres utilisateurs avant de choisir un livre
+
+=== create
+**Objectif:** Créer un nouvel avis sur un livre par un utilisateur
+**Quand:** Utilisé quand un utilisateur souhaite partager son opinion sur un livre
+**Pourquoi important:** Enrichit la base de données de critiques et aide la communauté
+
+=== update
+**Objectif:** Modifier un avis existant par son auteur original
+**Quand:** Utilisé quand un utilisateur veut corriger ou améliorer son avis
+**Pourquoi important:** Permet l'évolution des opinions et la correction d'erreurs
+
+=== delete
+**Objectif:** Supprimer définitivement un avis par son auteur
+**Quand:** Utilisé quand un utilisateur ne souhaite plus que son avis soit visible
+**Pourquoi important:** Donne le contrôle total aux utilisateurs sur leurs contributions
+
+== Fonctionnement du service reviewService
+
+=== Rôle de gestionnaire de critiques littéraires
+Le service reviewService fonctionne comme une bibliothèque de critiques littéraires modernes :
+
+1. **Collecte d'opinions** : Il recueille les avis des lecteurs sur leurs lectures
+2. **Validation de qualité** : Il s'assure que les avis respectent les standards (longueur, contenu approprié)
+3. **Protection de l'authenticité** : Il garantit que chaque utilisateur ne peut donner qu'un avis par livre
+4. **Curation du contenu** : Il filtre les avis publics pour l'affichage communautaire
+5. **Préservation des droits** : Il assure que seuls les auteurs peuvent modifier leurs propres avis
+
+=== Système de validation intégré
+Le service intègre plusieurs niveaux de validation :
+- **Validation des entités** : Vérification que l'utilisateur et le livre existent
+- **Validation des contraintes** : Limite de longueur pour les titres (50 caractères)
+- **Validation d'unicité** : Un seul avis par utilisateur et par livre
+- **Validation de propriété** : Seul l'auteur peut modifier son avis
+
+=== Gestion de la visibilité
+Le système distingue les avis selon leur visibilité :
+- **Avis publics** : Visibles par tous les utilisateurs dans les listes
+- **Avis privés** : Conservés pour l'utilisateur mais non partagés
+- **Filtrage automatique** : Exclusion des avis d'utilisateurs supprimés
+
+== Projections explicites
+
+=== Optimisation de getBookReviews avec SELECT ciblé
+
+Le service utilise des projections explicites pour sélectionner uniquement les champs nécessaires, améliorant ainsi les performances et la sécurité.
+
+**Code de projection :**
+[source,typescript]
+----
+const reviews = await db
+    .select({
+        id_review: Review.id_review,
+        title: Review.title,
+        comment: Review.comment,
+        is_public: Review.is_public,
+        is_spoiler: Review.is_spoiler,
+        created_at: Review.created_at,
+        updated_at: Review.updated_at,
+        user_id: User.id_user,
+        user_username: User.username,
+        user_firstname: User.firstname,
+        user_lastname: User.lastname
+        // IMPORTANT: User.password est EXCLU pour la sécurité
+    })
+    .from(Review)
+    .innerJoin(User, eq(Review.id_user, User.id_user))
+    .where(
+        and(
+            eq(Review.id_book, bookId),
+            eq(Review.is_public, true),
+            isNull(User.deleted_at)
+        )
+    );
+----
+
+**Points clés de sécurité :**
+
+1. **Exclusion du password User** : Le champ `User.password` est délibérément exclu de la sélection pour éviter toute fuite de données sensibles.
+
+2. **Filtrage des utilisateurs supprimés** : `isNull(User.deleted_at)` garantit que seuls les avis d'utilisateurs actifs sont retournés.
+
+3. **Sélection minimale** : Seuls les champs strictement nécessaires sont récupérés, réduisant la charge réseau et mémoire.
+
+== Opérations détaillées
+
+=== Consultation des avis (getBookReviews)
+
+**Fonctionnement en mots simples :**
+Cette fonction agit comme un kiosque à journaux spécialisé qui affiche toutes les critiques publiques d'un livre donné.
+
+**Processus de collecte :**
+1. **Validation du livre** : Vérifie que le livre demandé existe
+2. **Projection explicite avec JOIN** : Récupère uniquement les champs nécessaires avec INNER JOIN User
+3. **Exclusion du password** : Garantit que le mot de passe utilisateur n'est jamais exposé
+4. **Filtrage multicritères** :
+   - `is_public: true` : Affiche uniquement les avis publics
+   - `isNull(User.deleted_at)` : Exclut les utilisateurs supprimés
+5. **Enrichissement des données** : Combine avis et informations auteur sécurisées
+
+**Données retournées :**
+- Informations complètes du livre
+- Liste des avis avec détails auteur (sans password)
+- Compteur total des avis trouvés
+
+=== Création d'avis (create)
+
+**Fonctionnement en mots simples :**
+Cette fonction agit comme un éditeur de journal qui accepte et publie de nouvelles critiques après vérification.
+
+**Processus de validation :**
+1. **Contrôle de longueur** : Vérifie que le titre fait maximum 50 caractères
+2. **Validation de l'utilisateur** : Confirme que l'auteur existe
+3. **Validation du livre** : Confirme que le livre existe
+4. **Vérification d'unicité** : S'assure qu'il n'y a pas déjà un avis de cet utilisateur pour ce livre
+5. **Insertion sécurisée** : Crée le nouvel avis en base
+
+**Protection contre les doublons :**
+Le système empêche qu'un utilisateur crée plusieurs avis pour le même livre, préservant ainsi l'authenticité et évitant le spam.
+
+=== Modification d'avis (update)
+
+**Fonctionnement en mots simples :**
+Cette fonction agit comme un service de correction d'épreuves qui permet aux auteurs de réviser leurs critiques publiées.
+
+**Processus de sécurité :**
+1. **Validation de longueur** : Vérifie la limite de 50 caractères pour le titre si modifié
+2. **Recherche de l'avis** : Trouve l'avis à modifier
+3. **Vérification de propriété** : Confirme que l'utilisateur est bien l'auteur original
+4. **Mise à jour horodatée** : Applique les modifications avec timestamp
+5. **Retour des données** : Fournit l'avis mis à jour
+
+**Protection de l'authorship :**
+Seul l'auteur original peut modifier son avis, préservant l'intégrité des opinions personnelles.
+
+=== Suppression d'avis (delete)
+
+**Fonctionnement en mots simples :**
+Cette fonction agit comme un service de retrait de publication qui permet aux auteurs de supprimer définitivement leurs critiques.
+
+**Processus de vérification :**
+1. **Recherche de l'avis** : Localise l'avis à supprimer
+2. **Vérification de propriété** : Confirme l'authorship
+3. **Suppression définitive** : Retire physiquement l'avis de la base
+4. **Confirmation** : Retourne l'avis supprimé pour confirmation
+
+**Suppression physique vs logique :**
+Contrairement aux utilisateurs, les avis sont supprimés physiquement car ils n'ont pas d'impact sur l'intégrité référentielle d'autres données critiques.
+
+== Validation et contrôles qualité
+
+=== EntityValidator integration
+Le service s'appuie sur EntityValidator pour :
+- **validateUser** : Confirmer l'existence de l'utilisateur auteur
+- **validateBook** : Confirmer l'existence du livre critiqué
+- **Gestion cohérente** : Messages d'erreur standardisés
+
+=== Contrôles métier spécifiques
+Le service applique ses propres règles :
+- **Limite de titre** : Maximum 50 caractères pour la lisibilité (validation stricte)
+- **Unicité par couple** : Un seul avis par utilisateur/livre
+- **Propriété exclusive** : Seul l'auteur peut modifier/supprimer
+- **Validation de longueur de titre** :
+[source,typescript]
+----
+if (reviewData.title.length > 50) {
+    throw new Error('Title must be 50 characters or less.');
+}
+----
+
+=== Horodatage automatique
+Toutes les modifications sont tracées :
+- **created_at** : Timestamp de création automatique
+- **updated_at** : Mise à jour à chaque modification
+- **Traçabilité** : Historique des modifications
+
+== Gestion des erreurs spécialisées
+
+=== Erreurs de validation métier
+- **Titre trop long** : "Title must be 50 characters or less"
+- **Avis déjà existant** : "You already have a review for this book"
+- **Livre inexistant** : Gérée par EntityValidator
+- **Utilisateur inexistant** : Gérée par EntityValidator
+
+=== Erreurs de propriété
+- **Modification non autorisée** : "You can only update your own reviews"
+- **Suppression non autorisée** : "You can only delete your own reviews"
+- **Avis introuvable** : Retour null
+
+=== Gestion des cas limites
+- **Utilisateur supprimé** : Exclusion automatique des résultats
+- **Livre supprimé** : Validation préalable empêche la création
+- **Avis orphelins** : Prévention par les validations
+
+== Performance et optimisation
+
+=== Requêtes optimisées
+- **Jointures ciblées** : INNER JOIN seulement avec User pour les données auteur
+- **Filtrage efficace** : Conditions AND composées pour les critères multiples
+- **Projections explicites** : `.select()` avec champs spécifiques au lieu de SELECT *
+- **Exclusion sécurisée** : Password User jamais inclus dans les résultats
+- **Optimisation LIMIT** : LIMIT 1 utilisé pour les vérifications d'unicité
+
+=== Projections explicites - Avantages
+1. **Performance** : Réduction du volume de données transférées
+2. **Sécurité** : Exclusion garantie des champs sensibles (password)
+3. **Clarté** : Documentation explicite des champs utilisés
+4. **Maintenance** : Facilite les évolutions du schéma
+
+=== Index recommandés
+Pour des performances optimales :
+- **Index composite** : (id_user, id_book) pour l'unicité et les recherches
+- **Index sur id_book** : Pour les recherches par livre (getBookReviews)
+- **Index sur is_public** : Pour le filtrage des avis publics
+- **Index sur deleted_at** : Pour l'exclusion des utilisateurs supprimés
+
+=== Limitation des résultats
+- **LIMIT 1 pour unicité** : Vérification d'existence optimisée avec `.limit(1)`
+- **Filtrage naturel** : Un livre a généralement un nombre limité d'avis
+- **Pas de pagination** : Délégation au niveau contrôleur si nécessaire
+- **Optimisation future** : Possibilité d'ajouter LIMIT selon les besoins
+
+== Interaction avec d'autres services
+
+=== Dépendances directes
+- **EntityValidator** : Validation de l'existence des entités
+- **Database connection** : Opérations CRUD via Drizzle ORM
+
+=== Services connexes
+- **rateService** : Complémentarité avis textuels / notes numériques
+- **userService** : Gestion des auteurs d'avis
+- **bookService** : Gestion des livres critiqués
+
+=== Impact sur d'autres fonctionnalités
+- **Statistiques** : Les avis peuvent alimenter des métriques de popularité
+- **Recommandations** : Base pour des algorithmes de suggestion
+- **Modération** : Fondation pour d'éventuels systèmes de signalement
+
+== Exemple de flux complet
+
+=== Scénario : Un utilisateur veut partager son avis sur un livre qu'il vient de terminer
+
+**Situation de départ :**
+Marc vient de finir "1984" de George Orwell et souhaite partager son opinion avec la communauté BlaBlaBook.
+
+**Traitement par le service :**
+1. **Validation de longueur** : Vérifie que son titre "Une dystopie saisissante !" fait moins de 50 caractères
+2. **Validation des entités** : Confirme que Marc existe et que le livre "1984" est dans la base
+3. **Vérification d'unicité** : S'assure que Marc n'a pas déjà donné son avis sur ce livre
+4. **Création de l'avis** : Insère le nouvel avis avec tous les détails
+5. **Retour confirmation** : Fournit l'avis créé avec son ID unique
+
+**Protection contre les abus :**
+Si Marc essayait de créer un deuxième avis sur le même livre, le système le bloquerait et lui indiquerait qu'il peut utiliser la fonction de modification.
+
+**Résultat :**
+L'avis de Marc enrichit la base de critiques et sera visible par les autres utilisateurs intéressés par "1984".
+
+== Diagramme de séquence - Workflow ReviewService
+
+[mermaid]
+----
+sequenceDiagram
+    participant Controller
+    participant ReviewService
+    participant EntityValidator
+    participant Database
+    participant UserTable
+    participant BookTable
+
+    Note over Controller, BookTable: Exemple: Création d'un nouvel avis
+
+    Controller->>ReviewService: create(reviewData)
+    ReviewService->>ReviewService: Vérifier title.length <= 50
+
+    alt Si titre trop long
+        ReviewService-->>Controller: throw Error("Title must be 50 characters or less")
+    else Titre valide
+        ReviewService->>EntityValidator: validateUser(reviewData.id_user)
+        EntityValidator->>Database: SELECT FROM users WHERE id = ?
+        Database-->>EntityValidator: userData || null
+
+        alt Si utilisateur inexistant
+            EntityValidator-->>ReviewService: throw Error("User not found")
+        else Utilisateur existe
+            ReviewService->>EntityValidator: validateBook(reviewData.id_book)
+            EntityValidator->>Database: SELECT FROM books WHERE id = ?
+            Database-->>EntityValidator: bookData || null
+
+            alt Si livre inexistant
+                EntityValidator-->>ReviewService: throw Error("Book not found")
+            else Livre existe
+                ReviewService->>Database: SELECT FROM reviews WHERE id_user = ? AND id_book = ?
+                Database-->>ReviewService: existingReview || []
+
+                alt Si avis déjà existant
+                    ReviewService-->>Controller: throw Error("You already have a review for this book")
+                else Pas d'avis existant
+                    ReviewService->>Database: INSERT INTO reviews VALUES(reviewData)
+                    Database-->>ReviewService: newReview
+                    ReviewService-->>Controller: newReview
+                end
+            end
+        end
+    end
+
+    Note over Controller, BookTable: Exemple: Consultation des avis d'un livre
+
+    Controller->>ReviewService: getBookReviews(bookId)
+    ReviewService->>EntityValidator: validateBook(bookId)
+    EntityValidator->>Database: SELECT FROM books WHERE id = bookId
+    Database-->>EntityValidator: bookData
+
+    alt Si livre inexistant
+        EntityValidator-->>ReviewService: throw Error("Book not found")
+    else Livre existe
+        ReviewService->>Database: SELECT reviews + user data WHERE book_id = ? AND is_public = true
+        Database-->>ReviewService: publicReviews[]
+        ReviewService->>ReviewService: Combiner book + reviews + total
+        ReviewService-->>Controller: {book, reviews, total_reviews}
+    end
+
+    Note over Controller, BookTable: Exemple: Modification d'un avis
+
+    Controller->>ReviewService: update(reviewId, updateData, userId)
+    ReviewService->>ReviewService: Vérifier title.length <= 50 si présent
+
+    alt Si nouveau titre trop long
+        ReviewService-->>Controller: throw Error("Title must be 50 characters or less")
+    else Titre valide
+        ReviewService->>Database: SELECT FROM reviews WHERE id = reviewId
+        Database-->>ReviewService: existingReview || []
+
+        alt Si avis inexistant
+            ReviewService-->>Controller: null
+        else Avis existe
+            ReviewService->>ReviewService: Vérifier review.id_user === userId
+
+            alt Si pas propriétaire
+                ReviewService-->>Controller: throw Error("You can only update your own reviews")
+            else Propriétaire légitime
+                ReviewService->>Database: UPDATE reviews SET ... WHERE id = reviewId
+                Database-->>ReviewService: updatedReview
+                ReviewService-->>Controller: updatedReview
+            end
+        end
+    end
+----
+
+== Résumé
+
+Le service reviewService est le **gestionnaire de critiques littéraires** de l'API BlaBlaBook V2. Il gère **4 opérations principales** avec :
+- **Projections explicites** : Sélection ciblée des champs avec `.select()` pour performance et sécurité
+- **Exclusion du password User** : Garantie de non-exposition des mots de passe (SÉCURITÉ)
+- **Filtrage des utilisateurs supprimés** : `isNull(User.deleted_at)` pour cohérence des données
+- **Validation multi-niveaux** : Entités, contraintes métier et propriété
+- **Validation longueur titre** : Maximum 50 caractères strictement appliqué
+- **Protection d'unicité** : Un seul avis par utilisateur/livre
+- **Propriété exclusive** : Seuls les auteurs peuvent modifier leurs avis
+- **Filtrage multicritères** : `is_public: true` + utilisateurs actifs uniquement
+- **Optimisation LIMIT** : LIMIT 1 pour vérifications d'existence
+- **Horodatage complet** : Traçabilité de toutes les modifications
+
+**Il assure l'authenticité, la qualité, la sécurité et l'intégrité du système de critiques littéraires de la plateforme.**

@@ -1,0 +1,414 @@
+= React Router v7 - Explications
+:toc:
+:toc-title: Sommaire
+
+== 📍 Fichier : `src/router.tsx`
+
+=== Code Complet
+
+[source,typescript]
+----
+import { createBrowserRouter } from 'react-router-dom'
+
+export const router = createBrowserRouter([
+  {
+    path: '/',
+    element: <div>Public Layout (à créer)</div>,
+    children: [
+      { index: true, element: <div>Home Page</div> },
+      { path: 'login', element: <div>Login Page</div> },
+      { path: 'register', element: <div>Register Page</div> },
+    ],
+  },
+  {
+    path: '/dashboard',
+    element: <div>Dashboard Layout (à créer)</div>,
+    children: [
+      { index: true, element: <div>Dashboard Page</div> },
+    ],
+  },
+])
+----
+
+== 🔍 Explications Ligne par Ligne
+
+=== Ligne 1 : Import
+
+[source,typescript]
+----
+import { createBrowserRouter } from 'react-router-dom'
+----
+
+**Import de la fonction `createBrowserRouter`** depuis React Router v7.
+
+- C'est la nouvelle façon de créer un router (remplace l'ancien `<BrowserRouter>`)
+- Cette fonction permet de définir toutes les routes de manière déclarative
+- Avantage : meilleure performance, data loading, error handling
+
+---
+
+=== Ligne 3 : Export du Router
+
+[source,typescript]
+----
+export const router = createBrowserRouter([
+----
+
+**Création et export du router**.
+
+- On l'exporte pour pouvoir l'importer dans `main.tsx`
+- Le `[` démarre un tableau d'objets routes
+- Chaque objet = une route avec ses enfants
+
+---
+
+=== Lignes 4-5 : Route Parent Publique
+
+[source,typescript]
+----
+  {
+    path: '/',
+----
+
+**Première route** : `/` (racine du site).
+
+- C'est le **parent** de toutes les routes publiques
+- Toutes ses `children` partageront le même layout
+
+---
+
+=== Ligne 6 : Element du Layout
+
+[source,typescript]
+----
+    element: <div>Public Layout (à créer)</div>,
+----
+
+**Élément React à afficher** pour cette route.
+
+- Pour l'instant c'est une `<div>` placeholder
+- Plus tard ce sera `<PublicLayout />` qui contiendra :
+  - Header commun (logo, nav, user menu)
+  - Un `<Outlet />` où s'afficheront les enfants
+  - Footer (optionnel)
+
+---
+
+=== Ligne 7 : Routes Enfants
+
+[source,typescript]
+----
+    children: [
+----
+
+**Routes enfants** : toutes les pages qui seront **wrappées** par le layout parent.
+
+- Ces enfants s'affichent dans un `<Outlet />` du parent
+- Ils héritent automatiquement du layout (Header commun)
+
+---
+
+=== Ligne 8 : Route Index (Home)
+
+[source,typescript]
+----
+      { index: true, element: <div>Home Page</div> },
+----
+
+**Route par défaut du parent**.
+
+- `index: true` signifie "quand on est exactement sur `/`, affiche cet élément"
+- Pas besoin de préciser `path: '/'` car c'est implicite avec `index`
+- Plus tard ce sera `<Home />` avec le Hero, FeaturedBooks, etc.
+
+---
+
+=== Ligne 9 : Route Login
+
+[source,typescript]
+----
+      { path: 'login', element: <div>Login Page</div> },
+----
+
+**Route `/login`**.
+
+- Le path est **relatif au parent**, donc `'/'` + `'login'` = `/login`
+- Affiche la page Login (formulaire email/password, OAuth Google)
+- Hérite du PublicLayout (Header reste visible)
+
+---
+
+=== Ligne 10 : Route Register
+
+[source,typescript]
+----
+      { path: 'register', element: <div>Register Page</div> },
+----
+
+**Route `/register`**.
+
+- Même principe que login
+- Page d'inscription (multistep form : infos → préférences lectures)
+
+---
+
+=== Lignes 11-12 : Fermeture Routes Publiques
+
+[source,typescript]
+----
+    ],
+  },
+----
+
+**Fin des enfants** de la route `/`.
+
+---
+
+=== Lignes 13-14 : Route Parent Dashboard
+
+[source,typescript]
+----
+  {
+    path: '/dashboard',
+----
+
+**Deuxième route parent** : `/dashboard`.
+
+- C'est la zone **authentifiée**
+- Tous ses enfants nécessiteront d'être connecté (protected routes)
+
+---
+
+=== Ligne 15 : Layout Dashboard
+
+[source,typescript]
+----
+    element: <div>Dashboard Layout (à créer)</div>,
+----
+
+**Layout du dashboard**.
+
+- Plus tard ce sera `<DashboardLayout />` avec :
+  - Header (logo, nav, notifications, user menu)
+  - Sidebar (menu navigation dashboard)
+  - `<Outlet />` pour le contenu principal
+  - Protected route (redirection si non authentifié)
+
+---
+
+=== Lignes 16-18 : Enfants Dashboard
+
+[source,typescript]
+----
+    children: [
+      { index: true, element: <div>Dashboard Page</div> },
+    ],
+----
+
+**Route par défaut** : quand on est sur `/dashboard`, affiche cette page.
+
+- `index: true` → route exacte `/dashboard`
+- Plus tard on ajoutera `/dashboard/library`, `/dashboard/lists`, etc.
+
+---
+
+=== Lignes 19-20 : Fermeture
+
+[source,typescript]
+----
+  },
+])
+----
+
+**Fin du tableau de routes**.
+
+- Fermeture de `createBrowserRouter()`
+- Le router est prêt à être utilisé dans `main.tsx`
+
+== 🗺️ Structure des Routes
+
+=== Routes Actuelles
+
+[source]
+----
+/                    → Public Layout
+├── / (index)        → Home Page
+├── /login           → Login Page
+└── /register        → Register Page
+
+/dashboard           → Dashboard Layout
+└── /dashboard (index) → Dashboard Page
+----
+
+=== Routes Futures (Phase 2+)
+
+[source]
+----
+/                    → Public Layout
+├── / (index)        → Home
+├── /login           → Login
+├── /register        → Register
+├── /books           → Catalogue
+├── /books/:id       → Book Detail
+├── /authors/:id     → Author Page
+└── /about           → About
+
+/dashboard           → Dashboard Layout (Protected)
+├── /dashboard (index)        → Dashboard
+├── /dashboard/library        → My Library
+├── /dashboard/lists          → My Reading Lists
+├── /dashboard/lists/:id      → List Detail
+├── /dashboard/reviews        → My Reviews
+└── /dashboard/profile        → Profile
+
+/admin               → Admin Layout (Protected + Role)
+├── /admin (index)            → Admin Dashboard
+├── /admin/users              → User Management
+├── /admin/roles              → Role Management
+├── /admin/permissions        → Permission Management
+└── /admin/moderation         → Content Moderation
+----
+
+== 🔐 Protected Routes (à venir)
+
+=== Principe
+
+Les **protected routes** vérifient si l'utilisateur est authentifié avant d'afficher la page.
+
+=== Implémentation (Phase 2)
+
+[source,typescript]
+----
+// components/ProtectedRoute.tsx
+import { Navigate, Outlet } from 'react-router-dom'
+import { useAuthStore } from '../store/authStore'
+
+export function ProtectedRoute() {
+  const { isAuthenticated } = useAuthStore()
+
+  if (!isAuthenticated) {
+    return <Navigate to="/login" replace />
+  }
+
+  return <Outlet />
+}
+
+// router.tsx
+{
+  path: '/dashboard',
+  element: <ProtectedRoute />, // Vérifie auth AVANT d'afficher le layout
+  children: [
+    {
+      element: <DashboardLayout />, // Layout SI authentifié
+      children: [
+        { index: true, element: <Dashboard /> },
+      ],
+    },
+  ],
+}
+----
+
+=== Role-Based Access (Phase 7)
+
+[source,typescript]
+----
+// components/RoleProtectedRoute.tsx
+export function RoleProtectedRoute({ allowedRoles }: { allowedRoles: string[] }) {
+  const { user } = useAuthStore()
+
+  if (!user || !allowedRoles.includes(user.role)) {
+    return <Navigate to="/dashboard" replace />
+  }
+
+  return <Outlet />
+}
+
+// router.tsx
+{
+  path: '/admin',
+  element: <RoleProtectedRoute allowedRoles={['admin', 'moderator']} />,
+  children: [
+    // Admin routes...
+  ],
+}
+----
+
+== 🧭 Navigation dans les Composants
+
+=== Liens de Navigation
+
+[source,typescript]
+----
+import { Link } from 'react-router-dom'
+
+// Dans un composant
+<Link to="/login">Se connecter</Link>
+<Link to="/dashboard">Mon Dashboard</Link>
+<Link to={`/books/${bookId}`}>Voir le livre</Link>
+----
+
+=== Navigation Programmatique
+
+[source,typescript]
+----
+import { useNavigate } from 'react-router-dom'
+
+function LoginForm() {
+  const navigate = useNavigate()
+
+  const handleLogin = async (data) => {
+    await loginUser(data)
+    navigate('/dashboard') // Redirection après login
+  }
+
+  return <form onSubmit={handleLogin}>...</form>
+}
+----
+
+=== Récupérer les Params d'URL
+
+[source,typescript]
+----
+import { useParams } from 'react-router-dom'
+
+function BookDetail() {
+  const { id } = useParams() // /books/123 → id = "123"
+
+  // Fetch book avec l'id...
+}
+----
+
+== 📋 Prochaines Étapes
+
+1. ✅ Router créé avec placeholders `<div>`
+2. ⏳ Créer les **Layouts** (PublicLayout, DashboardLayout)
+3. ⏳ Créer les **Pages** (Home, Login, Register, Dashboard)
+4. ⏳ Remplacer les `<div>` par les vrais imports dans `router.tsx`
+5. ⏳ Ajouter **ProtectedRoute** pour zone authentifiée
+6. ⏳ Ajouter **RoleProtectedRoute** pour admin
+
+== 🔗 Intégration dans `main.tsx`
+
+Une fois les layouts/pages créés, on intégrera le router :
+
+[source,typescript]
+----
+// main.tsx
+import { StrictMode } from 'react'
+import { createRoot } from 'react-dom/client'
+import { RouterProvider } from 'react-router-dom'
+import { router } from './router'
+import './styles/global.scss'
+
+createRoot(document.getElementById('root')!).render(
+  <StrictMode>
+    <RouterProvider router={router} />
+  </StrictMode>,
+)
+----
+
+**Explications** :
+
+- `RouterProvider` : Composant qui rend le router actif
+- `router={router}` : On passe notre router créé dans `router.tsx`
+- Plus besoin de `<App />`, le router gère tout

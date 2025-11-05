@@ -1,0 +1,17 @@
+@use '../styles/variables' as *;
+
+// ============================================
+// PUBLIC LAYOUT - Structure de base
+// ============================================
+
+.publicLayout {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+}
+
+.publicMain {
+  flex: 1; // Prend tout l'espace disponible
+}
+
+

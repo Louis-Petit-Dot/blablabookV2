@@ -1,0 +1,1210 @@
+= Exercice : Créer Input WCAG 2.2 AA depuis zéro
+:toc:
+:toclevels: 3
+
+== Objectif
+
+Apprendre à créer un composant Input **accessible WCAG 2.2 AA** en partant de zéro, étape par étape.
+
+**Durée estimée :** 3-4 heures (+ 2h lecture docs)
+
+**Prérequis :**
+- Connaissances React de base
+- Projet React + TypeScript configuré
+
+---
+
+== ÉTAPE 1 : Version minimale (10 min)
+
+=== Objectif
+
+Créer un Input React basique fonctionnel.
+
+=== Code à écrire
+
+Crée `Input-v2.tsx` dans un dossier de test :
+
+[source,typescript]
+----
+// Input-v2.tsx - VERSION 1
+export function Input({ label, type = "text" }) {
+  return (
+    <div>
+      <label>{label}</label>
+      <input type={type} />
+    </div>
+  )
+}
+----
+
+=== Utilisation test
+
+[source,tsx]
+----
+<Input label="Email" type="email" />
+----
+
+=== ✅ Validation
+
+- [ ] Le label s'affiche
+- [ ] L'input est fonctionnel
+- [ ] Le type est appliqué
+
+=== 📚 Ressources
+
+Aucune ressource nécessaire, c'est du React de base.
+
+---
+
+== ÉTAPE 2 : Ajouter TypeScript (15 min)
+
+=== Objectif
+
+Typer les props pour avoir l'autocomplétion et éviter les erreurs.
+
+=== Code à écrire
+
+[source,typescript]
+----
+// Input-v2.tsx - VERSION 2
+interface InputProps {
+  label: string
+  type?: string  // ? = optionnel
+}
+
+export function Input({ label, type = "text" }: InputProps) {
+  return (
+    <div>
+      <label>{label}</label>
+      <input type={type} />
+    </div>
+  )
+}
+----
+
+=== 📚 Ressources
+
+**React + TypeScript Cheatsheet :**
+https://react-typescript-cheatsheet.netlify.app/docs/basic/getting-started/basic_type_example/
+
+**Doc officielle React TypeScript :**
+https://react.dev/learn/typescript
+
+**Grafikart - TypeScript (français) :**
+https://grafikart.fr/formations/typescript
+
+=== ✅ Validation
+
+- [ ] Autocomplétion fonctionne dans VSCode
+- [ ] Erreur TypeScript si prop invalide
+- [ ] `type` est optionnel (pas d'erreur si omis)
+
+=== 💡 Concepts clés
+
+- `interface` : Définit la structure des props
+- `?` : Rend une propriété optionnelle
+- `: InputProps` : Type les paramètres de fonction
+
+---
+
+== ÉTAPE 3 : Hériter les props HTML (20 min)
+
+=== Objectif
+
+Permettre d'utiliser TOUS les attributs HTML d'un `<input>` (placeholder, onChange, disabled, etc.) sans les redéfinir.
+
+=== Code à écrire
+
+[source,typescript]
+----
+// Input-v2.tsx - VERSION 3
+import { InputHTMLAttributes } from "react"
+
+interface InputProps extends InputHTMLAttributes<HTMLInputElement> {
+  label: string
+}
+
+export function Input({ label, ...props }: InputProps) {
+  return (
+    <div>
+      <label>{label}</label>
+      <input {...props} />
+    </div>
+  )
+}
+----
+
+=== Utilisation test
+
+[source,tsx]
+----
+<Input
+  label="Email"
+  type="email"
+  placeholder="exemple@email.com"
+  onChange={(e) => console.log(e.target.value)}
+  disabled={false}
+/>
+----
+
+=== 📚 Ressources
+
+**React TypeScript Cheatsheet - Props :**
+https://react-typescript-cheatsheet.netlify.app/docs/basic/getting-started/basic_type_example/#useful-react-prop-type-examples
+
+**MDN - Spread syntax :**
+https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Operators/Spread_syntax
+
+=== ✅ Validation
+
+- [ ] `placeholder` fonctionne
+- [ ] `onChange` fonctionne
+- [ ] `disabled` fonctionne
+- [ ] Autocomplétion pour TOUS les attributs HTML
+
+=== 💡 Concepts clés
+
+- `extends` : Hérite d'une interface existante
+- `InputHTMLAttributes<HTMLInputElement>` : Type React pour tous les attributs d'un `<input>`
+- `...props` : Rest operator - capture tous les props non destructurés
+- `{...props}` : Spread operator - applique tous les props sur l'élément
+
+---
+
+== ÉTAPE 4 : Ajouter validation d'erreur (25 min)
+
+=== Objectif
+
+Afficher un message d'erreur et styliser l'input en rouge si erreur.
+
+=== Code à écrire
+
+[source,typescript]
+----
+// Input-v2.tsx - VERSION 4
+import { InputHTMLAttributes } from "react"
+
+interface InputProps extends InputHTMLAttributes<HTMLInputElement> {
+  label: string
+  error?: string
+}
+
+export function Input({ label, error, className = "", ...props }: InputProps) {
+  return (
+    <div style={{ marginBottom: '1rem' }}>
+      <label style={{ display: 'block', marginBottom: '0.25rem' }}>
+        {label}
+      </label>
+
+      <input
+        className={`input ${error ? 'input-error' : ''} ${className}`}
+        style={{
+          padding: '0.5rem',
+          border: error ? '2px solid red' : '1px solid #ccc',
+          borderRadius: '4px',
+          width: '100%'
+        }}
+        {...props}
+      />
+
+      {error && (
+        <p style={{ color: 'red', fontSize: '0.875rem', marginTop: '0.25rem' }}>
+          {error}
+        </p>
+      )}
+    </div>
+  )
+}
+----
+
+=== Utilisation test
+
+[source,tsx]
+----
+// Sans erreur
+<Input label="Email" type="email" />
+
+// Avec erreur
+<Input
+  label="Email"
+  type="email"
+  error="Email invalide"
+/>
+----
+
+=== 📚 Ressources
+
+**React - Conditional Rendering :**
+https://react.dev/learn/conditional-rendering
+
+**Template literals (backticks) :**
+https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Template_literals
+
+=== ✅ Validation
+
+- [ ] Message d'erreur s'affiche quand `error` existe
+- [ ] Border rouge si erreur
+- [ ] Message masqué si pas d'erreur
+- [ ] Classe CSS dynamique appliquée
+
+=== 💡 Concepts clés
+
+- `{error && <p>...</p>}` : Rendu conditionnel - affiche seulement si `error` est truthy
+- Template literals : `${variable}` pour injecter variables dans string
+- Ternaire : `condition ? valeurSiVrai : valeurSiFaux`
+
+---
+
+== ÉTAPE 5 : Ajouter forwardRef (30 min)
+
+=== Objectif
+
+Permettre à React Hook Form (ou autre lib) de contrôler l'input via une ref.
+
+=== Code à écrire
+
+[source,typescript]
+----
+// Input-v2.tsx - VERSION 5
+import { InputHTMLAttributes, forwardRef } from "react"
+
+interface InputProps extends InputHTMLAttributes<HTMLInputElement> {
+  label: string
+  error?: string
+}
+
+export const Input = forwardRef<HTMLInputElement, InputProps>(
+  ({ label, error, className = "", ...props }, ref) => {
+    return (
+      <div style={{ marginBottom: '1rem' }}>
+        <label style={{ display: 'block', marginBottom: '0.25rem' }}>
+          {label}
+        </label>
+
+        <input
+          ref={ref}  // ⭐ Ajout de la ref
+          className={`input ${error ? 'input-error' : ''} ${className}`}
+          style={{
+            padding: '0.5rem',
+            border: error ? '2px solid red' : '1px solid #ccc',
+            borderRadius: '4px',
+            width: '100%'
+          }}
+          {...props}
+        />
+
+        {error && (
+          <p style={{ color: 'red', fontSize: '0.875rem', marginTop: '0.25rem' }}>
+            {error}
+          </p>
+        )}
+      </div>
+    )
+  }
+)
+
+Input.displayName = "Input"  // Pour React DevTools
+----
+
+=== Utilisation test avec React Hook Form
+
+[source,tsx]
+----
+import { useForm } from 'react-hook-form'
+
+function MyForm() {
+  const { register, handleSubmit, formState: { errors } } = useForm()
+
+  const onSubmit = (data) => console.log(data)
+
+  return (
+    <form onSubmit={handleSubmit(onSubmit)}>
+      <Input
+        label="Email"
+        {...register('email', { required: 'Email requis' })}
+        error={errors.email?.message}
+      />
+      <button type="submit">Envoyer</button>
+    </form>
+  )
+}
+----
+
+=== 📚 Ressources
+
+**React - forwardRef :**
+https://react.dev/reference/react/forwardRef
+
+**React Hook Form - Get Started :**
+https://react-hook-form.com/get-started
+
+**React Hook Form - register API :**
+https://react-hook-form.com/docs/useform/register
+
+=== ✅ Validation
+
+- [ ] Intégration React Hook Form fonctionne
+- [ ] Validation erreur affichée
+- [ ] Submit formulaire fonctionne
+- [ ] DevTools affiche "Input" (pas "ForwardRef")
+
+=== 💡 Concepts clés
+
+- `forwardRef` : HOC qui permet de passer une ref au composant enfant
+- Syntaxe : `forwardRef<TypeElement, TypeProps>((props, ref) => {...})`
+- `displayName` : Nom affiché dans React DevTools
+
+---
+
+== ÉTAPE 6 : Ajouter WCAG - Jour 1 (30 min)
+
+=== Objectif WCAG
+
+**Critère 3.3.2 - Labels or Instructions (Niveau A) :**
+Lier le label à l'input pour que :
+- Cliquer sur le label focus l'input
+- Screen readers annoncent le label
+
+=== Code à écrire
+
+[source,typescript]
+----
+// Input-v2.tsx - VERSION 6.1
+import { InputHTMLAttributes, forwardRef } from "react"
+
+interface InputProps extends InputHTMLAttributes<HTMLInputElement> {
+  label: string
+  error?: string
+}
+
+export const Input = forwardRef<HTMLInputElement, InputProps>(
+  ({ label, error, className = "", id, ...props }, ref) => {
+    // ⭐ Génère ID automatique si non fourni
+    const inputId = id || label.toLowerCase().replace(/\s+/g, '-')
+
+    return (
+      <div style={{ marginBottom: '1rem' }}>
+        <label
+          htmlFor={inputId}  // ⭐ Lie label à input
+          style={{ display: 'block', marginBottom: '0.25rem' }}
+        >
+          {label}
+        </label>
+
+        <input
+          ref={ref}
+          id={inputId}  // ⭐ ID sur input
+          className={`input ${error ? 'input-error' : ''} ${className}`}
+          style={{
+            padding: '0.5rem',
+            border: error ? '2px solid red' : '1px solid #ccc',
+            borderRadius: '4px',
+            width: '100%'
+          }}
+          {...props}
+        />
+
+        {error && (
+          <p style={{ color: 'red', fontSize: '0.875rem', marginTop: '0.25rem' }}>
+            {error}
+          </p>
+        )}
+      </div>
+    )
+  }
+)
+
+Input.displayName = "Input"
+----
+
+=== 📚 Ressources
+
+**WCAG 2.2 - Critère 3.3.2 :**
+https://www.w3.org/WAI/WCAG22/Understanding/labels-or-instructions.html
+
+**MDN - label element :**
+https://developer.mozilla.org/en-US/docs/Web/HTML/Element/label
+
+**WebAIM - Creating Accessible Forms :**
+https://webaim.org/techniques/forms/controls
+
+=== ✅ Validation manuelle
+
+Test 1 : **Cliquer sur le label**
+- [ ] L'input reçoit le focus
+
+Test 2 : **Inspecter le DOM**
+- [ ] `<label htmlFor="email">` a le bon ID
+- [ ] `<input id="email">` a le même ID
+
+=== 💡 Concepts clés
+
+- `htmlFor` : Équivalent JSX de l'attribut HTML `for`
+- Lier label et input via ID permet navigation keyboard et screen readers
+
+---
+
+== ÉTAPE 6 : Ajouter WCAG - Jour 2 (30 min)
+
+=== Objectif WCAG
+
+**Critère 3.3.1 - Error Identification (Niveau A) :**
+Indiquer aux screen readers qu'il y a une erreur.
+
+=== Code à écrire
+
+[source,typescript]
+----
+// Modifier uniquement la balise <input>
+<input
+  ref={ref}
+  id={inputId}
+  className={`input ${error ? 'input-error' : ''} ${className}`}
+  aria-invalid={error ? 'true' : 'false'}  // ⭐ AJOUT
+  style={{
+    padding: '0.5rem',
+    border: error ? '2px solid red' : '1px solid #ccc',
+    borderRadius: '4px',
+    width: '100%'
+  }}
+  {...props}
+/>
+----
+
+=== 📚 Ressources
+
+**WCAG 2.2 - Critère 3.3.1 :**
+https://www.w3.org/WAI/WCAG22/Understanding/error-identification.html
+
+**MDN - aria-invalid :**
+https://developer.mozilla.org/en-US/docs/Web/Accessibility/ARIA/Attributes/aria-invalid
+
+**WAI-ARIA Authoring Practices - Forms :**
+https://www.w3.org/WAI/ARIA/apg/patterns/alert/examples/alert/
+
+=== ✅ Validation avec screen reader
+
+**Installer NVDA (Windows gratuit) :**
+https://www.nvaccess.org/download/
+
+**Tester :**
+1. Lance NVDA
+2. Tab vers l'input avec erreur
+3. Screen reader annonce : "Email, zone de texte, invalide"
+
+- [ ] Annonce "invalide" si `aria-invalid="true"`
+- [ ] N'annonce PAS "invalide" si pas d'erreur
+
+=== 💡 Concepts clés
+
+- `aria-invalid` : Attribut ARIA qui indique si la valeur est invalide
+- Valeurs possibles : `"true"`, `"false"`, `"grammar"`, `"spelling"`
+
+---
+
+== ÉTAPE 6 : Ajouter WCAG - Jour 3 (30 min)
+
+=== Objectif WCAG
+
+**Critère 3.3.3 - Error Suggestion (Niveau AA) :**
+Lier le message d'erreur à l'input pour que screen readers le lisent automatiquement.
+
+=== Code à écrire
+
+[source,typescript]
+----
+export const Input = forwardRef<HTMLInputElement, InputProps>(
+  ({ label, error, className = "", id, ...props }, ref) => {
+    const inputId = id || label.toLowerCase().replace(/\s+/g, '-')
+
+    return (
+      <div style={{ marginBottom: '1rem' }}>
+        <label htmlFor={inputId} style={{ display: 'block', marginBottom: '0.25rem' }}>
+          {label}
+        </label>
+
+        <input
+          ref={ref}
+          id={inputId}
+          className={`input ${error ? 'input-error' : ''} ${className}`}
+          aria-invalid={error ? 'true' : 'false'}
+          aria-describedby={error ? `${inputId}-error` : undefined}  // ⭐ AJOUT
+          style={{
+            padding: '0.5rem',
+            border: error ? '2px solid red' : '1px solid #ccc',
+            borderRadius: '4px',
+            width: '100%'
+          }}
+          {...props}
+        />
+
+        {error && (
+          <p
+            id={`${inputId}-error`}  // ⭐ ID lié par aria-describedby
+            style={{ color: 'red', fontSize: '0.875rem', marginTop: '0.25rem' }}
+          >
+            {error}
+          </p>
+        )}
+      </div>
+    )
+  }
+)
+----
+
+=== 📚 Ressources
+
+**WCAG 2.2 - Critère 3.3.3 :**
+https://www.w3.org/WAI/WCAG22/Understanding/error-suggestion.html
+
+**MDN - aria-describedby :**
+https://developer.mozilla.org/en-US/docs/Web/Accessibility/ARIA/Attributes/aria-describedby
+
+**A11y 101 - Error Messages :**
+https://www.a11y-101.com/development/aria-describedby
+
+=== ✅ Validation avec screen reader
+
+1. Lance NVDA
+2. Tab vers l'input avec erreur
+3. Screen reader annonce : "Email, zone de texte, invalide, Email invalide"
+
+- [ ] Message d'erreur lu automatiquement
+- [ ] Pas de double lecture si pas d'erreur
+
+=== 💡 Concepts clés
+
+- `aria-describedby` : Lie un élément à une description (par ID)
+- Screen reader lit automatiquement l'élément pointé après le label
+- Peut pointer vers plusieurs IDs : `aria-describedby="id1 id2"`
+
+---
+
+== ÉTAPE 6 : Ajouter WCAG - Jour 4 (30 min)
+
+=== Objectif WCAG
+
+**Critère 4.1.3 - Status Messages (Niveau AA) :**
+Annoncer immédiatement les erreurs sans que l'user doive naviguer dessus.
+
+=== Code à écrire
+
+[source,typescript]
+----
+{error && (
+  <p
+    id={`${inputId}-error`}
+    role="alert"  // ⭐ AJOUT
+    style={{ color: 'red', fontSize: '0.875rem', marginTop: '0.25rem' }}
+  >
+    {error}
+  </p>
+)}
+----
+
+=== 📚 Ressources
+
+**WCAG 2.2 - Critère 4.1.3 :**
+https://www.w3.org/WAI/WCAG22/Understanding/status-messages.html
+
+**MDN - role="alert" :**
+https://developer.mozilla.org/en-US/docs/Web/Accessibility/ARIA/Roles/alert_role
+
+**WAI-ARIA - Alert Role :**
+https://www.w3.org/WAI/ARIA/apg/patterns/alert/
+
+=== ✅ Validation avec screen reader
+
+1. Lance NVDA
+2. Remplis un input
+3. Déclenche une erreur (ex: validation)
+4. Screen reader annonce **immédiatement** l'erreur (sans Tab)
+
+- [ ] Erreur annoncée dès qu'elle apparaît
+- [ ] Pas besoin de Tab vers le message
+
+=== 💡 Concepts clés
+
+- `role="alert"` : Région live qui annonce son contenu dès qu'il change
+- Équivalent à `aria-live="assertive"` + `aria-atomic="true"`
+- Utiliser UNIQUEMENT pour messages urgents (erreurs, alertes)
+
+---
+
+== ÉTAPE 6 : Ajouter WCAG - Jour 5 (30 min)
+
+=== Objectif WCAG
+
+**Critère 3.3.2 (suite) - Indicateur requis :**
+Ajouter un astérisque rouge si champ obligatoire.
+
+=== Code à écrire
+
+[source,typescript]
+----
+export const Input = forwardRef<HTMLInputElement, InputProps>(
+  ({ label, error, className = "", id, required, ...props }, ref) => {  // ⭐ Extraire required
+    const inputId = id || label.toLowerCase().replace(/\s+/g, '-')
+
+    return (
+      <div style={{ marginBottom: '1rem' }}>
+        <label htmlFor={inputId} style={{ display: 'block', marginBottom: '0.25rem' }}>
+          {label}
+          {required && <span style={{ color: 'red' }}> *</span>}  {/* ⭐ AJOUT */}
+        </label>
+
+        <input
+          ref={ref}
+          id={inputId}
+          className={`input ${error ? 'input-error' : ''} ${className}`}
+          aria-invalid={error ? 'true' : 'false'}
+          aria-describedby={error ? `${inputId}-error` : undefined}
+          aria-required={required}  // ⭐ AJOUT
+          style={{
+            padding: '0.5rem',
+            border: error ? '2px solid red' : '1px solid #ccc',
+            borderRadius: '4px',
+            width: '100%'
+          }}
+          {...props}
+        />
+
+        {error && (
+          <p
+            id={`${inputId}-error`}
+            role="alert"
+            style={{ color: 'red', fontSize: '0.875rem', marginTop: '0.25rem' }}
+          >
+            {error}
+          </p>
+        )}
+      </div>
+    )
+  }
+)
+----
+
+=== Utilisation test
+
+[source,tsx]
+----
+<Input label="Email" type="email" required />
+----
+
+=== 📚 Ressources
+
+**MDN - aria-required :**
+https://developer.mozilla.org/en-US/docs/Web/Accessibility/ARIA/Attributes/aria-required
+
+**WebAIM - Required Form Fields :**
+https://webaim.org/techniques/forms/controls#required
+
+=== ✅ Validation
+
+- [ ] Astérisque rouge affiché si `required={true}`
+- [ ] Screen reader annonce "requis"
+- [ ] Validation HTML native fonctionne
+
+=== 💡 Concepts clés
+
+- `aria-required` : Indique aux screen readers si le champ est obligatoire
+- Différent de `required` HTML (qui empêche submit)
+- Les deux peuvent coexister
+
+---
+
+== ÉTAPE 7 : SCSS avec clamp() (1h)
+
+=== Objectif
+
+Remplacer les styles inline par CSS Modules + responsive fluide avec `clamp()`.
+
+=== Créer Input.module.scss
+
+[source,scss]
+----
+@use '../../../styles/variables' as *;
+
+.inputWrapper {
+    width: 100%;
+    margin-bottom: 1rem;
+}
+
+.label {
+    display: block;
+    font-family: $font-family-base;
+    font-size: $font-size-sm;
+    font-weight: $font-weight-medium;
+    color: $color-text-primary;
+    margin-bottom: $spacing-xs;
+}
+
+.required {
+    color: $error;
+}
+
+.input {
+    width: 100%;
+    // ⭐ CLAMP pour padding responsive
+    padding: clamp(0.5rem, 2vw, 0.75rem) clamp(0.75rem, 3vw, 1rem);
+    // ⭐ CLAMP pour font-size responsive
+    font-size: clamp(0.875rem, 1.5vw, 1rem);
+    color: $color-text-primary;
+    background: $white-paper;
+    border: 1px solid $color-border-medium;
+    border-radius: $border-radius-md;
+    transition: all $transition-base;
+
+    // WCAG Focus visible
+    &:focus {
+        outline: none;
+        border-color: $terracotta;
+        box-shadow: 0 0 0 3px rgba($terracotta, 0.1);
+    }
+
+    &:focus-visible {
+        outline: 2px solid $terracotta;
+        outline-offset: 2px;
+    }
+
+    &:hover:not(:disabled) {
+        border-color: $color-border-dark;
+    }
+
+    &:disabled {
+        background: $beige-page;
+        color: $gray-slate;
+        cursor: not-allowed;
+        opacity: 0.6;
+    }
+}
+
+.input.error {
+    border-color: $error;
+
+    &:focus {
+        border-color: $error;
+        box-shadow: 0 0 0 3px rgba($error, 0.1);
+    }
+}
+
+.errorText {
+    margin-top: $spacing-xs;
+    font-size: $font-size-xs;
+    color: $error;
+    font-weight: $font-weight-medium;
+}
+----
+
+=== Modifier Input.tsx
+
+[source,typescript]
+----
+import styles from "./Input.module.scss"
+
+// Remplacer tous les style={{ ... }} par className={styles.xxx}
+
+<div className={styles.inputWrapper}>
+  <label htmlFor={inputId} className={styles.label}>
+    {label}
+    {required && <span className={styles.required}> *</span>}
+  </label>
+
+  <input
+    ref={ref}
+    id={inputId}
+    className={`${styles.input} ${error ? styles.error : ''} ${className}`}
+    // ... reste identique
+  />
+
+  {error && (
+    <p id={`${inputId}-error`} className={styles.errorText} role="alert">
+      {error}
+    </p>
+  )}
+</div>
+----
+
+=== 📚 Ressources
+
+**CSS clamp() - MDN :**
+https://developer.mozilla.org/en-US/docs/Web/CSS/clamp
+
+**CSS clamp() - Web.dev :**
+https://web.dev/min-max-clamp/
+
+**CSS Modules - Next.js :**
+https://nextjs.org/docs/app/building-your-application/styling/css-modules
+
+**Responsive Typography with clamp() :**
+https://css-tricks.com/linearly-scale-font-size-with-css-clamp-based-on-the-viewport/
+
+=== ✅ Validation
+
+**Test 1 : Mobile (320px)**
+- [ ] Padding petit (8px 12px)
+- [ ] Font 14px
+
+**Test 2 : Tablet (768px)**
+- [ ] Padding moyen (~10px 14px)
+- [ ] Font ~15px
+
+**Test 3 : Desktop (1920px)**
+- [ ] Padding maximum (12px 16px)
+- [ ] Font 16px
+
+**Test 4 : Focus**
+- [ ] Outline terracotta au focus (Tab)
+- [ ] Box-shadow au focus (clic)
+
+=== 💡 Concepts clés clamp()
+
+**Syntaxe :** `clamp(MIN, IDÉAL, MAX)`
+
+**Exemple :** `clamp(0.5rem, 2vw, 0.75rem)`
+
+* **MIN (0.5rem)** : Taille minimale garantie (mobile 320px)
+* **IDÉAL (2vw)** : Taille qui grandit avec viewport (2% largeur écran)
+* **MAX (0.75rem)** : Taille maximale (desktop 1920px+)
+
+**Comment ça fonctionne :**
+
+* Si `2vw < 0.5rem` → Utilise 0.5rem (MIN)
+* Si `2vw` entre MIN et MAX → Utilise 2vw (IDÉAL)
+* Si `2vw > 0.75rem` → Utilise 0.75rem (MAX)
+
+**Pourquoi pas de @include tablet ?**
+
+Input n'a pas besoin de changer sa **structure** (display, layout) selon breakpoint. Juste les tailles qui scalent progressivement → `clamp()` suffit.
+
+---
+
+== ÉTAPE 8 : Validation finale (30 min)
+
+=== Tests manuels complets
+
+==== Test 1 : Fonctionnel
+
+- [ ] Input affiche label
+- [ ] Input accepte saisie
+- [ ] Props HTML fonctionnent (placeholder, type, disabled, etc.)
+- [ ] Erreur affichée correctement
+- [ ] Astérisque si required
+
+==== Test 2 : React Hook Form
+
+[source,tsx]
+----
+import { useForm } from 'react-hook-form'
+
+function TestForm() {
+  const { register, handleSubmit, formState: { errors } } = useForm()
+
+  return (
+    <form onSubmit={handleSubmit(data => console.log(data))}>
+      <Input
+        label="Email"
+        {...register('email', {
+          required: 'Email requis',
+          pattern: {
+            value: /^[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}$/i,
+            message: 'Email invalide'
+          }
+        })}
+        error={errors.email?.message}
+        required
+      />
+      <button type="submit">Envoyer</button>
+    </form>
+  )
+}
+----
+
+- [ ] Validation fonctionne
+- [ ] Erreurs affichées
+- [ ] Submit avec données valides fonctionne
+
+==== Test 3 : Responsive
+
+Ouvre DevTools, mode responsive :
+
+* **320px** : Petit padding, texte lisible
+* **768px** : Padding moyen
+* **1920px** : Padding maximum
+
+- [ ] Transitions fluides (pas de saut)
+- [ ] Toujours lisible
+
+==== Test 4 : WCAG avec NVDA (Windows)
+
+**Installer NVDA :**
+https://www.nvaccess.org/download/
+
+**Tests :**
+
+1. **Tab vers input**
+   - [ ] Annonce : "Email, zone de texte, requis"
+
+2. **Tab vers input avec erreur**
+   - [ ] Annonce : "Email, zone de texte, invalide, Email invalide"
+
+3. **Déclenche erreur**
+   - [ ] Erreur annoncée immédiatement (role="alert")
+
+4. **Clic sur label**
+   - [ ] Input reçoit focus
+
+==== Test 5 : Contraste couleurs
+
+**Outil en ligne :**
+https://webaim.org/resources/contrastchecker/
+
+Vérifie les contrastes :
+
+* Texte label vs background : Ratio ≥ 4.5:1
+* Texte erreur vs background : Ratio ≥ 4.5:1
+* Border vs background : Ratio ≥ 3:1
+
+- [ ] Tous les contrastes passent WCAG AA
+
+---
+
+== ÉTAPE 9 : Comparer avec Input original (15 min)
+
+=== Exercice de comparaison
+
+1. Ouvre `Input.tsx` (version originale)
+2. Ouvre `Input-v2.tsx` (ta version)
+3. Compare ligne par ligne
+
+**Questions à te poser :**
+
+- [ ] Ai-je tous les attributs ARIA ?
+- [ ] Ai-je le forwardRef correct ?
+- [ ] Ai-je les styles SCSS avec clamp() ?
+- [ ] Ai-je géré tous les cas (error, helperText, required) ?
+- [ ] Ai-je le displayName ?
+
+**Différences à noter :**
+
+* Qu'est-ce que j'ai oublié ?
+* Qu'est-ce que je ne comprends pas ?
+* Qu'est-ce qui pourrait être amélioré ?
+
+---
+
+== Ressources complètes
+
+=== TypeScript + React
+
+* **React TypeScript Cheatsheet** (EN) :
+  https://react-typescript-cheatsheet.netlify.app/
+
+* **React Docs - TypeScript** (EN) :
+  https://react.dev/learn/typescript
+
+* **Grafikart - TypeScript** (FR, gratuit) :
+  https://grafikart.fr/formations/typescript
+
+* **Codecademy - Learn TypeScript** (EN, gratuit) :
+  https://www.codecademy.com/learn/learn-typescript
+
+=== WCAG & Accessibilité
+
+* **WCAG 2.2 Quick Reference** (EN) :
+  https://www.w3.org/WAI/WCAG22/quickref/
+
+* **A11y 101 - Débutants** (EN) :
+  https://www.a11y-101.com/
+
+* **WebAIM - Accessibility Resources** (EN) :
+  https://webaim.org/resources/
+
+* **MDN - Accessibility** (EN) :
+  https://developer.mozilla.org/en-US/docs/Web/Accessibility
+
+* **W3C WAI-ARIA Authoring Practices** (EN) :
+  https://www.w3.org/WAI/ARIA/apg/
+
+* **Screen reader NVDA** (gratuit Windows) :
+  https://www.nvaccess.org/download/
+
+* **Contrast Checker** (outil en ligne) :
+  https://webaim.org/resources/contrastchecker/
+
+=== React Hook Form
+
+* **React Hook Form - Get Started** (EN) :
+  https://react-hook-form.com/get-started
+
+* **React Hook Form - API Reference** (EN) :
+  https://react-hook-form.com/docs
+
+* **Grafikart - React Hook Form** (FR, gratuit) :
+  https://grafikart.fr/tutoriels/react-hook-form-2057
+
+=== CSS clamp()
+
+* **MDN - clamp()** (EN) :
+  https://developer.mozilla.org/en-US/docs/Web/CSS/clamp
+
+* **Web.dev - min(), max(), clamp()** (EN) :
+  https://web.dev/min-max-clamp/
+
+* **CSS-Tricks - clamp()** (EN) :
+  https://css-tricks.com/linearly-scale-font-size-with-css-clamp-based-on-the-viewport/
+
+* **Utopia - Fluid Responsive Design** (EN, outil) :
+  https://utopia.fyi/
+
+=== Outils de validation
+
+* **axe DevTools** (extension Chrome) :
+  https://chrome.google.com/webstore/detail/axe-devtools-web-accessib/lhdoppojpmngadmnindnejefpokejbdd
+
+* **WAVE** (extension Chrome) :
+  https://chrome.google.com/webstore/detail/wave-evaluation-tool/jbbplnpkjmmeebjpijfedlgcdilocofh
+
+* **Lighthouse** (intégré Chrome DevTools) :
+  Ouvre DevTools → Onglet "Lighthouse" → Run audit
+
+---
+
+== Plan d'apprentissage 1 mois
+
+=== Semaine 1 : TypeScript + React
+
+**Lundi-Mardi :** TypeScript bases
+- [ ] Lire cheatsheet React TypeScript
+- [ ] Faire exercice Input étapes 1-3
+
+**Mercredi-Jeudi :** forwardRef
+- [ ] Lire doc React forwardRef
+- [ ] Faire exercice Input étape 5
+
+**Vendredi :** React Hook Form
+- [ ] Lire doc React Hook Form
+- [ ] Intégrer Input dans formulaire
+
+=== Semaine 2 : WCAG Niveau A
+
+**Lundi :** WCAG 3.3.2 (Labels)
+- [ ] Lire spec W3C
+- [ ] Faire exercice Input étape 6 jour 1
+
+**Mardi :** WCAG 3.3.1 (Error Identification)
+- [ ] Lire spec W3C
+- [ ] Faire exercice Input étape 6 jour 2
+
+**Mercredi :** WCAG 3.3.3 (Error Suggestion)
+- [ ] Lire spec W3C
+- [ ] Faire exercice Input étape 6 jour 3
+
+**Jeudi :** WCAG 4.1.3 (Status Messages)
+- [ ] Lire spec W3C
+- [ ] Faire exercice Input étape 6 jour 4
+
+**Vendredi :** Indicateur requis
+- [ ] Faire exercice Input étape 6 jour 5
+- [ ] Tester avec NVDA
+
+=== Semaine 3 : CSS Responsive
+
+**Lundi-Mardi :** clamp() bases
+- [ ] Lire doc MDN clamp()
+- [ ] Expérimenter avec padding
+
+**Mercredi :** clamp() font-size
+- [ ] Lire article Web.dev
+- [ ] Tester responsive
+
+**Jeudi :** CSS Modules
+- [ ] Créer Input.module.scss
+- [ ] Migrer styles inline vers module
+
+**Vendredi :** Focus visible + états
+- [ ] Styles :focus, :hover, :disabled
+- [ ] Tester navigation clavier
+
+=== Semaine 4 : Validation & Practice
+
+**Lundi :** Tests manuels
+- [ ] Tester tous les cas d'usage
+- [ ] Tester avec NVDA
+
+**Mardi :** Validation WCAG
+- [ ] axe DevTools
+- [ ] WAVE
+- [ ] Lighthouse
+
+**Mercredi :** Comparer avec original
+- [ ] Noter différences
+- [ ] Comprendre manques
+
+**Jeudi-Vendredi :** Appliquer aux autres composants
+- [ ] Créer Select accessible
+- [ ] Créer Textarea accessible
+
+---
+
+== Résumé temps investissement
+
+|===
+| Étape | Temps | Cumul
+
+| Étape 1 : Version minimale
+| 10 min
+| 10 min
+
+| Étape 2 : TypeScript
+| 15 min
+| 25 min
+
+| Étape 3 : Hériter props HTML
+| 20 min
+| 45 min
+
+| Étape 4 : Validation erreur
+| 25 min
+| 1h10
+
+| Étape 5 : forwardRef
+| 30 min
+| 1h40
+
+| Étape 6 : WCAG (5 jours × 30 min)
+| 2h30
+| 4h10
+
+| Étape 7 : SCSS + clamp()
+| 1h
+| 5h10
+
+| Étape 8 : Validation finale
+| 30 min
+| 5h40
+
+| Étape 9 : Comparaison
+| 15 min
+| 6h
+
+| **Lecture docs** (parallèle)
+| 2h
+| **8h total**
+|===
+
+**Après ces 8h, tu sais créer n'importe quel composant accessible !** 🎯
+
+---
+
+== Prochaines étapes
+
+Une fois Input maîtrisé, applique la même méthode à :
+
+1. **Textarea** (similaire à Input)
+2. **Select** (+ complexe, utiliser Radix Select)
+3. **Checkbox** (WCAG + aria-checked)
+4. **Radio** (groupe avec aria-labelledby)
+5. **Switch/Toggle** (role="switch")
+
+**Tu deviens expert accessibilité frontend en 1 mois !** 💪

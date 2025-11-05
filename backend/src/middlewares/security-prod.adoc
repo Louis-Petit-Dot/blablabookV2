@@ -1,0 +1,531 @@
+= Stratégie Sécurité Production - BlaBlaBook V2
+:toc:
+:toclevels: 3
+
+== 📋 Vue d'ensemble
+
+Ce document définit la stratégie de sécurité pour le déploiement en production sur VPS Hostinger avec Nginx.
+
+=== Architecture Production
+
+----
+Internet
+   ↓
+Nginx (:80/:443)
+   ├─ SSL/TLS (Let's Encrypt)
+   ├─ Rate limiting DDoS
+   ├─ Security headers
+   └─ Reverse Proxy
+      ↓
+Deno Backend (:8000 local)
+   ├─ Rate limiting métier
+   ├─ CORS
+   ├─ JWT Auth
+   ├─ RBAC
+   ├─ CSRF
+   └─ Validation
+      ↓
+PostgreSQL (:5432 local)
+----
+
+== 🔐 Répartition des Responsabilités
+
+=== Nginx (Couche Infrastructure)
+
+[cols="2,3,2"]
+|===
+|Fonction |Responsabilité |Statut
+
+|*SSL/TLS*
+|Terminer HTTPS, certificat Let's Encrypt
+|✅ Nginx uniquement
+
+|*Rate Limiting DDoS*
+|Protection brutale (100-1000 req/s global)
+|✅ Nginx (première ligne)
+
+|*Security Headers*
+|X-Frame-Options, X-Content-Type-Options, HSTS, etc.
+|✅ Nginx (pour tout le site)
+
+|*Compression*
+|Gzip/Brotli pour réponses
+|✅ Nginx
+
+|*Static Files*
+|Serve frontend build (si hébergé sur VPS)
+|✅ Nginx
+
+|*Reverse Proxy*
+|Forward /api/* vers Deno localhost:8000
+|✅ Nginx
+
+|===
+
+=== Deno Backend (Couche Application)
+
+[cols="2,3,2"]
+|===
+|Fonction |Responsabilité |Statut
+
+|*Rate Limiting Métier*
+|100 req/15min par IP, personnalisable par route
+|✅ Middleware security.ts
+
+|*CORS*
+|Origins autorisées, credentials
+|✅ Middleware security.ts
+
+|*JWT Authentication*
+|Vérification token, expiration
+|✅ Middleware auth.ts
+
+|*RBAC*
+|Permissions et rôles
+|✅ Middleware rbac.ts
+
+|*CSRF Protection*
+|Validation token CSRF
+|✅ Middleware csrf.ts
+
+|*Ownership*
+|Vérification propriété ressources
+|✅ Middleware ownership.ts
+
+|*Validation*
+|Zod schemas
+|✅ Middleware validation.ts
+
+|*Auth Lockout*
+|5 tentatives max, lockout 15min
+|✅ Middleware authLockout.ts
+
+|===
+
+== 🔄 Gestion des Redondances
+
+=== Décisions Architecturales
+
+==== Rate Limiting (Les 2)
+
+*Nginx:*
+----
+limit_req_zone $binary_remote_addr zone=global:10m rate=100r/s;
+limit_req zone=global burst=200 nodelay;
+----
+
+*Pourquoi:* Protection DDoS brutale avant même d'atteindre Deno
+
+*Deno:*
+----
+100 requêtes / 15 minutes par IP
+Stockage en mémoire (Map)
+----
+
+*Pourquoi:* Logique métier fine-grained, peut varier par endpoint
+
+*Conclusion:* ✅ **Complémentaires, pas redondants**
+
+==== Security Headers (Nginx uniquement)
+
+*Choix:* Nginx centralise tous les headers de sécurité
+
+*Rationale:*
+- Appliqué à TOUT le trafic (frontend + backend)
+- Configuration centralisée
+- Pas besoin de dupliquer dans le code
+
+*Action:* Retirer security headers du middleware Deno en prod (ou conditionner selon ENV)
+
+==== CORS (Deno uniquement)
+
+*Choix:* Deno gère CORS dans le middleware
+
+*Rationale:*
+- Logique applicative (origins peuvent changer selon environnement)
+- Plus flexible que configuration Nginx
+- Peut être conditionné par logique métier
+
+*Action:* Nginx ne touche PAS aux headers CORS
+
+== 📝 Configuration Nginx Production
+
+=== Exemple nginx.conf
+
+[source,nginx]
+----
+# Global rate limiting
+limit_req_zone $binary_remote_addr zone=global:10m rate=100r/s;
+
+server {
+    listen 80;
+    server_name api.blablabook.com;
+    return 301 https://$server_name$request_uri;
+}
+
+server {
+    listen 443 ssl http2;
+    server_name api.blablabook.com;
+
+    # SSL Let's Encrypt
+    ssl_certificate /etc/letsencrypt/live/api.blablabook.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/api.blablabook.com/privkey.pem;
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_ciphers HIGH:!aNULL:!MD5;
+
+    # Security Headers
+    add_header X-Frame-Options "DENY" always;
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header X-XSS-Protection "1; mode=block" always;
+    add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+    add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+    add_header Permissions-Policy "geolocation=(), microphone=(), camera=()" always;
+
+    # Rate Limiting DDoS
+    limit_req zone=global burst=200 nodelay;
+
+    # Body size limit
+    client_max_body_size 10M;
+    client_body_timeout 10s;
+    client_header_timeout 10s;
+
+    # Reverse Proxy vers Deno
+    location / {
+        proxy_pass http://127.0.0.1:8000;
+        proxy_http_version 1.1;
+
+        # Forward real IP
+        proxy_set_header X-Forwarded-For $remote_addr;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header Host $host;
+
+        # Timeouts
+        proxy_connect_timeout 60s;
+        proxy_send_timeout 60s;
+        proxy_read_timeout 60s;
+    }
+
+    # Logs
+    access_log /var/log/nginx/api.blablabook.access.log;
+    error_log /var/log/nginx/api.blablabook.error.log;
+}
+----
+
+== 🔧 Configuration Deno Production
+
+=== Variables d'Environnement
+
+[source,bash]
+----
+# .env.prod (sur VPS, PAS dans Git)
+NODE_ENV=production
+
+# Database
+DATABASE_URL=postgresql://user:password@localhost:5432/blablabook
+
+# JWT (générer avec: openssl rand -hex 64)
+JWT_SECRET=<128_caractères_random>
+JWT_EXPIRATION=1h
+
+# CORS
+CORS_ORIGINS=https://blablabook.com,https://app.blablabook.com
+
+# Rate Limiting
+RATE_LIMIT_ENABLED=true
+RATE_LIMIT_MAX_REQUESTS=100
+RATE_LIMIT_WINDOW_MS=900000
+
+# Auth Lockout
+AUTH_LOCKOUT_ENABLED=true
+AUTH_LOCKOUT_MAX_ATTEMPTS=5
+AUTH_LOCKOUT_DURATION_MS=900000
+----
+
+=== Optimisation Middleware security.ts
+
+Option 1: Retirer headers en prod (Nginx les gère)
+
+[source,typescript]
+----
+const IS_PROD = Deno.env.get("NODE_ENV") === "production";
+
+// Dans securityMiddleware:
+if (!IS_PROD) {
+    // Security headers uniquement en DEV (sans Nginx)
+    c.header('X-Content-Type-Options', 'nosniff');
+    c.header('X-Frame-Options', 'DENY');
+    // ...
+}
+----
+
+Option 2: Garder (doublon inoffensif)
+
+*Décision:* À choisir selon préférence. Le doublon n'est pas dangereux.
+
+== 🚨 Vulnérabilités Corrigées
+
+=== Bug 1: JWT_SECRET undefined (✅ Fixé)
+
+*Problème:* App crash si JWT_SECRET manquant
+
+*Solution:*
+[source,typescript]
+----
+const JWT_SECRET = Deno.env.get("JWT_SECRET");
+if (!JWT_SECRET) {
+  throw new Error("JWT_SECRET environment variable is required");
+}
+----
+
+*Impact:* Fail-fast au démarrage
+
+=== Bug 2: authLockout catch bypass (✅ Fixé)
+
+*Problème:* JSON invalide bypass lockout
+
+*Solution:*
+[source,typescript]
+----
+try {
+    const body = await c.req.json();
+    email = body.email;
+    if (!email) {
+        return next();
+    }
+} catch (_error) {
+    return next(); // Controller gère validation
+}
+----
+
+*Impact:* Lockout sécurisé
+
+== 📊 Checklist Déploiement Production
+
+=== Serveur VPS
+
+- [ ] Ubuntu 22.04 LTS installé
+- [ ] Firewall UFW configuré (ports 80, 443, 22 uniquement)
+- [ ] SSH clé publique (désactiver password auth)
+- [ ] SSH port changé (pas 22)
+- [ ] Fail2ban installé et configuré
+- [ ] Updates automatiques (`unattended-upgrades`)
+- [ ] User non-root pour Deno
+- [ ] Swap configuré (si RAM < 4GB)
+
+=== Nginx
+
+- [ ] Nginx installé
+- [ ] Certbot installé (Let's Encrypt)
+- [ ] SSL certificat généré
+- [ ] HTTP → HTTPS redirect
+- [ ] Configuration nginx testée (`nginx -t`)
+- [ ] Rate limiting configuré
+- [ ] Security headers configurés
+- [ ] Logs configurés et rotatifs
+
+=== Deno Backend
+
+- [ ] Deno 2.1+ installé
+- [ ] Code déployé dans `/opt/blablabook/backend`
+- [ ] `.env.prod` créé avec secrets
+- [ ] JWT_SECRET généré (128+ caractères)
+- [ ] Process manager configuré (systemd service)
+- [ ] Logs configurés
+- [ ] Backend démarre au boot
+- [ ] Health check endpoint `/health`
+
+=== PostgreSQL
+
+- [ ] PostgreSQL 17 installé
+- [ ] Database créée
+- [ ] User dédié créé
+- [ ] Password fort
+- [ ] Listen localhost uniquement
+- [ ] Backups automatiques configurés (pg_dump + cron)
+
+=== DNS
+
+- [ ] Domaine acheté
+- [ ] A record: `blablabook.com` → IP VPS
+- [ ] A record: `api.blablabook.com` → IP VPS
+- [ ] CAA record configuré (Let's Encrypt)
+- [ ] TTL court avant migration (300s)
+
+=== Sécurité
+
+- [ ] JWT_SECRET sécurisé (128+ caractères random)
+- [ ] Database password sécurisé
+- [ ] `.env` pas dans Git (`.gitignore`)
+- [ ] CORS origins corrects (pas localhost)
+- [ ] Rate limiting actif
+- [ ] Auth lockout actif
+- [ ] HTTPS obligatoire (HTTP redirect)
+- [ ] Security headers actifs
+
+=== Monitoring (Optionnel)
+
+- [ ] Uptime monitoring (UptimeRobot gratuit)
+- [ ] Error tracking (Sentry gratuit)
+- [ ] Logs centralisés
+- [ ] Alertes email/SMS
+
+== 🎯 Stratégie de Migration
+
+=== Phase 1: Préparation
+
+1. Acheter VPS Hostinger (4GB RAM)
+2. Acheter domaine
+3. Setup serveur (Ubuntu, SSH, firewall)
+4. Installer stack (Nginx, Deno, PostgreSQL)
+
+=== Phase 2: Configuration
+
+1. Configurer Nginx (reverse proxy + SSL)
+2. Déployer backend Deno
+3. Créer database PostgreSQL
+4. Tester en local (curl localhost:8000)
+5. Tester via Nginx (curl https://api.blablabook.com)
+
+=== Phase 3: DNS & SSL
+
+1. Pointer DNS vers VPS
+2. Attendre propagation (1-24h)
+3. Générer SSL Let's Encrypt
+4. Tester HTTPS
+
+=== Phase 4: Déploiement Frontend
+
+1. Build Next.js (`npm run build`)
+2. Upload vers VPS ou Vercel
+3. Configurer Nginx (si VPS)
+4. Tester end-to-end
+
+=== Phase 5: Monitoring
+
+1. Setup uptime monitoring
+2. Vérifier logs
+3. Tester charge (load testing)
+
+== 📝 Notes Importantes
+
+=== Rate Limiter en Mémoire
+
+*Statut actuel:* Map JavaScript en mémoire
+
+*Production single-instance:* ✅ Suffisant
+
+*Production multi-instances:* ❌ Besoin Redis
+
+*Migration Redis:* Uniquement si load balancer avec plusieurs instances Deno
+
+=== JWT Expiration
+
+*Actuel:* 24h (confort DEV)
+
+*Production:* Recommandé 1h + refresh token
+
+*Migration:* Implémenter refresh token avant PROD (ou accepter 24h)
+
+=== CSRF Token
+
+*Implémentation:* Basée sur JWT comme session ID
+
+*Limitation:* Si JWT volé, CSRF token aussi (mais XSS déjà game over)
+
+*Alternative:* Cookie httpOnly + CSRF séparé (plus complexe avec SPA)
+
+*Décision:* Implémentation actuelle acceptable
+
+== 🔄 Maintenance Continue
+
+=== Mises à Jour
+
+- Updates système Ubuntu (automatiques configurées)
+- Updates Deno (vérifier changelog)
+- Updates dépendances npm/deno
+- Renouvellement SSL (automatique Let's Encrypt)
+
+=== Backups
+
+- PostgreSQL: pg_dump daily + weekly + monthly
+- Code: Git (source of truth)
+- Nginx config: `/etc/nginx/` backup
+- `.env`: Backup sécurisé (chiffré)
+
+=== Monitoring
+
+- Logs Nginx: `/var/log/nginx/`
+- Logs Deno: journalctl (systemd)
+- Disk space: monitoring automatique
+- Uptime: UptimeRobot ou équivalent
+
+== 📚 Ressources
+
+=== Documentation
+
+- Nginx: https://nginx.org/en/docs/
+- Let's Encrypt: https://letsencrypt.org/
+- Deno Deploy: https://deno.com/deploy/docs
+- OWASP Top 10: https://owasp.org/www-project-top-ten/
+
+=== Outils
+
+- SSL Test: https://www.ssllabs.com/ssltest/
+- Security Headers: https://securityheaders.com/
+- Uptime Robot: https://uptimerobot.com/ (gratuit)
+- Sentry: https://sentry.io/ (gratuit tier)
+
+== ✅ Résumé Décisions
+
+[cols="2,2,3"]
+|===
+|Composant |Responsable |Rationale
+
+|*SSL/HTTPS*
+|Nginx
+|Standard, Let's Encrypt
+
+|*Rate Limit DDoS*
+|Nginx
+|Première ligne défense
+
+|*Rate Limit Métier*
+|Deno
+|Logique applicative
+
+|*Security Headers*
+|Nginx
+|Centralisé, appliqué partout
+
+|*CORS*
+|Deno
+|Logique applicative flexible
+
+|*JWT Auth*
+|Deno
+|Logique métier
+
+|*RBAC*
+|Deno
+|Logique métier
+
+|*CSRF*
+|Deno
+|Logique métier
+
+|*Validation*
+|Deno
+|Logique métier
+
+|===
+
+*Principe:* Nginx = Infrastructure, Deno = Application Logic
+
+---
+
+_Document créé: {docdate}_
+
+_Version: 1.0_
+
+_Projet: BlaBlaBook V2_

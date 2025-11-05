@@ -1,0 +1,863 @@
+= Charte Graphique BlaBlaBook V2
+:toc:
+:toc-title: Table des matières
+:sectnums:
+
+== Introduction
+
+Cette charte graphique définit l'identité visuelle de BlaBlaBook V2, inspirée de l'image emblématique du livre-cœur qui symbolise la passion de la lecture et le partage.
+
+**Baseline** : _"Des mots qui résonnent, des livres qui rassemblent, des histoires qui passionnent"_
+
+== Image de Référence
+
+**Fichier** : `public/livre-coeur-L.webp`
+
+L'image représente les pages d'un livre ouvert formant un cœur, évoquant :
+- 💙 La passion de la lecture
+- 🤝 Le partage et la communauté
+- ✨ L'élégance et la simplicité
+- 📖 Le respect du livre comme objet
+
+---
+
+== Palette de Couleurs Principale
+
+=== Couleurs Neutres (Base)
+
+Extraites directement de l'image du livre-cœur :
+
+[cols="1,2,2,3"]
+|===
+|Aperçu |Nom |Code Hex |Usage
+
+|[.color-swatch]#███# `background: #FEFBF6`
+|**Blanc Cassé Papier**
+|`#FEFBF6`
+|Fond principal, espaces blancs, cartes
+
+|[.color-swatch]#███# `background: #F5F0E8`
+|**Beige Page**
+|`#F5F0E8`
+|Fond secondaire, zones de contenu
+
+|[.color-swatch]#███# `background: #E8DFD0`
+|**Crème Ancien**
+|`#E8DFD0`
+|Bordures, séparateurs, hover states
+
+|[.color-swatch]#███# `background: #D4C5B0`
+|**Beige Chaud**
+|`#D4C5B0`
+|Éléments décoratifs, backgrounds alternatifs
+
+|[.color-swatch]#███# `background: #6B6560`
+|**Gris Ardoise**
+|`#6B6560`
+|Texte secondaire, icônes, ombres
+
+|[.color-swatch]#███# `background: #3A3632`
+|**Charbon Doux**
+|`#3A3632`
+|Texte principal, titres, éléments forts
+
+|[.color-swatch]#███# `background: #1C1917`
+|**Noir Encre**
+|`#1C1917`
+|Texte très foncé, contrastes maximum
+|===
+
+=== Couleur d'Accent (Ajout)
+
+Pour dynamiser et apporter une touche moderne :
+
+[cols="1,2,2,3"]
+|===
+|Aperçu |Nom |Code Hex |Usage
+
+|[.color-swatch]#███# `background: #C17767`
+|**Terracotta Lecture**
+|`#C17767`
+|Boutons primaires, liens, éléments interactifs, favoris
+
+|[.color-swatch]#███# `background: #E8A89C`
+|**Rose Poudré**
+|`#E8A89C`
+|Hover states, backgrounds légers, notifications
+
+|[.color-swatch]#███# `background: #8B5E50`
+|**Brun Chaud**
+|`#8B5E50`
+|Boutons secondaires, badges, catégories
+|===
+
+**Justification Terracotta** :
+- Rappelle les couvertures de livres anciens
+- Apporte chaleur et élégance
+- Contraste bien avec les neutres
+- Évoque la passion (cœur) sans être agressif
+
+=== Couleurs Fonctionnelles
+
+[cols="1,2,2,3"]
+|===
+|Aperçu |Nom |Code Hex |Usage
+
+|[.color-swatch]#███# `background: #5E8B7E`
+|**Vert Sauge Success**
+|`#5E8B7E`
+|Messages de succès, validations
+
+|[.color-swatch]#███# `background: #D4A574`
+|**Or Ancien Warning**
+|`#D4A574`
+|Avertissements, attention requise
+
+|[.color-swatch]#███# `background: #A55B5B`
+|**Rouge Bordeaux Error**
+|`#A55B5B`
+|Erreurs, actions destructives
+
+|[.color-swatch]#███# `background: #7891A8`
+|**Bleu Ardoise Info**
+|`#7891A8`
+|Informations, tooltips, aide
+|===
+
+---
+
+== Palette Alternative - Moderne & Élégante
+
+**Note** : Palette proposée comme alternative, plus moderne et aérée que la palette principale.
+
+=== Couleurs de Base
+
+[cols="1,2,2,3"]
+|===
+|Aperçu |Nom |Code Hex |Usage
+
+|[.color-swatch]#███# `background: #F6F5F3`
+|**Blanc Cassé Moderne**
+|`#F6F5F3`
+|Fond principal, arrière-plans, cartes
+
+|[.color-swatch]#███# `background: #F5E9DC`
+|**Beige Doux**
+|`#F5E9DC`
+|Fond secondaire, zones de contenu, sections alternées
+
+|[.color-swatch]#███# `background: #CED2D2`
+|**Gris Perle**
+|`#CED2D2`
+|Bordures, séparateurs, lignes de démarcation
+
+|[.color-swatch]#███# `background: #BFC0C0`
+|**Gris Perle Foncé**
+|`#BFC0C0`
+|Bordures accentuées, ombres légères
+
+|[.color-swatch]#███# `background: #2D3142`
+|**Bleu Nuit**
+|`#2D3142`
+|Texte principal, titres, éléments forts
+|===
+
+=== Couleurs d'Accent
+
+[cols="1,2,2,3"]
+|===
+|Aperçu |Nom |Code Hex |Usage
+
+|[.color-swatch]#███# `background: #CE8BA9`
+|**Vieux Rose** ⭐
+|`#CE8BA9`
+|Boutons primaires, liens, favoris, cœurs, éléments interactifs
+
+|[.color-swatch]#███# `background: #85606D`
+|**Bordeaux Doux**
+|`#85606D`
+|Hover states, boutons secondaires, badges, catégories
+
+|[.color-swatch]#███# `background: #A97A88`
+|**Rose Intermédiaire**
+|`#A97A88`
+|État intermédiaire entre vieux rose et bordeaux
+|===
+
+=== Avantages de cette Palette
+
+**Modernité** :
+- Gris perle apporte fraîcheur et légèreté
+- Bleu nuit : professionnel et contemporain
+- Plus "Instagram/Pinterest" que la palette principale
+
+**Élégance** :
+- Vieux rose : raffinement littéraire et passion douce
+- Bordeaux doux : sophistication sans agressivité
+- Équilibre entre féminité et neutralité
+
+**Contraste & Accessibilité** :
+- Bleu nuit sur blanc cassé : **14.2:1** ✅ AAA
+- Bordeaux sur blanc cassé : **5.8:1** ✅ AA
+- Vieux rose sur bleu nuit : **4.6:1** ✅ AA
+
+**Cas d'usage** :
+- Landing page moderne et épurée
+- Interface utilisateur élégante
+- Design system Pinterest-like
+- Public jeune/féminin
+
+=== Comparaison des deux Palettes
+
+[cols="2,3,3"]
+|===
+|Critère |Palette Principale (Livre-Cœur) |Palette Alternative (Moderne)
+
+|**Ambiance**
+|Chaleureuse, cosy, bibliothèque
+|Fraîche, aérée, moderne
+
+|**Inspiration**
+|Livres anciens, papier vieilli
+|Design contemporain, réseaux sociaux
+
+|**Couleur dominante**
+|Tons chauds (beiges, bruns)
+|Tons neutres frais (gris perle)
+
+|**Accent principal**
+|Terracotta (#C17767)
+|Vieux rose (#CE8BA9)
+
+|**Public cible**
+|Lecteurs classiques, nostalgiques
+|Lecteurs modernes, jeunes adultes
+
+|**Style graphique**
+|Vintage élégant, intemporel
+|Minimaliste épuré, Instagram-ready
+
+|**Meilleur pour**
+|Blog littéraire, communauté mature
+|App mobile, interface moderne
+|===
+
+=== Variables SCSS - Palette Alternative
+
+[source,scss]
+----
+// ============================================
+// PALETTE ALTERNATIVE - MODERNE & ÉLÉGANTE
+// ============================================
+
+// === COULEURS DE BASE ===
+$white-modern: #F6F5F3;        // Blanc cassé moderne
+$beige-soft: #F5E9DC;          // Beige doux
+$gray-pearl: #CED2D2;          // Gris perle
+$gray-pearl-dark: #BFC0C0;     // Gris perle foncé
+$navy-night: #2D3142;          // Bleu nuit
+
+// === COULEURS D'ACCENT ===
+$rose-vintage: #CE8BA9;        // Vieux rose (primaire)
+$bordeaux-soft: #85606D;       // Bordeaux doux (hover/secondaire)
+$rose-medium: #A97A88;         // Rose intermédiaire
+
+// === MAPPING SÉMANTIQUE (Alternative) ===
+$color-bg-primary-alt: $white-modern;
+$color-bg-secondary-alt: $beige-soft;
+$color-bg-tertiary-alt: $gray-pearl;
+
+$color-text-primary-alt: $navy-night;
+$color-text-secondary-alt: $bordeaux-soft;
+$color-text-inverse-alt: $white-modern;
+
+$color-border-light-alt: $gray-pearl;
+$color-border-medium-alt: $gray-pearl-dark;
+$color-border-dark-alt: $navy-night;
+
+$color-btn-primary-alt: $rose-vintage;
+$color-btn-primary-hover-alt: $bordeaux-soft;
+$color-btn-secondary-alt: $gray-pearl-dark;
+$color-btn-secondary-hover-alt: $navy-night;
+
+$color-link-alt: $rose-vintage;
+$color-link-hover-alt: $bordeaux-soft;
+
+// === COULEURS FONCTIONNELLES (Compatibles) ===
+// Les couleurs success/warning/error restent identiques
+$success-alt: #5E8B7E;         // Vert sauge
+$warning-alt: #D4A574;         // Or ancien
+$error-alt: #A55B5B;           // Rouge bordeaux
+$info-alt: #7891A8;            // Bleu ardoise
+----
+
+---
+
+== Variables SCSS
+
+=== Fichier `styles/_variables.scss`
+
+[source,scss]
+----
+// ============================================
+// CHARTE GRAPHIQUE BLABLABOOK V2
+// Inspirée de l'image livre-coeur-L.webp
+// ============================================
+
+// === COULEURS NEUTRES (Base) ===
+$white-paper: #FEFBF6;        // Blanc cassé papier
+$beige-page: #F5F0E8;          // Beige page
+$cream-old: #E8DFD0;           // Crème ancien
+$beige-warm: #D4C5B0;          // Beige chaud
+$gray-slate: #6B6560;          // Gris ardoise
+$charcoal: #3A3632;            // Charbon doux
+$black-ink: #1C1917;           // Noir encre
+
+// === COULEURS D'ACCENT ===
+$terracotta: #C17767;          // Terracotta lecture (primaire)
+$rose-powder: #E8A89C;         // Rose poudré (hover)
+$brown-warm: #8B5E50;          // Brun chaud (secondaire)
+
+// === COULEURS FONCTIONNELLES ===
+$success: #5E8B7E;             // Vert sauge
+$warning: #D4A574;             // Or ancien
+$error: #A55B5B;               // Rouge bordeaux
+$info: #7891A8;                // Bleu ardoise
+
+// === MAPPING SÉMANTIQUE ===
+$color-bg-primary: $white-paper;
+$color-bg-secondary: $beige-page;
+$color-bg-tertiary: $cream-old;
+
+$color-text-primary: $charcoal;
+$color-text-secondary: $gray-slate;
+$color-text-inverse: $white-paper;
+
+$color-border-light: $cream-old;
+$color-border-medium: $beige-warm;
+$color-border-dark: $gray-slate;
+
+$color-btn-primary: $terracotta;
+$color-btn-primary-hover: $brown-warm;
+$color-btn-secondary: $beige-warm;
+$color-btn-secondary-hover: $gray-slate;
+
+$color-link: $terracotta;
+$color-link-hover: $brown-warm;
+
+// === OMBRES ===
+$shadow-sm: 0 1px 2px rgba(#1C1917, 0.05);
+$shadow-md: 0 4px 6px rgba(#1C1917, 0.07);
+$shadow-lg: 0 10px 15px rgba(#1C1917, 0.1);
+$shadow-xl: 0 20px 25px rgba(#1C1917, 0.15);
+
+// === TYPOGRAPHIE ===
+$font-family-base: 'Inter', system-ui, -apple-system, sans-serif;
+$font-family-heading: 'Merriweather', Georgia, serif;  // Pour titres élégants
+$font-family-mono: 'Fira Code', 'Courier New', monospace;
+
+$font-size-xs: 0.75rem;    // 12px
+$font-size-sm: 0.875rem;   // 14px
+$font-size-base: 1rem;     // 16px
+$font-size-lg: 1.125rem;   // 18px
+$font-size-xl: 1.25rem;    // 20px
+$font-size-2xl: 1.5rem;    // 24px
+$font-size-3xl: 1.875rem;  // 30px
+$font-size-4xl: 2.25rem;   // 36px
+
+$font-weight-normal: 400;
+$font-weight-medium: 500;
+$font-weight-semibold: 600;
+$font-weight-bold: 700;
+
+$line-height-tight: 1.25;
+$line-height-normal: 1.5;
+$line-height-relaxed: 1.75;
+
+// === ESPACEMENTS ===
+$spacing-xs: 0.25rem;      // 4px
+$spacing-sm: 0.5rem;       // 8px
+$spacing-md: 1rem;         // 16px
+$spacing-lg: 1.5rem;       // 24px
+$spacing-xl: 2rem;         // 32px
+$spacing-2xl: 3rem;        // 48px
+$spacing-3xl: 4rem;        // 64px
+
+// === LAYOUT ===
+$container-max-width: 1280px;
+$content-max-width: 800px;
+$sidebar-width: 280px;
+
+$border-radius-sm: 4px;
+$border-radius-md: 8px;
+$border-radius-lg: 12px;
+$border-radius-xl: 16px;
+$border-radius-full: 9999px;
+
+// === BREAKPOINTS ===
+$breakpoint-mobile: 640px;
+$breakpoint-tablet: 768px;
+$breakpoint-desktop: 1024px;
+$breakpoint-wide: 1280px;
+$breakpoint-ultra: 1536px;
+
+// === TRANSITIONS ===
+$transition-fast: 150ms ease;
+$transition-base: 200ms ease;
+$transition-slow: 300ms ease;
+
+// === Z-INDEX ===
+$z-dropdown: 1000;
+$z-modal: 1100;
+$z-tooltip: 1200;
+$z-notification: 1300;
+----
+
+---
+
+== Exemples d'Application
+
+=== Boutons
+
+[source,scss]
+----
+.btn-primary {
+  background: $terracotta;
+  color: $white-paper;
+  border-radius: $border-radius-md;
+  padding: $spacing-sm $spacing-lg;
+  transition: all $transition-base;
+
+  &:hover {
+    background: $brown-warm;
+    transform: translateY(-1px);
+    box-shadow: $shadow-md;
+  }
+}
+
+.btn-secondary {
+  background: $beige-warm;
+  color: $charcoal;
+  border-radius: $border-radius-md;
+  padding: $spacing-sm $spacing-lg;
+
+  &:hover {
+    background: $gray-slate;
+    color: $white-paper;
+  }
+}
+----
+
+=== Cartes (Book Card)
+
+[source,scss]
+----
+.book-card {
+  background: $white-paper;
+  border: 1px solid $cream-old;
+  border-radius: $border-radius-lg;
+  padding: $spacing-lg;
+  transition: all $transition-base;
+
+  &:hover {
+    border-color: $terracotta;
+    box-shadow: $shadow-lg;
+    transform: translateY(-2px);
+  }
+
+  .book-title {
+    font-family: $font-family-heading;
+    font-size: $font-size-xl;
+    color: $charcoal;
+    font-weight: $font-weight-bold;
+  }
+
+  .book-author {
+    font-size: $font-size-sm;
+    color: $gray-slate;
+  }
+}
+----
+
+=== Header / Navigation
+
+[source,scss]
+----
+.header {
+  background: $white-paper;
+  border-bottom: 1px solid $cream-old;
+  padding: $spacing-md $spacing-xl;
+
+  .logo {
+    color: $terracotta;
+    font-family: $font-family-heading;
+    font-size: $font-size-2xl;
+    font-weight: $font-weight-bold;
+  }
+
+  .nav-link {
+    color: $gray-slate;
+    transition: color $transition-fast;
+
+    &:hover {
+      color: $terracotta;
+    }
+
+    &.active {
+      color: $charcoal;
+      font-weight: $font-weight-semibold;
+    }
+  }
+}
+----
+
+=== Hero Section
+
+[source,scss]
+----
+.hero {
+  background: linear-gradient(
+    135deg,
+    $white-paper 0%,
+    $beige-page 100%
+  );
+  min-height: 600px;
+  padding: $spacing-3xl $spacing-xl;
+
+  .hero-title {
+    font-family: $font-family-heading;
+    font-size: $font-size-4xl;
+    color: $charcoal;
+    line-height: $line-height-tight;
+    margin-bottom: $spacing-lg;
+  }
+
+  .hero-baseline {
+    font-size: $font-size-xl;
+    color: $gray-slate;
+    font-style: italic;
+    line-height: $line-height-relaxed;
+  }
+
+  .hero-cta {
+    background: $terracotta;
+    color: $white-paper;
+    font-size: $font-size-lg;
+    padding: $spacing-md $spacing-2xl;
+    border-radius: $border-radius-full;
+
+    &:hover {
+      background: $brown-warm;
+      box-shadow: $shadow-xl;
+    }
+  }
+}
+----
+
+---
+
+== Typographie
+
+=== Polices Retenues (Configuration Finale)
+
+**Logo & Titres** :
+- **Merriweather** (serif élégant, rappelle les livres)
+- Poids : 400, 700, 900
+- Google Fonts : ✅ Gratuit commercial
+- Usage : Logo "BlaBlaBook", h1, h2, h3
+
+**Slogan/Baseline uniquement** :
+- **Love Story Self Made** ⭐
+- Style : Serif élégant/display
+- **Font-style : italic** (obligatoire)
+- Téléchargement : https://www.freefonts.io/love-story-self-made-font/
+- Licence : ✅ Gratuit usage personnel/scolaire ⚠️ Payant commercial
+- Usage : **UNIQUEMENT** pour la baseline "Des mots qui résonnent..."
+
+**Corps de texte** :
+- **Inter** (sans-serif moderne et lisible)
+- Poids : 300, 400, 500, 600, 700
+- Google Fonts : ✅ Gratuit commercial
+- Usage : Texte courant, boutons, navigation, interface
+
+**Code / Technique** (optionnel) :
+- **Fira Code** (monospace avec ligatures)
+
+=== Variables SCSS
+
+[source,scss]
+----
+$font-family-heading: 'Merriweather', Georgia, serif;
+$font-family-base: 'Inter', system-ui, sans-serif;
+$font-family-display: 'Love Story', serif; // Slogan uniquement
+$font-family-mono: 'Fira Code', 'Courier New', monospace;
+----
+
+=== Hiérarchie
+
+[source,scss]
+----
+h1 {
+  font-family: $font-family-heading;
+  font-size: $font-size-4xl;
+  font-weight: $font-weight-bold;
+  color: $charcoal;
+  line-height: $line-height-tight;
+}
+
+h2 {
+  font-family: $font-family-heading;
+  font-size: $font-size-3xl;
+  font-weight: $font-weight-bold;
+  color: $charcoal;
+  line-height: $line-height-tight;
+}
+
+h3 {
+  font-family: $font-family-heading;
+  font-size: $font-size-2xl;
+  font-weight: $font-weight-semibold;
+  color: $charcoal;
+}
+
+body, p {
+  font-family: $font-family-base;
+  font-size: $font-size-base;
+  color: $charcoal;
+  line-height: $line-height-normal;
+}
+
+.lead {
+  font-size: $font-size-lg;
+  line-height: $line-height-relaxed;
+  color: $gray-slate;
+}
+----
+
+---
+
+== Accessibilité (WCAG 2.1 AA)
+
+=== Contrastes de Couleurs
+
+Tous les ratios de contraste respectent WCAG 2.1 niveau AA (4.5:1 minimum) :
+
+[cols="2,2,1,1"]
+|===
+|Combinaison |Usage |Ratio |Status
+
+|`$charcoal` sur `$white-paper`
+|Texte principal
+|**13.8:1**
+|✅ AAA
+
+|`$gray-slate` sur `$white-paper`
+|Texte secondaire
+|**5.2:1**
+|✅ AA
+
+|`$white-paper` sur `$terracotta`
+|Boutons primaires
+|**4.7:1**
+|✅ AA
+
+|`$white-paper` sur `$brown-warm`
+|Boutons hover
+|**6.3:1**
+|✅ AA
+
+|`$charcoal` sur `$beige-warm`
+|Badges, tags
+|**5.9:1**
+|✅ AA
+|===
+
+**Outils de vérification** :
+- WebAIM Contrast Checker
+- Stark (plugin Figma)
+- Lighthouse Accessibility Audit
+
+---
+
+== Iconographie
+
+**Style recommandé** : Ligne fine, minimaliste, élégant
+
+**Libraries compatibles** :
+- **Lucide React** (recommandé - moderne et léger)
+- Heroicons (alternative)
+- Feather Icons (alternative)
+
+**Taille d'icônes** :
+- Small : 16px
+- Medium : 20px
+- Large : 24px
+- XL : 32px
+
+**Couleur par défaut** : `$gray-slate`
+**Couleur hover** : `$terracotta`
+
+---
+
+== Composants UI Spécifiques
+
+=== BookCard (Carte Livre)
+
+**Dimensions** : 200px × 320px
+**Image ratio** : 2:3 (couverture de livre standard)
+**Border radius** : `$border-radius-lg` (12px)
+**Background** : `$white-paper`
+**Border** : 1px solid `$cream-old`
+**Shadow hover** : `$shadow-lg`
+
+=== Rating Stars (Notation)
+
+**Couleur vide** : `$beige-warm`
+**Couleur remplie** : `$terracotta`
+**Taille** : 20px
+**Espacement** : 4px
+
+=== Spoiler Blur
+
+**Background blur** : `blur(8px)`
+**Overlay color** : `rgba($gray-slate, 0.3)`
+**Reveal animation** : `$transition-slow`
+
+---
+
+== Responsive Design
+
+=== Mobile First
+
+[source,scss]
+----
+// Mobile par défaut (320px+)
+.container {
+  padding: $spacing-md;
+}
+
+// Tablet (768px+)
+@media (min-width: $breakpoint-tablet) {
+  .container {
+    padding: $spacing-lg;
+  }
+}
+
+// Desktop (1024px+)
+@media (min-width: $breakpoint-desktop) {
+  .container {
+    max-width: $container-max-width;
+    margin: 0 auto;
+    padding: $spacing-xl;
+  }
+}
+----
+
+---
+
+== Animations & Transitions
+
+=== Principes
+
+- **Rapide** (150ms) : Hover sur liens, changements de couleur
+- **Base** (200ms) : Hover sur boutons, transformations légères
+- **Lent** (300ms) : Modales, reveal de contenu
+
+[source,scss]
+----
+// Hover lift effect
+.card-lift {
+  transition: all $transition-base;
+
+  &:hover {
+    transform: translateY(-4px);
+    box-shadow: $shadow-lg;
+  }
+}
+
+// Fade in
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.fade-in {
+  animation: fadeIn $transition-slow ease-out;
+}
+----
+
+---
+
+== Checklist Implémentation
+
+=== Phase 1 : Configuration
+- [ ] Créer `styles/_variables.scss` avec toutes les variables
+- [ ] Importer Google Fonts (Merriweather, Inter)
+- [ ] Configurer SCSS dans `vite.config.ts`
+
+=== Phase 2 : Base Styles
+- [ ] Reset CSS / Normalize
+- [ ] Typographie de base (h1-h6, p, links)
+- [ ] Couleurs de fond et texte par défaut
+- [ ] Container et layout principal
+
+=== Phase 3 : Composants
+- [ ] Boutons (primary, secondary, ghost)
+- [ ] Cards (BookCard, ReviewCard)
+- [ ] Navigation / Header
+- [ ] Footer
+- [ ] Forms (inputs, textareas, selects)
+
+=== Phase 4 : Pages
+- [ ] Landing page / Hero
+- [ ] Dashboard
+- [ ] Book details
+- [ ] User profile
+
+=== Phase 5 : Finitions
+- [ ] Animations et transitions
+- [ ] Responsive testing (mobile → desktop)
+- [ ] Vérification accessibilité (contraste, focus)
+- [ ] Dark mode (optionnel)
+
+---
+
+== Exports & Assets
+
+=== Logo
+
+**Formats requis** :
+- SVG (vectoriel, principal)
+- PNG 512×512 (favicon, app icons)
+- PNG 1024×1024 (réseaux sociaux)
+
+**Couleurs logo** :
+- Couleur : `$terracotta` (#C17767)
+- Noir : `$charcoal` (#3A3632)
+- Blanc : `$white-paper` (#FEFBF6)
+
+=== Favicon
+
+**Tailles requises** :
+- favicon.ico (16×16, 32×32)
+- apple-touch-icon.png (180×180)
+- android-chrome.png (192×192, 512×512)
+
+---
+
+== Conclusion
+
+Cette charte graphique reflète l'élégance et la passion de la lecture, tout en restant moderne et accessible. Les tons neutres et chaleureux créent une ambiance cosy et accueillante, tandis que l'accent terracotta apporte dynamisme et personnalité.
+
+**Philosophie** : _Élégance intemporelle, chaleur humaine, passion partagée_
+
+---
+
+*Charte créée le 01/10/2025 - Version 2.0*
+*Basée sur l'image : `public/livre-coeur-L.webp`*

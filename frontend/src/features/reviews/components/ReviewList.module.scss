@@ -1,0 +1,28 @@
+.list {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+}
+
+.header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.formWrapper {
+    border: 1px solid var(--border);
+    padding: 0.75rem;
+    border-radius: 6px;
+    background: var(--surface-2);
+}
+
+.items {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+}
+
+.error {
+    color: var(--error);
+}

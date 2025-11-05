@@ -1,0 +1,8 @@
+@use '../../../styles/variables' as *;
+
+.switchText {
+  margin-top: 2rem;
+  color: var(--text-primary);
+  font-size: 0.7rem;
+  font-weight: bolder;
+}

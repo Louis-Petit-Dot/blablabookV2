@@ -1,0 +1,1014 @@
+= BlaBlaBook V2 - Conception & Architecture / Design & Architecture
+:toc: left
+:toclevels: 3
+:sectanchors:
+:source-highlighter: highlight.js
+:icons: font
+:version: 2.0
+:date: {docdate}
+
+// Navigation inter-documents
+link:../README.adoc[📚 Documentation Hub] |
+link:../cdc/technical-architecture.adoc[🏗️ Architecture] |
+link:../cdc/api-specifications.adoc[🛣️ API] |
+link:../diagrams/sequence/diag-sequence.adoc[📊 Sequence Diagrams]
+
+// Navigation langues
+<<section-fr,🇫🇷 Version Française>> | <<section-en,🇬🇧🇺🇸 English Version>>
+
+---
+
+[[section-fr]]
+== 🇫🇷 Conception & Architecture
+
+<<section-en,🇬🇧🇺🇸 Switch to English>> | 🇫🇷 *Français*
+
+=== 📋 Synthèse du Projet
+
+=== Objectifs de la V2
+
+[cols="1,3"]
+|===
+|Objectif |Description
+
+|*Migration Stack*
+|Passage de Node.js/Express/Sequelize vers **Deno/Hono/Drizzle**
+
+|*Architecture Moderne*
+|API RESTful stateless avec **JWT** au lieu de sessions Redis
+
+|*Sécurité Zero Trust*
+|Implémentation **"Never Trust, Always Verify"** + **OWASP Top 10** (sans device fingerprinting)
+
+|*Performance*
+|Stack ultra-rapide et images Docker optimisées
+
+|*Maintenabilité*
+|Code TypeScript natif et schema de données simplifié
+|===
+
+=== Choix Techniques Validés
+
+[cols="2,3,3"]
+|===
+|Composant |V1 (Actuel) |V2 (Nouveau)
+
+|*Runtime*
+|Node.js 18+
+|**Deno 2.1+**
+
+|*Framework Web*
+|Express.js 5.1
+|**Hono 3.12+**
+
+|*ORM*
+|Sequelize 6.35
+|**Drizzle ORM 0.29+**
+
+|*Authentification*
+|Sessions Redis + CSRF
+|**JWT + Zero Trust Security**
+
+|*Base de Données*
+|PostgreSQL 17
+|**PostgreSQL 17** (inchangé)
+
+|*Validation*
+|Zod 4.0
+|**Drizzle-Zod** (intégré)
+
+|*Logging*
+|Winston/Morgan
+|**Logger Deno natif** (stylisé)
+|===
+
+== 🏗️ Architecture Système
+
+=== Stack Technique Complète
+
+[source,typescript]
+----
+// deno.json - Configuration projet
+{
+  "compilerOptions": {
+    "allowJs": true,
+    "lib": ["deno.window"],
+    "strict": true
+  },
+  "tasks": {
+    "dev": "deno run --allow-net --allow-env --allow-read --watch src/main.ts",
+    "db:push": "drizzle-kit push:pg",
+    "db:studio": "drizzle-kit studio"
+  },
+  "imports": {
+    "hono": "https://deno.land/x/hono@v3.12.8/mod.ts",
+    "drizzle-orm": "npm:drizzle-orm@^0.29.0",
+    "drizzle-zod": "npm:drizzle-zod@^0.5.1",
+    "postgres": "https://deno.land/x/postgres@v0.17.0/mod.ts"
+  }
+}
+----
+
+=== Structure Projet Proposée
+
+----
+blablabookV2/
+├── src/
+│   ├── db/
+│   │   ├── schema.ts          # Schémas Drizzle
+│   │   ├── relations.ts       # Relations complexes
+│   │   └── migrations/        # Migrations Drizzle
+│   ├── routes/
+│   │   ├── auth.ts           # Routes authentification JWT
+│   │   ├── books.ts          # API Livres
+│   │   ├── users.ts          # API Utilisateurs
+│   │   └── ...
+│   ├── services/
+│   │   ├── auth.service.ts   # Logique métier auth
+│   │   ├── book.service.ts   # Logique métier livres
+│   │   └── ...
+│   ├── middleware/
+│   │   ├── auth.ts           # JWT + Permissions
+│   │   ├── security.ts       # Headers OWASP
+│   │   └── validation.ts     # Schemas Drizzle-Zod
+│   ├── types/
+│   │   └── api.ts            # Types API
+│   └── main.ts               # Application Hono
+├── drizzle.config.ts         # Configuration Drizzle
+├── deno.json                 # Configuration Deno
+└── README.md
+----
+
+== 🔐 Sécurité Zero Trust + OWASP Compliant
+
+=== Architecture Zero Trust JWT
+
+[source,typescript]
+----
+// JWT Simple Pattern (8h)
+interface JWTToken {
+  accessToken: string;   // 8h TTL - Single token, no refresh
+}
+
+interface ZeroTrustContext {
+  sessionId: string;          // Session unique JWT
+  permissions: string[];      // Permissions utilisateur (cache Deno KV)
+  lastActivity: Date;         // Dernière activité
+  rateLimit: number;          // Compteur requêtes (anti-spam)
+  // Note: Pas de device fingerprinting pour éviter friction mobile
+  // Storage: Deno KV pour lockout + cache rôles/permissions
+}
+
+// Middleware Zero Trust (sans device fingerprinting)
+export const zeroTrustAuthMiddleware = async (c: Context, next: Next) => {
+  const token = c.req.header("Authorization")?.slice(7); // "Bearer "
+  const payload = await verify(token, JWT_SECRET);
+
+  if (payload.type !== "access") {
+    throw new Error("Invalid token type");
+  }
+
+  // Zero Trust: Validation continue SANS device fingerprinting
+  const userContext = await getZeroTrustContext(payload.sub);
+
+  // Vérification permissions à chaque requête
+  if (!payload.permissions || payload.permissions.length === 0) {
+    throw new Error("No permissions in token");
+  }
+
+  // Rate limiting per user (protection spam/bot)
+  if (userContext.rateLimit > 1000) { // 1000 requêtes/15min
+    await logSecurityEvent("RATE_LIMIT_EXCEEDED", {
+      user: payload.sub,
+      requests: userContext.rateLimit
+    });
+    return c.json({ error: "Too many requests" }, 429);
+  }
+
+  // Token expiration stricte (pas de grace period)
+  if (payload.exp * 1000 < Date.now()) {
+    throw new Error("Token expired - strict validation");
+  }
+
+  // Mise à jour contexte Zero Trust
+  await updateZeroTrustContext(payload.sub, {
+    lastActivity: new Date(),
+    rateLimit: userContext.rateLimit + 1
+  });
+
+  c.set("user", {
+    id: payload.sub,
+    permissions: payload.permissions,
+    zeroTrustValidated: true
+  });
+
+  await next();
+};
+----
+
+=== Headers Sécurisés OWASP
+
+[source,typescript]
+----
+export const securityHeaders = async (c: Context, next: Next) => {
+  await next();
+
+  // OWASP A05: Security Misconfiguration
+  c.header("X-Content-Type-Options", "nosniff");
+  c.header("X-Frame-Options", "DENY");
+  c.header("X-XSS-Protection", "1; mode=block");
+  c.header("Referrer-Policy", "strict-origin-when-cross-origin");
+
+  // OWASP A02: Cryptographic Failures
+  if (c.req.url.includes("https://")) {
+    c.header("Strict-Transport-Security", "max-age=31536000; includeSubDomains");
+  }
+};
+----
+
+=== Rate Limiting & Protection
+
+[source,typescript]
+----
+// OWASP A10: Server-Side Request Forgery
+export const rateLimiter = (maxRequests = 100, windowMs = 60000) => {
+  const requests = new Map<string, number[]>();
+
+  return async (c: Context, next: Next) => {
+    const clientIp = c.req.header("x-forwarded-for") || "unknown";
+    const now = Date.now();
+
+    const clientRequests = requests.get(clientIp) || [];
+    const validRequests = clientRequests.filter(time => now - time < windowMs);
+
+    if (validRequests.length >= maxRequests) {
+      return c.json({ error: "Too Many Requests" }, 429);
+    }
+
+    validRequests.push(now);
+    requests.set(clientIp, validRequests);
+    await next();
+  };
+};
+----
+
+== 🗄️ Modélisation des Données
+
+=== Entity Relationship Diagram (ERD)
+
+[source,mermaid]
+----
+erDiagram
+    USER ||--o{ LIBRARY : owns
+    USER ||--o{ READING_LIST : owns
+    USER ||--o{ NOTICE : owns
+    USER ||--o{ RATE : owns
+
+    %% Relations RBAC
+    USER ||--o{ USER_ROLE : has
+    ROLE ||--o{ USER_ROLE : assigned_to
+    ROLE ||--o{ ROLE_PERMISSION : has
+    PERMISSION ||--o{ ROLE_PERMISSION : granted_to
+
+    LIBRARY ||--o{ READING_LIST : contains
+    BOOK ||--o{ READING_LIST : appears_in
+    BOOK ||--o{ NOTICE : has
+    BOOK ||--o{ RATE : has
+    BOOK ||--o{ BOOK_AUTHOR : written_by
+    BOOK ||--o{ BOOK_GENRE : categorized_as
+    AUTHOR ||--o{ BOOK_AUTHOR : writes
+    GENRE ||--o{ BOOK_GENRE : categorizes
+
+    USER {
+        int id_user PK
+        string firstname
+        string lastname
+        string username UK
+        string email UK
+        string password
+        string avatar_url
+        timestamp connected_at
+        timestamp created_at
+        timestamp deleted_at "soft delete"
+    }
+
+    LIBRARY {
+        int id_library PK
+        int id_user FK "propriétaire"
+        string name
+        timestamp created_at
+        timestamp deleted_at "soft delete"
+    }
+
+    READING_LIST {
+        int id_reading_list PK
+        int id_user FK "propriétaire de l'entrée"
+        int id_library FK "bibliothèque contenante"
+        int id_book FK
+        string list_name "nom de la liste nommée"
+        string reading_status "to_read|reading|read|abandoned"
+        timestamp added_at
+        timestamp started_at
+        timestamp finished_at
+    }
+
+    BOOK {
+        int id_book PK
+        string title
+        string isbn UK
+        text description
+        int publication_year
+        string cover_url
+        string open_library_key UK
+        bool is_temporary "système import simplifié"
+        timestamp imported_at
+        timestamp created_at
+        timestamp updated_at
+    }
+
+    LIBRARY_PERMISSION {
+        int id_library FK
+        int id_user FK "utilisateur autorisé"
+        string permission_type "read|write|admin"
+        timestamp granted_at
+    }
+
+    LIBRARY ||--o{ LIBRARY_PERMISSION : "can be shared via"
+    USER ||--o{ LIBRARY_PERMISSION : "can access shared"
+----
+
+=== Modèle Conceptuel de Données (MCD) Merise
+
+[source,mermaid]
+----
+graph TB
+    %% ENTITÉS PRINCIPALES
+    USER["👤 USER<br/>id_user<br/>firstname<br/>lastname<br/>username<br/>email<br/>password<br/>avatar_url"]
+
+    LIBRARY["📚 LIBRARY<br/>id_library<br/>name"]
+
+    BOOK["📖 BOOK<br/>id_book<br/>title<br/>isbn<br/>description<br/>publication_year<br/>cover_url<br/>is_temporary<br/>imported_at"]
+
+    AUTHOR["✍️ AUTHOR<br/>id_author<br/>name<br/>bio<br/>birth_date<br/>death_date<br/>avatar_url"]
+
+    GENRE["🏷️ GENRE<br/>id_genre<br/>name<br/>description"]
+
+    ROLE["🎭 ROLE<br/>id_role<br/>name<br/>description"]
+
+    PERMISSION["🔑 PERMISSION<br/>id_permission<br/>label<br/>action"]
+
+    %% ENTITÉS D'ASSOCIATION (avec PK propres)
+    READING_LIST["📋 READING_LIST<br/>id_reading_list<br/>list_name<br/>reading_status<br/>added_at<br/>started_at<br/>finished_at"]
+
+    LIBRARY_PERMISSION["🔐 LIBRARY_PERMISSION<br/>permission_type<br/>granted_at"]
+
+    NOTICE["💬 NOTICE<br/>id_notice<br/>title<br/>content<br/>is_spoiler<br/>is_public"]
+
+    RATE["⭐ RATE<br/>id_rate<br/>rating"]
+
+    USER_ROLE["👥 USER_ROLE<br/>id_user_role"]
+
+    ROLE_PERMISSION["🎫 ROLE_PERMISSION<br/>id_role_permission"]
+
+    BOOK_AUTHOR["📝 BOOK_AUTHOR<br/>id_book_author"]
+
+    BOOK_GENRE["🏷️ BOOK_GENRE<br/>id_book_genre"]
+
+    %% RELATIONS SIMPLES (1:N)
+    POSSEDER["POSSÉDER<br/>1,n ---- 1,1"]
+
+    %% RELATIONS VERS ENTITÉS D'ASSOCIATION
+    DETENIR_USER_RL["DETENIR<br/>0,n ---- 1,1"]
+    APPARTENIR_LIB_RL["CONTENIR<br/>1,1 ---- 0,n"]
+    APPARTENIR_BOOK_RL["FIGURER<br/>1,1 ---- 0,n"]
+
+    AUTORISER_USER["AUTORISER<br/>0,n ---- 1,1"]
+    CONCERNER_LIB["CONCERNER<br/>0,n ---- 1,1"]
+
+    %% LIAISONS PRINCIPALES
+    USER --- POSSEDER
+    POSSEDER --- LIBRARY
+
+    %% LIAISONS READING_LIST (3 FK)
+    USER --- DETENIR_USER_RL
+    DETENIR_USER_RL --- READING_LIST
+
+    LIBRARY --- APPARTENIR_LIB_RL
+    APPARTENIR_LIB_RL --- READING_LIST
+
+    BOOK --- APPARTENIR_BOOK_RL
+    APPARTENIR_BOOK_RL --- READING_LIST
+
+    %% LIAISONS LIBRARY_PERMISSION
+    USER --- AUTORISER_USER
+    AUTORISER_USER --- LIBRARY_PERMISSION
+
+    LIBRARY --- CONCERNER_LIB
+    CONCERNER_LIB --- LIBRARY_PERMISSION
+----
+
+=== Règles de Gestion Validées
+
+[cols="1,4"]
+|===
+|RG |Description
+
+|*RG1*
+|Un utilisateur possède au minimum une bibliothèque (1,n ---- 1,1)
+
+|*RG2*
+|Une READING_LIST lie obligatoirement 1 USER + 1 LIBRARY + 1 BOOK
+
+|*RG3*
+|Un livre ne peut figurer qu'une fois dans une même bibliothèque
+
+|*RG4*
+|Chaque ajout de livre est tracé (propriétaire de l'entrée)
+
+|*RG5*
+|Un utilisateur ne peut noter qu'une fois le même livre
+
+|*RG6*
+|Permissions de partage : 'read', 'write', 'admin'
+
+|*RG7*
+|Système RBAC : USER ↔ ROLE ↔ PERMISSION pour permissions système
+
+|*RG8*
+|Import temporaire : livres supprimés après 3 jours si non confirmés
+|===
+
+== 🔄 Système d'Import Temporaire Simplifié
+
+=== Logique de Fonctionnement
+
+[source,typescript]
+----
+// Schema Drizzle (2 champs seulement)
+export const books = pgTable('books', {
+  // ... champs normaux
+  isTemporary: boolean('is_temporary').default(true),
+  importedAt: timestamp('imported_at').defaultNow(),
+});
+
+// Confirmation automatique lors de l'usage
+const confirmBook = async (bookId: number) => {
+  await db.update(books)
+    .set({ isTemporary: false })
+    .where(eq(books.id, bookId));
+};
+
+// Cleanup automatique (Cron Deno)
+Deno.cron("cleanup temporary books", "0 2 * * *", async () => {
+  const threeDaysAgo = new Date(Date.now() - 3 * 24 * 60 * 60 * 1000);
+
+  const deleted = await db.delete(books)
+    .where(
+      and(
+        eq(books.isTemporary, true),
+        lt(books.importedAt, threeDaysAgo)
+      )
+    );
+
+  console.log(`🧹 Cleaned up ${deleted.length} temporary books`);
+});
+----
+
+=== Avantages vs V1
+
+[cols="2,3,3"]
+|===
+|Aspect |V1 (Système complexe) |V2 (Système simplifié)
+
+|*Nombre de champs*
+|5 champs (import_status, imported_by, imported_at, imported_reason, needs_enrichment)
+|**2 champs** (is_temporary, imported_at)
+
+|*Cleanup*
+|Manuel ou script externe
+|**Automatique** (Deno cron intégré)
+
+|*Performance*
+|Index multiples, requêtes complexes
+|**1 index composite optimisé**
+
+|*Maintenabilité*
+|Logique répartie, FK multiples
+|**Logique centralisée, simple**
+|===
+
+== 🐳 Infrastructure & Déploiement
+
+=== Docker Simplifié
+
+[source,dockerfile]
+----
+# Dockerfile.prod - Optimisé Deno
+FROM denoland/deno:2.1.0-alpine AS cacher
+
+WORKDIR /app
+COPY deno.json deno.lock* ./
+RUN deno cache src/main.ts
+
+FROM denoland/deno:2.1.0-alpine
+
+WORKDIR /app
+COPY --from=cacher /app .
+COPY . .
+
+EXPOSE 3000
+
+# Permissions explicites
+CMD ["deno", "run", "--allow-net", "--allow-env", "--allow-read", "src/main.ts"]
+----
+
+=== Docker Compose Simplifié
+
+[source,yaml]
+----
+# Plus de service Redis !
+services:
+  api:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.dev
+    ports:
+      - '3000:3000'
+    environment:
+      - JWT_SECRET=${JWT_SECRET}
+      - DB_HOST=${DB_HOST}
+      # ❌ Plus de REDIS_URL
+    depends_on:
+      - postgres
+      # ❌ Plus de redis
+
+  postgres:
+    image: postgres:17-alpine
+    # Configuration identique
+----
+
+=== Gains Infrastructure
+
+[cols="2,3,3"]
+|===
+|Métrique |V1 |V2
+
+|*Services Docker*
+|4 services (API + Redis + DB + Adminer)
+|**3 services** (API + DB + Adminer)
+
+|*Taille image API*
+|~200MB (Node Alpine + deps)
+|**~50MB** (Deno Alpine)
+
+|*Temps build CI*
+|3-5 minutes (npm install)
+|**1-2 minutes** (cache Deno)
+
+|*Mémoire runtime*
+|~150MB (Node + Redis client)
+|**~80MB** (Deno pur)
+|===
+
+== 📅 Timeline de Migration
+
+=== Phase 1 : Fondations (1-2 semaines)
+- [ ] Setup projet Deno + Hono + Drizzle
+- [ ] Migration schéma de base de données
+- [ ] Authentification JWT basique
+- [ ] Configuration CI/CD
+
+=== Phase 2 : API Core (3-4 semaines)
+- [ ] Users, Books, Authors, Genres (CRUD)
+- [ ] Système RBAC complet
+- [ ] Tests unitaires
+- [ ] Validation Drizzle-Zod
+
+=== Phase 3 : Fonctionnalités Avancées (2-3 semaines)
+- [ ] Libraries + partage (LIBRARY_PERMISSION)
+- [ ] Reading lists avec ownership
+- [ ] Rates + Notices
+- [ ] Import OpenLibrary + système temporaire
+
+=== Phase 4 : Production (1-2 semaines)
+- [ ] Sécurité OWASP complète
+- [ ] Performance optimization
+- [ ] Tests d'intégration
+- [ ] Documentation API
+
+*TOTAL : 7-11 semaines* (vs 15+ avec migration classique)
+
+== ✅ Validation Conception
+
+=== Points Clés Validés
+
+[cols="1,4"]
+|===
+|✅ |Description
+
+|*Architecture*
+|MCD Merise avec entités d'association validé
+
+|*Défaut V1 corrigé*
+|Reading lists avec ownership direct (plus de dépendance library exclusive)
+
+|*Stack moderne*
+|Deno/Hono/Drizzle pour performance et maintenabilité
+
+|*Sécurité*
+|JWT stateless + OWASP Top 10 compliance
+
+|*Simplification*
+|Schema 40% plus simple, système import temporaire optimisé
+
+|*Infrastructure*
+|Docker allégé, 1 service en moins, CI/CD plus rapide
+|===
+
+=== Prochaines Étapes
+
+1. **Validation finale** de cette conception
+2. **Création schémas Drizzle** TypeScript
+3. **Setup projet** Deno avec structure validée
+4. **Implémentation** par phases
+
+[[section-en]]
+== 🇬🇧🇺🇸 Design & Architecture
+
+<<section-fr,🇫🇷 Passer en Français>> | 🇬🇧🇺🇸 *English*
+
+=== 📋 Project Overview
+
+==== V2 Objectives
+
+[cols="1,3"]
+|===
+|Objective |Description
+
+|*Stack Migration*
+|Migration from Node.js/Express/Sequelize to **Deno/Hono/Drizzle**
+
+|*Modern Architecture*
+|Stateless RESTful API with **JWT** instead of Redis sessions
+
+|*OWASP Security*
+|Secure "in-house" implementation compliant with **OWASP Top 10**
+
+|*Performance*
+|Ultra-fast stack and optimized Docker images
+
+|*Maintainability*
+|Native TypeScript code and simplified data schema
+|===
+
+==== Validated Technical Choices
+
+[cols="2,3,3"]
+|===
+|Component |V1 (Current) |V2 (New)
+
+|*Runtime*
+|Node.js 18+
+|**Deno 2.1+**
+
+|*Web Framework*
+|Express.js 5.1
+|**Hono 3.12+**
+
+|*ORM*
+|Sequelize 6.35
+|**Drizzle ORM 0.29+**
+
+|*Authentication*
+|Redis Sessions + CSRF
+|**JWT + Stateless Security**
+
+|*Database*
+|PostgreSQL 17
+|**PostgreSQL 17** (unchanged)
+
+|*Validation*
+|Zod 4.0
+|**Drizzle-Zod** (integrated)
+
+|*Logging*
+|Winston/Morgan
+|**Deno Native Logger** (styled)
+|===
+
+=== 🏗️ System Architecture
+
+==== Complete Technical Stack
+
+[source,typescript]
+----
+// deno.json - Project configuration
+{
+  "compilerOptions": {
+    "allowJs": true,
+    "lib": ["deno.window"],
+    "strict": true
+  },
+  "tasks": {
+    "dev": "deno run --allow-net --allow-env --allow-read --watch src/main.ts",
+    "db:push": "drizzle-kit push:pg",
+    "db:studio": "drizzle-kit studio"
+  },
+  "imports": {
+    "hono": "https://deno.land/x/hono@v3.12.8/mod.ts",
+    "drizzle-orm": "npm:drizzle-orm@^0.29.0",
+    "drizzle-zod": "npm:drizzle-zod@^0.5.1",
+    "postgres": "https://deno.land/x/postgres@v0.17.0/mod.ts"
+  }
+}
+----
+
+=== 🗄️ Data Modeling
+
+==== Entity Relationship Diagram (ERD)
+
+[source,mermaid]
+----
+erDiagram
+    USER ||--o{ LIBRARY : owns
+    USER ||--o{ READING_LIST : owns
+    USER ||--o{ NOTICE : owns
+    USER ||--o{ RATE : owns
+
+    %% RBAC Relations
+    USER ||--o{ USER_ROLE : has
+    ROLE ||--o{ USER_ROLE : assigned_to
+    ROLE ||--o{ ROLE_PERMISSION : has
+    PERMISSION ||--o{ ROLE_PERMISSION : granted_to
+
+    LIBRARY ||--o{ READING_LIST : contains
+    BOOK ||--o{ READING_LIST : appears_in
+    BOOK ||--o{ NOTICE : has
+    BOOK ||--o{ RATE : has
+    BOOK ||--o{ BOOK_AUTHOR : written_by
+    BOOK ||--o{ BOOK_GENRE : categorized_as
+    AUTHOR ||--o{ BOOK_AUTHOR : writes
+    GENRE ||--o{ BOOK_GENRE : categorizes
+
+    USER {
+        int id_user PK
+        string firstname
+        string lastname
+        string username UK
+        string email UK
+        string password
+        string avatar_url
+        timestamp connected_at
+        timestamp created_at
+        timestamp deleted_at "soft delete"
+    }
+
+    LIBRARY {
+        int id_library PK
+        int id_user FK "owner"
+        string name
+        timestamp created_at
+        timestamp deleted_at "soft delete"
+    }
+
+    READING_LIST {
+        int id_reading_list PK
+        int id_user FK "entry owner"
+        int id_library FK "containing library"
+        int id_book FK
+        string list_name "named list name"
+        string reading_status "to_read|reading|read|abandoned"
+        timestamp added_at
+        timestamp started_at
+        timestamp finished_at
+    }
+
+    BOOK {
+        int id_book PK
+        string title
+        string isbn UK
+        text description
+        int publication_year
+        string cover_url
+        string open_library_key UK
+        bool is_temporary "simplified import system"
+        timestamp imported_at
+        timestamp created_at
+        timestamp updated_at
+    }
+
+    LIBRARY_PERMISSION {
+        int id_library FK
+        int id_user FK "authorized user"
+        string permission_type "read|write|admin"
+        timestamp granted_at
+    }
+
+    LIBRARY ||--o{ LIBRARY_PERMISSION : "can be shared via"
+    USER ||--o{ LIBRARY_PERMISSION : "can access shared"
+----
+
+==== Validated Business Rules
+
+[cols="1,4"]
+|===
+|BR |Description
+
+|*BR1*
+|A user owns at least one library (1,n ---- 1,1)
+
+|*BR2*
+|A READING_LIST mandatorily links 1 USER + 1 LIBRARY + 1 BOOK
+
+|*BR3*
+|A book can only appear once in the same library
+
+|*BR4*
+|Each book addition is tracked (entry owner)
+
+|*BR5*
+|A user can only rate the same book once
+
+|*BR6*
+|Sharing permissions: 'read', 'write', 'admin'
+
+|*BR7*
+|RBAC system: USER ↔ ROLE ↔ PERMISSION for system permissions
+
+|*BR8*
+|Temporary import: books deleted after 3 days if not confirmed
+|===
+
+=== 🔄 Simplified Temporary Import System
+
+==== Operating Logic
+
+[source,typescript]
+----
+// Drizzle Schema (only 2 fields)
+export const books = pgTable('books', {
+  // ... normal fields
+  isTemporary: boolean('is_temporary').default(true),
+  importedAt: timestamp('imported_at').defaultNow(),
+});
+
+// Automatic confirmation when used
+const confirmBook = async (bookId: number) => {
+  await db.update(books)
+    .set({ isTemporary: false })
+    .where(eq(books.id, bookId));
+};
+
+// Automatic cleanup (Deno Cron)
+Deno.cron("cleanup temporary books", "0 2 * * *", async () => {
+  const threeDaysAgo = new Date(Date.now() - 3 * 24 * 60 * 60 * 1000);
+
+  const deleted = await db.delete(books)
+    .where(
+      and(
+        eq(books.isTemporary, true),
+        lt(books.importedAt, threeDaysAgo)
+      )
+    );
+
+  console.log(`🧹 Cleaned up ${deleted.length} temporary books`);
+});
+----
+
+==== Advantages vs V1
+
+[cols="2,3,3"]
+|===
+|Aspect |V1 (Complex system) |V2 (Simplified system)
+
+|*Number of fields*
+|5 fields (import_status, imported_by, imported_at, imported_reason, needs_enrichment)
+|**2 fields** (is_temporary, imported_at)
+
+|*Cleanup*
+|Manual or external script
+|**Automatic** (integrated Deno cron)
+
+|*Performance*
+|Multiple indexes, complex queries
+|**1 optimized composite index**
+
+|*Maintainability*
+|Distributed logic, multiple FKs
+|**Centralized, simple logic**
+|===
+
+=== 🐳 Infrastructure & Deployment
+
+==== Simplified Docker
+
+[source,dockerfile]
+----
+# Dockerfile.prod - Deno Optimized
+FROM denoland/deno:2.1.0-alpine AS cacher
+
+WORKDIR /app
+COPY deno.json deno.lock* ./
+RUN deno cache src/main.ts
+
+FROM denoland/deno:2.1.0-alpine
+
+WORKDIR /app
+COPY --from=cacher /app .
+COPY . .
+
+EXPOSE 3000
+
+# Explicit permissions
+CMD ["deno", "run", "--allow-net", "--allow-env", "--allow-read", "src/main.ts"]
+----
+
+==== Infrastructure Gains
+
+[cols="2,3,3"]
+|===
+|Metric |V1 |V2
+
+|*Docker Services*
+|4 services (API + Redis + DB + Adminer)
+|**3 services** (API + DB + Adminer)
+
+|*API image size*
+|~200MB (Node Alpine + deps)
+|**~50MB** (Deno Alpine)
+
+|*CI build time*
+|3-5 minutes (npm install)
+|**1-2 minutes** (Deno cache)
+
+|*Runtime memory*
+|~150MB (Node + Redis client)
+|**~80MB** (Pure Deno)
+|===
+
+=== 📅 Migration Timeline
+
+==== Phase 1: Foundations (1-2 weeks)
+- [ ] Setup Deno + Hono + Drizzle project
+- [ ] Database schema migration
+- [ ] Basic JWT authentication
+- [ ] CI/CD configuration
+
+==== Phase 2: Core API (3-4 weeks)
+- [ ] Users, Books, Authors, Genres (CRUD)
+- [ ] Complete RBAC system
+- [ ] Unit tests
+- [ ] Drizzle-Zod validation
+
+==== Phase 3: Advanced Features (2-3 weeks)
+- [ ] Libraries + sharing (LIBRARY_PERMISSION)
+- [ ] Reading lists with ownership
+- [ ] Rates + Notices
+- [ ] OpenLibrary import + temporary system
+
+==== Phase 4: Production (1-2 weeks)
+- [ ] Complete OWASP security
+- [ ] Performance optimization
+- [ ] Integration tests
+- [ ] API documentation
+
+*TOTAL: 7-11 weeks* (vs 15+ with classic migration)
+
+=== ✅ Design Validation
+
+==== Key Validated Points
+
+[cols="1,4"]
+|===
+|✅ |Description
+
+|*Architecture*
+|Validated Merise MCD with association entities
+
+|*V1 Issue Fixed*
+|Reading lists with direct ownership (no exclusive library dependency)
+
+|*Modern Stack*
+|Deno/Hono/Drizzle for performance and maintainability
+
+|*Security*
+|Stateless JWT + OWASP Top 10 compliance
+
+|*Simplification*
+|40% simpler schema, optimized temporary import system
+
+|*Infrastructure*
+|Lighter Docker, 1 less service, faster CI/CD
+|===
+
+==== Next Steps
+
+1. **Final validation** of this design
+2. **Create TypeScript Drizzle schemas**
+3. **Setup Deno project** with validated structure
+4. **Implementation** by phases
+
+---
+
+*BlaBlaBook V2 Design Document - {date}*
+*Stack: Deno 2.1 + Hono 3.12 + Drizzle 0.29 + PostgreSQL 17*

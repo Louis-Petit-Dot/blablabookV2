@@ -1,0 +1,265 @@
+= Guide de Configuration - BlaBlaBookV2
+:toc:
+:toc-title: Table des matières
+:sectnums:
+
+== Introduction
+
+Ce document présente les configurations essentielles du projet BlaBlaBookV2, incluant les variables d'environnement, CORS, et la gestion des ports.
+
+== Variables d'environnement
+
+=== Backend (.env)
+
+Le backend utilise Deno et charge automatiquement les variables avec `@std/dotenv/load`.
+
+==== Environnement
+
+[source,bash]
+----
+NODE_ENV=development          # Mode: development | production
+API_PORT=3000                 # Port du serveur backend
+----
+
+==== Base de données
+
+[source,bash]
+----
+DB_HOST=localhost
+DB_PORT=5433                  # Port PostgreSQL pour dev
+DB_USER=bbbv2
+DB_PASSWORD=bbbv2
+DB_NAME=bbbv2
+
+# Configuration Postgres pour Docker
+POSTGRES_USER=bbbv2
+POSTGRES_PASSWORD=bbbv2
+POSTGRES_DB=bbbv2
+POSTGRES_PORT=5432           # Port interne Docker
+POSTGRES_TEST_PORT=5433      # Port pour tests
+----
+
+==== CORS
+
+[source,bash]
+----
+# Origins autorisées (séparées par virgules, SANS espaces)
+ALLOWED_ORIGINS=http://localhost:3000,http://localhost:3001,http://localhost:5173,http://localhost:5174,http://127.0.0.1:3000
+
+# Headers et méthodes autorisées
+ALLOWED_HEADERS=Content-Type,Authorization,X-Requested-With
+ALLOWED_METHODS=GET,POST,PUT,DELETE,OPTIONS,PATCH
+
+# URLs frontend
+FRONTEND_URL_DEV=http://localhost:5173
+FRONTEND_URL_PROD=https://blablabookv2.com
+----
+
+⚠️ **Important** : Toujours inclure le port exact utilisé par le frontend dans `ALLOWED_ORIGINS`.
+
+==== JWT
+
+[source,bash]
+----
+JWT_SECRET=your_super_secret_key_here
+----
+
+==== Cloudinary
+
+[source,bash]
+----
+CLOUDINARY_CLOUD_NAME=your_cloud_name
+CLOUDINARY_API_KEY=your_api_key
+CLOUDINARY_API_SECRET=your_api_secret
+CLOUDINARY_FOLDER=blablabookv2
+----
+
+=== Frontend (.env)
+
+Le frontend utilise Vite qui nécessite le préfixe `VITE_` pour exposer les variables.
+
+[source,bash]
+----
+VITE_API_URL=http://localhost:3000
+----
+
+⚠️ **Important** :
+- Les variables `VITE_*` sont chargées **uniquement au démarrage** de Vite
+- Toujours redémarrer le serveur dev après modification du `.env`
+- Ces variables sont exposées publiquement dans le bundle
+
+== Configuration CORS
+
+=== Fonctionnement
+
+Le middleware de sécurité (`backend/src/middlewares/security.ts`) gère CORS :
+
+[source,typescript]
+----
+const origin = c.req.header('origin');
+
+if (origin && allowedOrigins.includes(origin)) {
+    c.header('Access-Control-Allow-Origin', origin);
+}
+
+c.header('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS');
+c.header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+c.header('Access-Control-Allow-Credentials', 'true');
+c.header('Access-Control-Max-Age', '86400');
+----
+
+=== Règles
+
+1. Le header `Origin` de la requête est vérifié contre `ALLOWED_ORIGINS`
+2. Si l'origin est autorisée, le header `Access-Control-Allow-Origin` est ajouté avec cette origin
+3. Les credentials (cookies, JWT) sont autorisés avec `Access-Control-Allow-Credentials: true`
+
+=== Problèmes courants
+
+==== Erreur : "CORS header missing"
+
+**Cause** : L'origin du frontend n'est pas dans `ALLOWED_ORIGINS`
+
+**Solution** :
+1. Vérifier le port utilisé dans le navigateur
+2. Ajouter cette URL exacte à `ALLOWED_ORIGINS` dans `backend/.env`
+3. Redémarrer le backend
+
+==== Erreur après modification du .env frontend
+
+**Cause** : Vite ne recharge pas automatiquement les variables d'environnement
+
+**Solution** : Redémarrer le serveur dev (Ctrl+C puis `npm run dev`)
+
+== Ports utilisés
+
+=== Développement
+
+|===
+|Service |Port |Description
+
+|Backend
+|3000
+|API Hono (Deno)
+
+|Frontend (dev)
+|3001 ou 5173
+|Vite dev server
+
+|PostgreSQL
+|5433
+|Base de données (mappé depuis 5432 dans Docker)
+
+|PostgreSQL (test)
+|5434
+|Base de tests
+|===
+
+=== Production
+
+|===
+|Service |Port |Description
+
+|Backend
+|3000
+|API derrière reverse proxy
+
+|Frontend
+|80/443
+|Servi par Nginx ou CDN
+
+|PostgreSQL
+|5432
+|Base de données (non exposée)
+|===
+
+== Configuration Axios (Frontend)
+
+Le fichier `frontend/src/lib/api.ts` configure axios :
+
+[source,typescript]
+----
+const api = axios.create({
+  baseURL: import.meta.env.VITE_API_URL || 'http://localhost:3000',
+  timeout: 10000,
+  headers: {
+    'Content-Type': 'application/json',
+  },
+  withCredentials: true,  // Nécessaire pour CORS avec credentials
+})
+----
+
+**`withCredentials: true`** permet :
+- Envoi automatique des cookies
+- Autorisation JWT via headers
+- Sessions côté serveur
+
+⚠️ Nécessite `Access-Control-Allow-Credentials: true` côté backend
+
+== Rate Limiting
+
+Configuration dans `backend/src/index.ts` :
+
+[source,typescript]
+----
+app.use('*', securityMiddleware({
+    windowMs: 15 * 60 * 1000,  // 15 minutes
+    maxRequests: 100,           // 100 requêtes par fenêtre
+    allowedOrigins: allowedOrigins
+}))
+----
+
+Headers de réponse :
+- `X-RateLimit-Limit`: Nombre max de requêtes
+- `X-RateLimit-Remaining`: Requêtes restantes
+- `X-RateLimit-Reset`: Secondes avant reset
+
+== Checklist de déploiement
+
+=== Backend
+
+- [ ] Définir `NODE_ENV=production`
+- [ ] Générer un `JWT_SECRET` fort (32+ caractères aléatoires)
+- [ ] Configurer `ALLOWED_ORIGINS` avec les domaines de production
+- [ ] Sécuriser les credentials Cloudinary
+- [ ] Vérifier les credentials PostgreSQL
+- [ ] Activer SSL/TLS pour PostgreSQL
+
+=== Frontend
+
+- [ ] Définir `VITE_API_URL` vers l'API de production
+- [ ] Vérifier que les variables sensibles ne sont PAS préfixées par `VITE_`
+- [ ] Builder avec `npm run build`
+- [ ] Configurer les headers de sécurité (CSP, HSTS, etc.)
+
+== Troubleshooting
+
+=== Le backend ne démarre pas
+
+1. Vérifier que `.env` existe et contient toutes les variables
+2. Vérifier que PostgreSQL est accessible sur le port configuré
+3. Vérifier les logs : erreurs de connexion DB, variables manquantes
+
+=== Erreur CORS persistante
+
+1. Ouvrir les DevTools (F12) → Onglet Network
+2. Cliquer sur la requête qui échoue
+3. Vérifier :
+   - Header `Origin` envoyé par le navigateur
+   - Headers `Access-Control-*` dans la réponse
+4. Comparer l'origin avec `ALLOWED_ORIGINS`
+
+=== Variables d'environnement non chargées
+
+**Backend (Deno)** : Les variables sont chargées automatiquement
+
+**Frontend (Vite)** :
+- Redémarrer le serveur dev
+- Vérifier le préfixe `VITE_`
+- Vérifier avec `console.log(import.meta.env.VITE_API_URL)`
+
+== Ressources
+
+- link:https://developer.mozilla.org/en-US/docs/Web/HTTP/CORS[MDN - CORS]
+- link:https://vitejs.dev/guide/env-and-mode.html[Vite - Variables d'environnement]
+- link:https://deno.land/std/dotenv[Deno - dotenv]

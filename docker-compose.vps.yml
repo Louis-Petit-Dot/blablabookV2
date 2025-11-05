@@ -1,0 +1,164 @@
+###############################################################################
+# Docker Compose - Production VPS Hostinger
+#
+# Usage :
+#   docker compose -f docker-compose.vps.yml up -d
+#   docker compose -f docker-compose.vps.yml logs -f
+#   docker compose -f docker-compose.vps.yml down
+#
+# IMPORTANT : Créez d'abord le fichier .env.prod avec vos vraies valeurs !
+###############################################################################
+
+services:
+  # =========================================================================
+  # BACKEND - API Deno + Hono
+  # =========================================================================
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.dev  # Utilise dev pour avoir deno disponible
+    container_name: blablabook-backend
+    env_file:
+      - .env.prod  # Variables de production
+    environment:
+      - NODE_ENV=production
+      - DB_HOST=postgres
+      - DB_PORT=5432
+    ports:
+      - "3000:3000"  # Exposé pour Nginx
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    networks:
+      - blablabook-network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # =========================================================================
+  # FRONTEND - React 19 + Vite (SPA)
+  # =========================================================================
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.dev  # Utilise dev, Vite sert en prod aussi
+      args:
+        - VITE_API_URL=https://blablabook.online
+    container_name: blablabook-frontend
+    environment:
+      - NODE_ENV=production
+      - VITE_API_URL=https://blablabook.online
+    ports:
+      - "5173:5173"  # Exposé pour Nginx
+    depends_on:
+      - backend
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5173"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    networks:
+      - blablabook-network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # =========================================================================
+  # DATABASE - PostgreSQL 17
+  # =========================================================================
+  postgres:
+    image: postgres:17-alpine
+    container_name: blablabook-db
+    env_file:
+      - .env.database  # Variables DB séparées
+    environment:
+      - POSTGRES_DB=${POSTGRES_DB:-blablabook}
+      - POSTGRES_USER=${POSTGRES_USER:-blabla}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+    volumes:
+      - postgres_prod_data:/var/lib/postgresql/data
+      # - ./Docs/database/BBBV2.sql:/docker-entrypoint-initdb.d/init.sql  # Init DB si besoin
+    # NE PAS exposer le port en production (sécurité)
+    # ports:
+    #   - "5432:5432"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-blabla} -d ${POSTGRES_DB:-blablabook}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    networks:
+      - blablabook-network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    # Optimisations PostgreSQL pour production
+    command:
+      - "postgres"
+      - "-c"
+      - "max_connections=100"
+      - "-c"
+      - "shared_buffers=256MB"
+      - "-c"
+      - "effective_cache_size=1GB"
+      - "-c"
+      - "maintenance_work_mem=64MB"
+      - "-c"
+      - "checkpoint_completion_target=0.9"
+      - "-c"
+      - "wal_buffers=16MB"
+      - "-c"
+      - "default_statistics_target=100"
+      - "-c"
+      - "random_page_cost=1.1"
+      - "-c"
+      - "effective_io_concurrency=200"
+
+  # =========================================================================
+  # ADMINER - Interface DB (OPTIONNEL - À retirer en prod finale)
+  # =========================================================================
+  adminer:
+    image: adminer:latest
+    container_name: blablabook-adminer
+    ports:
+      - "8081:8080"  # Accès via http://IP:8081
+    depends_on:
+      - postgres
+    restart: unless-stopped
+    networks:
+      - blablabook-network
+    environment:
+      - ADMINER_DEFAULT_SERVER=postgres
+    # À SUPPRIMER en production finale pour sécurité
+
+# =========================================================================
+# VOLUMES PERSISTANTS
+# =========================================================================
+volumes:
+  postgres_prod_data:
+    driver: local
+    name: blablabook_postgres_data
+
+# =========================================================================
+# RÉSEAU ISOLÉ
+# =========================================================================
+networks:
+  blablabook-network:
+    driver: bridge
+    name: blablabook_network

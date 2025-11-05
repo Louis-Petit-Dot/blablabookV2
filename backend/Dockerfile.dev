@@ -1,0 +1,23 @@
+# Dockerfile pour développement Backend Deno + Hono
+FROM denoland/deno:alpine
+
+# Installer les dépendances système nécessaires pour argon2
+RUN apk add --no-cache libstdc++ libgcc
+
+# Définir le répertoire de travail
+WORKDIR /app
+
+# Copier les fichiers de configuration Deno
+COPY deno.json deno.lock ./
+
+# Copier le code source
+COPY src/ ./src/
+
+# Installer les dépendances en mode dev
+RUN deno cache --reload src/index.ts
+
+# Exposer le port de l'API
+EXPOSE 3000
+
+# Commande pour démarrer en mode développement avec watch
+CMD ["deno", "task", "dev"]

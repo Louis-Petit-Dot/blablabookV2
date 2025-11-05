@@ -1,0 +1,275 @@
+= Middleware Security - Analyse Complète
+:toc:
+:toclevels: 3
+
+== Vue d'ensemble
+
+Le middleware security fournit trois protections essentielles pour l'API BlaBlaBook V2 : la limitation du taux de requêtes (rate limiting), la gestion CORS pour les requêtes cross-origin, et l'ajout d'en-têtes de sécurité. C'est le premier garde de sécurité qui protège toute l'application.
+
+== Fonctions de sécurité
+
+=== Limitation du taux de requêtes (Rate Limiting)
+**Objectif:** Empêcher qu'un utilisateur ou une adresse IP fasse trop de requêtes en peu de temps
+**Quand:** Appliqué sur toutes les requêtes qui arrivent sur l'API
+**Pourquoi important:** Protège contre les attaques par déni de service et les tentatives de spam
+
+=== Gestion CORS (Cross-Origin Resource Sharing)
+**Objectif:** Contrôler quels sites web peuvent faire des requêtes vers notre API
+**Quand:** Vérifié pour chaque requête provenant d'un navigateur web
+**Pourquoi important:** Empêche des sites malveillants de voler des données utilisateur
+
+=== En-têtes de sécurité (Security Headers)
+**Objectif:** Ajouter des protections supplémentaires dans les réponses HTTP
+**Quand:** Ajoutés à chaque réponse envoyée par l'API
+**Pourquoi important:** Protège contre diverses attaques web comme le clickjacking et l'injection de contenu
+
+== Fonctionnement du middleware security
+
+=== Application globale
+Le middleware security est appliqué sur **toutes les routes** de l'application sans exception. Il fonctionne comme le premier filtre de sécurité que toute requête doit traverser.
+
+=== Traitement des requêtes en mots simples
+
+Le middleware security fonctionne comme un système de sécurité à l'entrée d'un bâtiment :
+
+1. **Vérification du taux de visite** : Il compte combien de fois chaque adresse IP a visité récemment
+2. **Contrôle d'accès par origine** : Il vérifie si le site web qui fait la demande est autorisé
+3. **Ajout de protections** : Il ajoute des mesures de sécurité supplémentaires à la réponse
+4. **Autorisation de passage** : Si tout est correct, il laisse la requête continuer
+
+=== Configuration personnalisable
+
+Le middleware peut être configuré selon les besoins :
+- **Fenêtre de temps** : Période sur laquelle compter les requêtes (par défaut 15 minutes)
+- **Nombre maximum de requêtes** : Limite autorisée par période (par défaut 100 requêtes)
+- **Origines autorisées** : Liste des sites web autorisés à faire des requêtes
+
+== Détail de la limitation de taux
+
+=== Principe de fonctionnement
+Comme un videur qui compte les entrées dans un club :
+- Chaque adresse IP a un compteur de requêtes
+- Le compteur se remet à zéro toutes les 15 minutes
+- Si une IP dépasse 100 requêtes en 15 minutes, elle est bloquée temporairement
+
+=== Informations fournies à l'utilisateur
+Le système informe l'utilisateur de sa situation via des en-têtes HTTP :
+- Limite autorisée (100 requêtes)
+- Nombre de requêtes restantes
+- Temps en secondes avant la remise à zéro du compteur
+
+=== Protection contre les abus
+Cette limitation protège contre :
+- Les attaques par déni de service (DDoS)
+- Les tentatives de force brute sur les API
+- Les robots malveillants qui font trop de requêtes
+
+== Gestion CORS en détail
+
+=== Qu'est-ce que CORS
+CORS contrôle quels sites web peuvent faire des requêtes vers notre API depuis un navigateur. C'est comme une liste d'invités pour une fête privée.
+
+=== Sites web autorisés
+Par défaut, seuls ces sites peuvent accéder à l'API :
+- localhost:3000 (développement local)
+- localhost:5173 (développement local avec Vite)
+- blablabook-exo.fun (site de production)
+
+=== Gestion des requêtes OPTIONS
+Quand un navigateur veut faire une requête complexe, il envoie d'abord une requête OPTIONS pour demander la permission. Le middleware répond automatiquement à ces requêtes préparatoires.
+
+=== Méthodes HTTP autorisées
+Le système autorise toutes les méthodes HTTP courantes : GET, POST, PUT, PATCH, DELETE, OPTIONS.
+
+== En-têtes de sécurité appliqués
+
+=== X-Content-Type-Options: nosniff
+**Protection:** Empêche le navigateur de deviner le type de contenu
+**Pourquoi:** Évite que du contenu malveillant soit interprété comme du code exécutable
+
+=== X-Frame-Options: DENY
+**Protection:** Empêche l'affichage de la page dans un iframe
+**Pourquoi:** Protège contre les attaques de clickjacking
+
+=== X-XSS-Protection: 1; mode=block
+**Protection:** Active la protection XSS du navigateur
+**Pourquoi:** Bloque les tentatives d'injection de scripts malveillants
+
+=== Referrer-Policy: strict-origin-when-cross-origin
+**Protection:** Contrôle les informations de provenance envoyées
+**Pourquoi:** Protège la vie privée en limitant les informations transmises
+
+=== Permissions-Policy
+**Protection:** Désactive l'accès à la géolocalisation, microphone et caméra
+**Pourquoi:** Empêche les sites malveillants d'accéder à ces données sensibles
+
+=== Strict-Transport-Security
+**Protection:** Force l'utilisation de HTTPS pour toutes les futures connexions
+**Pourquoi:** Empêche les attaques man-in-the-middle et l'espionnage
+
+== Configuration dans l'application
+
+=== Application sur toutes les routes
+Dans le fichier index.ts, le middleware est appliqué avec l'astérisque (*) qui signifie "toutes les routes" :
+- Toutes les API routes (/api/*)
+- La route de santé (/health)
+- La route d'accueil (/)
+- Toutes les futures routes
+
+=== Configuration personnalisée
+L'application configure le middleware avec :
+- **Fenêtre de 15 minutes** pour compter les requêtes
+- **Maximum de 100 requêtes** par fenêtre
+- **Origines autorisées** définies par variable d'environnement ou valeurs par défaut
+
+=== Sources des origines autorisées
+Les origines peuvent être configurées via :
+1. Variable d'environnement ALLOWED_ORIGINS (séparées par des virgules)
+2. Valeurs par défaut si la variable n'existe pas
+
+== Exemple de flux complet
+
+=== Scénario : Un utilisateur fait une requête depuis le navigateur
+
+==== Situation de départ
+Marie visite le site BlaBlaBook sur son navigateur et clique sur un bouton qui déclenche une requête vers l'API pour récupérer ses listes de lecture.
+
+==== Étape 1 : Vérification du taux de requêtes
+Le middleware vérifie l'adresse IP de Marie :
+- Il regarde combien de requêtes Marie a fait dans les 15 dernières minutes
+- Marie en a fait 23, c'est en-dessous de la limite de 100
+- Il met à jour le compteur à 24 requêtes
+- Il ajoute des en-têtes pour informer Marie : "Limite: 100, Restantes: 76"
+
+==== Étape 2 : Vérification CORS
+Le middleware vérifie d'où vient la requête :
+- La requête vient du site blablabook-exo.fun
+- Ce site est dans la liste des origines autorisées
+- Il ajoute les en-têtes CORS appropriés pour autoriser la communication
+
+==== Étape 3 : Ajout des protections de sécurité
+Le middleware ajoute tous les en-têtes de sécurité :
+- Protection contre le clickjacking
+- Protection contre l'injection XSS
+- Force l'utilisation de HTTPS
+- Contrôle des permissions
+
+==== Étape 4 : Passage à la suite
+Toutes les vérifications sont passées, la requête continue vers les middlewares suivants puis vers le contrôleur approprié.
+
+==== Alternative : Si Marie faisait trop de requêtes
+Si Marie avait déjà fait 100 requêtes en 15 minutes :
+- Le middleware aurait bloqué la requête
+- Il aurait renvoyé une erreur 429 "Trop de requêtes"
+- Il aurait indiqué combien de temps attendre avant de pouvoir réessayer
+
+== Gestion des erreurs et blocages
+
+=== Dépassement de limite
+Quand un utilisateur dépasse la limite :
+- Il reçoit une erreur HTTP 429 "Too Many Requests"
+- Le message explique qu'il y a trop de requêtes
+- Les en-têtes indiquent quand il pourra réessayer
+
+=== Origine non autorisée
+Quand une requête vient d'un site non autorisé :
+- La requête est traitée mais sans les en-têtes CORS
+- Le navigateur bloque alors la réponse côté client
+- Cela protège contre l'utilisation non autorisée de l'API
+
+=== Nettoyage automatique
+Le système fait le ménage automatiquement :
+- Toutes les 5 minutes, il supprime les compteurs expirés
+- Cela évite que la mémoire se remplisse avec d'anciens compteurs
+- Les utilisateurs peuvent refaire des requêtes après la période d'attente
+
+== Avantages sécuritaires
+
+=== Protection contre les attaques DDoS
+La limitation de taux empêche qu'un attaquant submerge l'API avec trop de requêtes simultanées.
+
+=== Protection de la vie privée
+Les en-têtes CORS empêchent des sites malveillants d'accéder aux données des utilisateurs à leur insu.
+
+=== Protection contre les attaques web communes
+Les en-têtes de sécurité protègent contre de nombreuses attaques connues comme le clickjacking et l'injection de contenu.
+
+=== Configuration flexible
+Le système peut être adapté selon les besoins : plus ou moins strict, origines différentes, limites ajustées.
+
+== Impact sur les performances
+
+=== Traitement léger
+Le middleware est conçu pour être très rapide :
+- Vérifications simples par adresse IP
+- Pas d'accès à la base de données
+- Stockage en mémoire pour la vitesse
+
+=== Nettoyage périodique
+Le nettoyage automatique évite l'accumulation de données et maintient de bonnes performances.
+
+=== Informations utiles
+Les en-têtes de réponse permettent aux développeurs de surveiller l'utilisation et d'ajuster leur code si nécessaire.
+
+== Résumé
+
+Le middleware security est le **premier garde** de l'API BlaBlaBook V2. Il protège **100% des requêtes** avec :
+- **Limitation de taux** : Maximum 100 requêtes par 15 minutes par IP
+- **Contrôle CORS** : Seules les origines autorisées peuvent accéder à l'API
+- **En-têtes de sécurité** : Protection contre les attaques web courantes
+
+**Il fonctionne de manière transparente pour les utilisateurs normaux tout en bloquant les abus et les attaques.**
+
+== Diagramme de séquence - Workflow Security
+
+[mermaid]
+----
+sequenceDiagram
+    participant Client
+    participant SecurityMiddleware
+    participant RateLimitStore
+    participant NextMiddleware
+
+    Note over Client, NextMiddleware: Exemple: GET /api/books (requête normale)
+
+    Client->>SecurityMiddleware: Requête HTTP
+    SecurityMiddleware->>SecurityMiddleware: Extraire IP client (x-forwarded-for, x-real-ip)
+
+    Note over SecurityMiddleware: 1. Rate Limiting Check
+    SecurityMiddleware->>RateLimitStore: Vérifier compteur pour IP
+    RateLimitStore-->>SecurityMiddleware: {count: 23, resetTime: timestamp}
+    SecurityMiddleware->>SecurityMiddleware: Incrémenter count à 24
+    SecurityMiddleware->>RateLimitStore: Sauvegarder nouveau count
+
+    alt Si count > 100 (limite dépassée)
+        SecurityMiddleware->>SecurityMiddleware: Calculer temps restant
+        SecurityMiddleware-->>Client: 429 Too Many Requests + headers
+    else Si count <= 100 (dans la limite)
+        SecurityMiddleware->>SecurityMiddleware: Ajouter headers X-RateLimit-*
+
+        Note over SecurityMiddleware: 2. CORS Check
+        SecurityMiddleware->>SecurityMiddleware: c.req.header('origin')
+        SecurityMiddleware->>SecurityMiddleware: Vérifier si origin dans allowedOrigins
+
+        alt Si origin autorisée
+            SecurityMiddleware->>SecurityMiddleware: Ajouter Access-Control-Allow-Origin
+        end
+
+        SecurityMiddleware->>SecurityMiddleware: Ajouter autres headers CORS
+
+        alt Si method === 'OPTIONS' (preflight)
+            SecurityMiddleware-->>Client: 200 OK (réponse preflight)
+        else Requête normale
+            Note over SecurityMiddleware: 3. Security Headers
+            SecurityMiddleware->>SecurityMiddleware: Ajouter X-Content-Type-Options: nosniff
+            SecurityMiddleware->>SecurityMiddleware: Ajouter X-Frame-Options: DENY
+            SecurityMiddleware->>SecurityMiddleware: Ajouter X-XSS-Protection: 1; mode=block
+            SecurityMiddleware->>SecurityMiddleware: Ajouter Strict-Transport-Security
+            SecurityMiddleware->>SecurityMiddleware: Ajouter autres headers sécurité
+
+            SecurityMiddleware->>NextMiddleware: next() - Continuer pipeline
+            NextMiddleware-->>SecurityMiddleware: Réponse
+            SecurityMiddleware-->>Client: Réponse + headers sécurité
+        end
+    end
+----

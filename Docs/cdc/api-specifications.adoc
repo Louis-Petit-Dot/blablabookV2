@@ -1,0 +1,676 @@
+= BlaBlaBook V2 - API Specifications / Spécifications API
+:toc: left
+:toclevels: 3
+:sectanchors:
+:icons: font
+:version: 2.0
+:date: {docdate}
+
+// Navigation inter-documents
+link:../README.adoc[📚 Documentation Hub] |
+link:business-requirements.adoc[📋 Business] |
+link:technical-architecture.adoc[🏗️ Architecture] |
+link:risk-analysis.adoc[⚠️ Risks]
+
+// Navigation langues
+<<section-fr,🇫🇷 Version Française>> | <<section-en,🇬🇧🇺🇸 English Version>>
+
+---
+
+[[section-fr]]
+== 🇫🇷 Spécifications API
+
+<<section-en,🇬🇧🇺🇸 Switch to English>> | 🇫🇷 *Français*
+
+=== 🛣️ Routes de l'Application
+
+==== Authentification JWT
+
+[cols="1,2,2,3"]
+|===
+|Méthode |Route |Description |Données
+
+|POST
+|`/api/auth/register`
+|Inscription utilisateur
+|`{ firstname, lastname, username, email, password }`
+
+|POST
+|`/api/auth/login`
+|Connexion utilisateur
+|`{ email, password }` OU `{ username, password }`
+
+|POST
+|`/api/auth/logout`
+|Déconnexion (suppression cookie)
+|`Authorization: Bearer <token>`
+|===
+
+**Réponses JWT :**
+```json
+// POST /api/auth/login - Succès
+{
+  "message": "Login successful",
+  "token": "eyJ0eXAiOiJKV1Q...",
+  "user": {
+    "id_user": "uuid",
+    "firstname": "John",
+    "lastname": "Doe",
+    "username": "john_doe",
+    "email": "john@example.com",
+    "roles": ["USER"]
+  }
+}
+
+// Note: Le token est également défini dans un cookie httpOnly
+// Set-Cookie: access_token=<token>; HttpOnly; SameSite=Strict; Max-Age=28800 (8h)
+```
+
+==== Gestion Utilisateur
+
+[cols="1,2,2,3"]
+|===
+|Méthode |Route |Description |Données
+
+|GET
+|`/api/user/profile`
+|Récupérer le profil
+|`Authorization: Bearer <token>`
+
+|PUT
+|`/api/user/profile`
+|Modifier le profil
+|`{ firstname?, lastname?, username?, email? }`
+
+|DELETE
+|`/api/user/account`
+|Supprimer le compte (RGPD)
+|`Authorization: Bearer <token>`
+
+|GET
+|`/api/user/export`
+|Exporter données (RGPD)
+|`Authorization: Bearer <token>`
+|===
+
+==== Livres (Recherche Open Library)
+
+[cols="1,2,2,3"]
+|===
+|Méthode |Route |Description |Données
+
+|GET
+|`/api/books/search`
+|Rechercher des livres
+|Query: `q` (terme), `limit?` (défaut: 20)
+
+|GET
+|`/api/books/:id`
+|Détails d'un livre
+|Param: `id` (ID Open Library)
+
+|GET
+|`/api/books/random`
+|Livres aléatoires (page accueil)
+|Query: `count?` (défaut: 8)
+|===
+
+**Exemple réponse recherche :**
+```json
+// GET /api/books/search?q=dune&limit=5
+{
+  "results": [
+    {
+      "id": "OL123456W",
+      "title": "Dune",
+      "authors": ["Frank Herbert"],
+      "first_publish_year": 1965,
+      "isbn": ["9780441172719"],
+      "cover_url": "https://covers.openlibrary.org/b/id/123-M.jpg"
+    }
+  ],
+  "total": 1247,
+  "page": 1,
+  "limit": 5
+}
+```
+
+==== Bibliothèque Personnelle
+
+[cols="1,2,2,3"]
+|===
+|Méthode |Route |Description |Données
+
+|GET
+|`/api/library`
+|Récupérer sa bibliothèque
+|Query: `status?` (read/to-read/currently-reading)
+
+|POST
+|`/api/library`
+|Ajouter un livre
+|`{ book_id, status, library_name? }`
+
+|PUT
+|`/api/library/:bookId`
+|Modifier statut livre
+|`{ status }` (read/to-read/currently-reading)
+
+|DELETE
+|`/api/library/:bookId`
+|Retirer un livre
+|Param: `bookId`
+|===
+
+==== Listes de Lecture
+
+[cols="1,2,2,3"]
+|===
+|Méthode |Route |Description |Données
+
+|GET
+|`/api/reading-lists`
+|Récupérer ses listes
+|Query: `active?` (true/false)
+
+|POST
+|`/api/reading-lists`
+|Créer une liste
+|`{ name, description?, active?, library_id }`
+
+|GET
+|`/api/reading-lists/:id`
+|Détails d'une liste
+|Param: `id`
+
+|PUT
+|`/api/reading-lists/:id`
+|Modifier une liste
+|`{ name?, description?, active? }`
+
+|DELETE
+|`/api/reading-lists/:id`
+|Supprimer une liste
+|Param: `id`
+
+|POST
+|`/api/reading-lists/:id/books`
+|Ajouter livre à liste
+|`{ book_id }`
+
+|DELETE
+|`/api/reading-lists/:id/books/:bookId`
+|Retirer livre de liste
+|Params: `id`, `bookId`
+|===
+
+==== Avis et Notes
+
+[cols="1,2,2,3"]
+|===
+|Méthode |Route |Description |Données
+
+|GET
+|`/api/books/:id/reviews`
+|Récupérer avis d'un livre
+|Param: `id` (book_id)
+
+|POST
+|`/api/books/:id/reviews`
+|Créer un avis
+|`{ comment, rating? }` (rating: 1-5)
+
+|PUT
+|`/api/reviews/:id`
+|Modifier son avis
+|`{ comment?, rating? }`
+
+|DELETE
+|`/api/reviews/:id`
+|Supprimer son avis
+|Param: `id`
+|===
+
+**Exemple réponse avis :**
+```json
+// GET /api/books/OL123456W/reviews
+{
+  "reviews": [
+    {
+      "id": 42,
+      "user": {
+        "username": "book_lover",
+        "id": 123
+      },
+      "comment": "Excellent livre de science-fiction !",
+      "rating": 5,
+      "created_at": "2024-01-15T10:30:00Z"
+    }
+  ],
+  "average_rating": 4.2,
+  "total_reviews": 8
+}
+```
+
+==== Administration (Rôle ADMIN)
+
+[cols="1,2,2,3"]
+|===
+|Méthode |Route |Description |Données
+
+|GET
+|`/api/admin/users`
+|Liste des utilisateurs
+|Query: `page?`, `limit?`
+
+|PUT
+|`/api/admin/users/:id/suspend`
+|Suspendre utilisateur
+|Param: `id`, Body: `{ reason }`
+
+|DELETE
+|`/api/admin/users/:id`
+|Supprimer utilisateur
+|Param: `id`
+
+|GET
+|`/api/admin/stats`
+|Statistiques globales
+|`Authorization: Bearer <admin_token>`
+
+|DELETE
+|`/api/admin/reviews/:id`
+|Supprimer avis inapproprié
+|Param: `id`
+|===
+
+=== 🔒 Sécurité API
+
+==== Headers Requis
+
+**Authentification :**
+```http
+Authorization: Bearer eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9...
+Content-Type: application/json
+```
+
+**Protection CSRF :**
+```http
+Origin: https://blablabook.com
+Referer: https://blablabook.com/
+X-Requested-With: XMLHttpRequest
+```
+
+==== Codes de Statut
+
+[cols="1,2,3"]
+|===
+|Code |Statut |Utilisation
+
+|200 |OK |Requête réussie avec données
+|201 |Created |Ressource créée (POST)
+|204 |No Content |Suppression réussie (DELETE)
+|400 |Bad Request |Données invalides
+|401 |Unauthorized |Token manquant/invalide
+|403 |Forbidden |Permissions insuffisantes
+|404 |Not Found |Ressource inexistante
+|409 |Conflict |Ressource déjà existante
+|422 |Unprocessable Entity |Erreur validation Drizzle-Zod
+|429 |Too Many Requests |Rate limiting dépassé
+|500 |Internal Server Error |Erreur serveur
+|===
+
+==== Rate Limiting
+
+[cols="2,1,2"]
+|===
+|Endpoint |Limite |Fenêtre
+
+|`/api/auth/login`
+|5 tentatives
+|15 minutes
+
+|`/api/auth/register`
+|3 inscriptions
+|1 heure
+
+|`/api/books/search`
+|60 requêtes
+|1 minute
+
+|`/api/**` (général)
+|100 requêtes
+|1 minute
+|===
+
+---
+
+[[section-en]]
+== 🇬🇧🇺🇸 API Specifications
+
+🇬🇧🇺🇸 *English* | <<section-fr,🇫🇷 Passer au Français>>
+
+=== 🛣️ Application Routes
+
+==== JWT Authentication
+
+[cols="1,2,2,3"]
+|===
+|Method |Route |Description |Data
+
+|POST
+|`/api/auth/register`
+|User registration
+|`{ firstname, lastname, username, email, password }`
+
+|POST
+|`/api/auth/login`
+|User login
+|`{ email, password }` OR `{ username, password }`
+
+|POST
+|`/api/auth/logout`
+|Logout (cookie deletion)
+|`Authorization: Bearer <token>`
+|===
+
+**JWT Responses:**
+```json
+// POST /api/auth/login - Success
+{
+  "message": "Login successful",
+  "token": "eyJ0eXAiOiJKV1Q...",
+  "user": {
+    "id_user": "uuid",
+    "firstname": "John",
+    "lastname": "Doe",
+    "username": "john_doe",
+    "email": "john@example.com",
+    "roles": ["USER"]
+  }
+}
+
+// Note: The token is also set in an httpOnly cookie
+// Set-Cookie: access_token=<token>; HttpOnly; SameSite=Strict; Max-Age=28800 (8h)
+```
+
+==== User Management
+
+[cols="1,2,2,3"]
+|===
+|Method |Route |Description |Data
+
+|GET
+|`/api/user/profile`
+|Get user profile
+|`Authorization: Bearer <token>`
+
+|PUT
+|`/api/user/profile`
+|Update profile
+|`{ firstname?, lastname?, username?, email? }`
+
+|DELETE
+|`/api/user/account`
+|Delete account (GDPR)
+|`Authorization: Bearer <token>`
+
+|GET
+|`/api/user/export`
+|Export data (GDPR)
+|`Authorization: Bearer <token>`
+|===
+
+==== Books (Open Library Search)
+
+[cols="1,2,2,3"]
+|===
+|Method |Route |Description |Data
+
+|GET
+|`/api/books/search`
+|Search for books
+|Query: `q` (term), `limit?` (default: 20)
+
+|GET
+|`/api/books/:id`
+|Book details
+|Param: `id` (Open Library ID)
+
+|GET
+|`/api/books/random`
+|Random books (homepage)
+|Query: `count?` (default: 8)
+|===
+
+**Search response example:**
+```json
+// GET /api/books/search?q=dune&limit=5
+{
+  "results": [
+    {
+      "id": "OL123456W",
+      "title": "Dune",
+      "authors": ["Frank Herbert"],
+      "first_publish_year": 1965,
+      "isbn": ["9780441172719"],
+      "cover_url": "https://covers.openlibrary.org/b/id/123-M.jpg"
+    }
+  ],
+  "total": 1247,
+  "page": 1,
+  "limit": 5
+}
+```
+
+==== Personal Library
+
+[cols="1,2,2,3"]
+|===
+|Method |Route |Description |Data
+
+|GET
+|`/api/library`
+|Get user library
+|Query: `status?` (read/to-read/currently-reading)
+
+|POST
+|`/api/library`
+|Add book
+|`{ book_id, status, library_name? }`
+
+|PUT
+|`/api/library/:bookId`
+|Update book status
+|`{ status }` (read/to-read/currently-reading)
+
+|DELETE
+|`/api/library/:bookId`
+|Remove book
+|Param: `bookId`
+|===
+
+==== Reading Lists
+
+[cols="1,2,2,3"]
+|===
+|Method |Route |Description |Data
+
+|GET
+|`/api/reading-lists`
+|Get user lists
+|Query: `active?` (true/false)
+
+|POST
+|`/api/reading-lists`
+|Create list
+|`{ name, description?, active?, library_id }`
+
+|GET
+|`/api/reading-lists/:id`
+|List details
+|Param: `id`
+
+|PUT
+|`/api/reading-lists/:id`
+|Update list
+|`{ name?, description?, active? }`
+
+|DELETE
+|`/api/reading-lists/:id`
+|Delete list
+|Param: `id`
+
+|POST
+|`/api/reading-lists/:id/books`
+|Add book to list
+|`{ book_id }`
+
+|DELETE
+|`/api/reading-lists/:id/books/:bookId`
+|Remove book from list
+|Params: `id`, `bookId`
+|===
+
+==== Reviews and Ratings
+
+[cols="1,2,2,3"]
+|===
+|Method |Route |Description |Data
+
+|GET
+|`/api/books/:id/reviews`
+|Get book reviews
+|Param: `id` (book_id)
+
+|POST
+|`/api/books/:id/reviews`
+|Create review
+|`{ comment, rating? }` (rating: 1-5)
+
+|PUT
+|`/api/reviews/:id`
+|Update own review
+|`{ comment?, rating? }`
+
+|DELETE
+|`/api/reviews/:id`
+|Delete own review
+|Param: `id`
+|===
+
+**Review response example:**
+```json
+// GET /api/books/OL123456W/reviews
+{
+  "reviews": [
+    {
+      "id": 42,
+      "user": {
+        "username": "book_lover",
+        "id": 123
+      },
+      "comment": "Excellent sci-fi book!",
+      "rating": 5,
+      "created_at": "2024-01-15T10:30:00Z"
+    }
+  ],
+  "average_rating": 4.2,
+  "total_reviews": 8
+}
+```
+
+==== Administration (ADMIN Role)
+
+[cols="1,2,2,3"]
+|===
+|Method |Route |Description |Data
+
+|GET
+|`/api/admin/users`
+|List users
+|Query: `page?`, `limit?`
+
+|PUT
+|`/api/admin/users/:id/suspend`
+|Suspend user
+|Param: `id`, Body: `{ reason }`
+
+|DELETE
+|`/api/admin/users/:id`
+|Delete user
+|Param: `id`
+
+|GET
+|`/api/admin/stats`
+|Global statistics
+|`Authorization: Bearer <admin_token>`
+
+|DELETE
+|`/api/admin/reviews/:id`
+|Delete inappropriate review
+|Param: `id`
+|===
+
+=== 🔒 API Security
+
+==== Required Headers
+
+**Authentication:**
+```http
+Authorization: Bearer eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9...
+Content-Type: application/json
+```
+
+**CSRF Protection:**
+```http
+Origin: https://blablabook.com
+Referer: https://blablabook.com/
+X-Requested-With: XMLHttpRequest
+```
+
+==== Status Codes
+
+[cols="1,2,3"]
+|===
+|Code |Status |Usage
+
+|200 |OK |Successful request with data
+|201 |Created |Resource created (POST)
+|204 |No Content |Successful deletion (DELETE)
+|400 |Bad Request |Invalid data
+|401 |Unauthorized |Missing/invalid token
+|403 |Forbidden |Insufficient permissions
+|404 |Not Found |Resource not found
+|409 |Conflict |Resource already exists
+|422 |Unprocessable Entity |Drizzle-Zod validation error
+|429 |Too Many Requests |Rate limiting exceeded
+|500 |Internal Server Error |Server error
+|===
+
+==== Rate Limiting
+
+[cols="2,1,2"]
+|===
+|Endpoint |Limit |Window
+
+|`/api/auth/login`
+|5 attempts
+|15 minutes
+
+|`/api/auth/register`
+|3 registrations
+|1 hour
+
+|`/api/books/search`
+|60 requests
+|1 minute
+
+|`/api/**` (general)
+|100 requests
+|1 minute
+|===
+
+---
+
+*Document créé le {14/09/2025} - Version {V1} - Generated on {2025/09/14} - Version {V1}*

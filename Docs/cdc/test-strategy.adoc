@@ -1,0 +1,646 @@
+= BlaBlaBook V2 - Test Strategy / Stratégie de Tests
+:toc: left
+:toclevels: 3
+:sectanchors:
+:icons: font
+:version: 2.0
+:date: {docdate}
+
+// Navigation inter-documents
+link:../README.adoc[📚 Documentation Hub] |
+link:business-requirements.adoc[📋 Business] |
+link:technical-architecture.adoc[🏗️ Architecture] |
+link:api-specifications.adoc[🛣️ API] |
+link:risk-analysis.adoc[⚠️ Risks]
+
+// Navigation langues
+<<section-fr,🇫🇷 Version Française>> | <<section-en,🇬🇧🇺🇸 English Version>>
+
+---
+
+[[section-fr]]
+== 🇫🇷 Stratégie de Tests
+
+<<section-en,🇬🇧🇺🇸 Switch to English>> | 🇫🇷 *Français*
+
+=== 🧪 Philosophie de Tests V2
+
+**Approche Test-Driven Development (TDD) adaptée :**
+
+BlaBlaBook V2 adopte une stratégie de tests complète basée sur **Deno Test** natif pour garantir la qualité, la sécurité et la maintenance du code. L'architecture moderne Deno/Hono/Drizzle permet une couverture de tests optimale avec des outils intégrés.
+
+**Principes directeurs :**
+* **Pyramid de tests** : 70% unitaires, 20% intégration, 10% E2E
+* **Fast feedback** : Tests rapides (<10s total) pour développement agile
+* **Isolation complète** : Chaque test indépendant avec setup/teardown
+* **CI/CD natif** : Intégration dans pipeline de déploiement automatique
+
+=== 📊 Types de Tests et Couverture
+
+==== Tests Unitaires (70%)
+
+**Framework :** `deno test` natif avec assertions built-in
+
+**Composants couverts :**
+
+[cols="2,2,1,3"]
+|===
+|Composant |Fichiers |Cible |Exemples Tests
+
+|**Validation Drizzle-Zod**
+|`src/schemas/*.ts`
+|100%
+|Validation email, password strength, book ISBN
+
+|**Utils métier**
+|`src/utils/*.ts`
+|90%
+|Formatage dates, slugify titles, password hashing
+
+|**Middlewares Hono**
+|`src/middlewares/*.ts`
+|95%
+|JWT validation, CORS headers, rate limiting
+
+|**Models/Services**
+|`src/services/*.ts`
+|85%
+|User CRUD, Book search, Library management
+|===
+
+**Structure tests unitaires :**
+```typescript
+// tests/unit/auth/password.test.ts
+import { assertEquals, assertRejects } from "https://deno.land/std/testing/asserts.ts";
+import { hashPassword, verifyPassword } from "../../../src/utils/auth.ts";
+
+Deno.test("Password hashing", async (t) => {
+  await t.step("should hash password with Argon2", async () => {
+    const password = "SecurePass123!";
+    const hashed = await hashPassword(password);
+
+    assertEquals(typeof hashed, "string");
+    assertEquals(hashed.startsWith("$argon2"), true);
+  });
+
+  await t.step("should verify correct password", async () => {
+    const password = "SecurePass123!";
+    const hashed = await hashPassword(password);
+    const isValid = await verifyPassword(password, hashed);
+
+    assertEquals(isValid, true);
+  });
+});
+```
+
+==== Tests d'Intégration (20%)
+
+**Framework :** `deno test` avec base de données test PostgreSQL
+
+**Scénarios couverts :**
+
+[cols="2,3"]
+|===
+|Type |Scénarios Tests
+
+|**API Endpoints**
+|POST /api/auth/register → 201, PUT /api/user/profile → 200, GET /api/books/search → 200
+
+|**Base de données**
+|CRUD operations, transactions, contraintes FK, triggers
+
+|**Open Library API**
+|Recherche livres, gestion erreurs, cache responses
+
+|**JWT Authentication**
+|Token generation, refresh flow, permission validation
+
+|**File Upload**
+|Image processing, validation formats, storage
+|===
+
+**Exemple test intégration :**
+```typescript
+// tests/integration/api/auth.test.ts
+import { assertEquals } from "https://deno.land/std/testing/asserts.ts";
+import { app } from "../../../src/app.ts";
+
+Deno.test("Auth API Integration", async (t) => {
+  await t.step("POST /api/auth/register should create user", async () => {
+    const response = await app.request("/api/auth/register", {
+      method: "POST",
+      body: JSON.stringify({
+        firstname: "John",
+        lastname: "Doe",
+        username: "johndoe",
+        email: "john@example.com",
+        password: "SecurePass123!"
+      }),
+      headers: { "Content-Type": "application/json" }
+    });
+
+    assertEquals(response.status, 201);
+    const body = await response.json();
+    assertEquals(body.user.username, "johndoe");
+  });
+});
+```
+
+==== Tests End-to-End (10%)
+
+**Framework :** Deno avec `puppeteer` ou `playwright`
+
+**User flows critiques :**
+
+* **Parcours inscription/connexion complet**
+* **Recherche livre → ajout bibliothèque → note/avis**
+* **Partage bibliothèque → permissions → visibilité publique**
+* **Admin : modération avis, gestion utilisateurs**
+
+=== 🚀 Exécution et Configuration
+
+==== Commands de Test
+
+```bash
+# Tests unitaires rapides
+deno test tests/unit/ --allow-read --allow-env
+
+# Tests intégration (avec DB)
+deno test tests/integration/ --allow-net --allow-read --allow-env --allow-write
+
+# Suite complète
+deno test --allow-all --coverage=coverage/
+
+# Tests spécifiques
+deno test tests/unit/auth/ --filter="password"
+
+# Tests en mode watch (développement)
+deno test --watch tests/unit/
+```
+
+==== Configuration Environnement Test
+
+```typescript
+// tests/config/setup.ts
+export async function setupTestDb() {
+  const db = await connectTestDatabase();
+  await db.execute(sql`TRUNCATE TABLE users, libraries, books CASCADE`);
+  return db;
+}
+
+export async function teardownTestDb(db: Database) {
+  await db.execute(sql`TRUNCATE TABLE users, libraries, books CASCADE`);
+  await db.close();
+}
+```
+
+==== Mocking et Fixtures
+
+```typescript
+// tests/fixtures/users.ts
+export const mockUsers = {
+  validUser: {
+    firstname: "Alice",
+    lastname: "Reader",
+    username: "alice_reader",
+    email: "alice@example.com",
+    password: "SecurePass123!"
+  },
+  adminUser: {
+    // ... admin mock data
+  }
+};
+
+// tests/mocks/openLibrary.ts
+export const mockOpenLibraryAPI = {
+  searchResponse: {
+    docs: [
+      {
+        key: "/works/OL45804W",
+        title: "Dune",
+        author_name: ["Frank Herbert"],
+        first_publish_year: 1965
+      }
+    ]
+  }
+};
+```
+
+=== 📈 Métriques et Couverture
+
+==== Objectifs Couverture
+
+[cols="2,1,1,1"]
+|===
+|Type de Code |Minimum |Objectif |Critique
+
+|**Fonctions métier**
+|85%
+|95%
+|100%
+
+|**API endpoints**
+|80%
+|90%
+|95%
+
+|**Utils/Helpers**
+|70%
+|85%
+|90%
+
+|**Middlewares**
+|90%
+|95%
+|100%
+|===
+
+==== Rapports et Monitoring
+
+* **Coverage HTML** : `deno test --coverage=coverage && deno coverage coverage --html`
+* **CI/CD Integration** : Fail si couverture < seuils définis
+* **Performance tracking** : Tests benchmark pour endpoints critiques
+* **Régression testing** : Suite automatique sur chaque PR/commit
+
+=== 🔧 Outils et Intégrations
+
+==== Stack Testing Native Deno
+
+[cols="2,2,3"]
+|===
+|Outil |Version |Usage
+
+|**Deno Test**
+|Native
+|Runner principal, assertions, mocking
+
+|**Deno Coverage**
+|Native
+|Rapport couverture, métriques qualité
+
+|**std/testing**
+|Latest
+|Assertions avancées, test utilities
+
+|**std/http**
+|Latest
+|Simulation requests HTTP pour API tests
+
+|**PostgreSQL Test**
+|15
+|Base données dédiée tests intégration
+|===
+
+==== CI/CD Pipeline
+
+```yaml
+# .github/workflows/tests.yml (exemple)
+name: Tests BlaBlaBook V2
+
+on: [push, pull_request]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_DB: blablabook_test
+          POSTGRES_PASSWORD: test_password
+
+    steps:
+      - uses: actions/checkout@v3
+      - uses: denoland/setup-deno@v1
+        with:
+          deno-version: 2.5.2
+
+      - name: Run unit tests
+        run: deno test tests/unit/ --allow-read --allow-env
+
+      - name: Run integration tests
+        run: deno test tests/integration/ --allow-all
+
+      - name: Generate coverage
+        run: deno coverage coverage --lcov > coverage.lcov
+
+      - name: Upload coverage
+        uses: codecov/codecov-action@v3
+```
+
+---
+
+[[section-en]]
+== 🇬🇧🇺🇸 Test Strategy
+
+🇬🇧🇺🇸 *English* | <<section-fr,🇫🇷 Passer au Français>>
+
+=== 🧪 V2 Testing Philosophy
+
+**Adapted Test-Driven Development (TDD) approach:**
+
+BlaBlaBook V2 adopts a comprehensive testing strategy based on native **Deno Test** to ensure code quality, security, and maintenance. The modern Deno/Hono/Drizzle architecture enables optimal test coverage with integrated tools.
+
+**Guiding principles:**
+* **Test pyramid**: 70% unit, 20% integration, 10% E2E
+* **Fast feedback**: Quick tests (<10s total) for agile development
+* **Complete isolation**: Each test independent with setup/teardown
+* **Native CI/CD**: Integration into automatic deployment pipeline
+
+=== 📊 Test Types and Coverage
+
+==== Unit Tests (70%)
+
+**Framework:** Native `deno test` with built-in assertions
+
+**Covered components:**
+
+[cols="2,2,1,3"]
+|===
+|Component |Files |Target |Test Examples
+
+|**Drizzle-Zod Validation**
+|`src/schemas/*.ts`
+|100%
+|Email validation, password strength, book ISBN
+
+|**Business Utils**
+|`src/utils/*.ts`
+|90%
+|Date formatting, title slugify, password hashing
+
+|**Hono Middlewares**
+|`src/middlewares/*.ts`
+|95%
+|JWT validation, CORS headers, rate limiting
+
+|**Models/Services**
+|`src/services/*.ts`
+|85%
+|User CRUD, Book search, Library management
+|===
+
+**Unit test structure:**
+```typescript
+// tests/unit/auth/password.test.ts
+import { assertEquals, assertRejects } from "https://deno.land/std/testing/asserts.ts";
+import { hashPassword, verifyPassword } from "../../../src/utils/auth.ts";
+
+Deno.test("Password hashing", async (t) => {
+  await t.step("should hash password with Argon2", async () => {
+    const password = "SecurePass123!";
+    const hashed = await hashPassword(password);
+
+    assertEquals(typeof hashed, "string");
+    assertEquals(hashed.startsWith("$argon2"), true);
+  });
+
+  await t.step("should verify correct password", async () => {
+    const password = "SecurePass123!";
+    const hashed = await hashPassword(password);
+    const isValid = await verifyPassword(password, hashed);
+
+    assertEquals(isValid, true);
+  });
+});
+```
+
+==== Integration Tests (20%)
+
+**Framework:** `deno test` with PostgreSQL test database
+
+**Covered scenarios:**
+
+[cols="2,3"]
+|===
+|Type |Test Scenarios
+
+|**API Endpoints**
+|POST /api/auth/register → 201, PUT /api/user/profile → 200, GET /api/books/search → 200
+
+|**Database**
+|CRUD operations, transactions, FK constraints, triggers
+
+|**Open Library API**
+|Book search, error handling, response caching
+
+|**JWT Authentication**
+|Token generation, refresh flow, permission validation
+
+|**File Upload**
+|Image processing, format validation, storage
+|===
+
+**Integration test example:**
+```typescript
+// tests/integration/api/auth.test.ts
+import { assertEquals } from "https://deno.land/std/testing/asserts.ts";
+import { app } from "../../../src/app.ts";
+
+Deno.test("Auth API Integration", async (t) => {
+  await t.step("POST /api/auth/register should create user", async () => {
+    const response = await app.request("/api/auth/register", {
+      method: "POST",
+      body: JSON.stringify({
+        firstname: "John",
+        lastname: "Doe",
+        username: "johndoe",
+        email: "john@example.com",
+        password: "SecurePass123!"
+      }),
+      headers: { "Content-Type": "application/json" }
+    });
+
+    assertEquals(response.status, 201);
+    const body = await response.json();
+    assertEquals(body.user.username, "johndoe");
+  });
+});
+```
+
+==== End-to-End Tests (10%)
+
+**Framework:** Deno with `puppeteer` or `playwright`
+
+**Critical user flows:**
+* **Complete registration/login journey**
+* **Book search → library addition → rating/review**
+* **Library sharing → permissions → public visibility**
+* **Admin: review moderation, user management**
+
+=== 🚀 Execution and Configuration
+
+==== Test Commands
+
+```bash
+# Fast unit tests
+deno test tests/unit/ --allow-read --allow-env
+
+# Integration tests (with DB)
+deno test tests/integration/ --allow-net --allow-read --allow-env --allow-write
+
+# Complete suite
+deno test --allow-all --coverage=coverage/
+
+# Specific tests
+deno test tests/unit/auth/ --filter="password"
+
+# Watch mode (development)
+deno test --watch tests/unit/
+```
+
+==== Test Environment Configuration
+
+```typescript
+// tests/config/setup.ts
+export async function setupTestDb() {
+  const db = await connectTestDatabase();
+  await db.execute(sql`TRUNCATE TABLE users, libraries, books CASCADE`);
+  return db;
+}
+
+export async function teardownTestDb(db: Database) {
+  await db.execute(sql`TRUNCATE TABLE users, libraries, books CASCADE`);
+  await db.close();
+}
+```
+
+==== Mocking and Fixtures
+
+```typescript
+// tests/fixtures/users.ts
+export const mockUsers = {
+  validUser: {
+    firstname: "Alice",
+    lastname: "Reader",
+    username: "alice_reader",
+    email: "alice@example.com",
+    password: "SecurePass123!"
+  },
+  adminUser: {
+    // ... admin mock data
+  }
+};
+
+// tests/mocks/openLibrary.ts
+export const mockOpenLibraryAPI = {
+  searchResponse: {
+    docs: [
+      {
+        key: "/works/OL45804W",
+        title: "Dune",
+        author_name: ["Frank Herbert"],
+        first_publish_year: 1965
+      }
+    ]
+  }
+};
+```
+
+=== 📈 Metrics and Coverage
+
+==== Coverage Targets
+
+[cols="2,1,1,1"]
+|===
+|Code Type |Minimum |Target |Critical
+
+|**Business functions**
+|85%
+|95%
+|100%
+
+|**API endpoints**
+|80%
+|90%
+|95%
+
+|**Utils/Helpers**
+|70%
+|85%
+|90%
+
+|**Middlewares**
+|90%
+|95%
+|100%
+|===
+
+==== Reporting and Monitoring
+
+* **HTML Coverage**: `deno test --coverage=coverage && deno coverage coverage --html`
+* **CI/CD Integration**: Fail if coverage < defined thresholds
+* **Performance tracking**: Benchmark tests for critical endpoints
+* **Regression testing**: Automatic suite on every PR/commit
+
+=== 🔧 Tools and Integrations
+
+==== Native Deno Testing Stack
+
+[cols="2,2,3"]
+|===
+|Tool |Version |Usage
+
+|**Deno Test**
+|Native
+|Main runner, assertions, mocking
+
+|**Deno Coverage**
+|Native
+|Coverage reports, quality metrics
+
+|**std/testing**
+|Latest
+|Advanced assertions, test utilities
+
+|**std/http**
+|Latest
+|HTTP request simulation for API tests
+
+|**PostgreSQL Test**
+|15
+|Dedicated database for integration tests
+|===
+
+==== CI/CD Pipeline
+
+```yaml
+# .github/workflows/tests.yml (example)
+name: BlaBlaBook V2 Tests
+
+on: [push, pull_request]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_DB: blablabook_test
+          POSTGRES_PASSWORD: test_password
+
+    steps:
+      - uses: actions/checkout@v3
+      - uses: denoland/setup-deno@v1
+        with:
+          deno-version: 2.5.2
+
+      - name: Run unit tests
+        run: deno test tests/unit/ --allow-read --allow-env
+
+      - name: Run integration tests
+        run: deno test tests/integration/ --allow-all
+
+      - name: Generate coverage
+        run: deno coverage coverage --lcov > coverage.lcov
+
+      - name: Upload coverage
+        uses: codecov/codecov-action@v3
+```
+
+---
+
+*Document créé le {14/09/2025} - Version {V2} - Generated on {2025/09/14} - Version {V2}*

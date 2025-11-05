@@ -1,0 +1,231 @@
+@use '../../../styles/variables' as *;
+
+.sidebar {
+    background: var(--bg-secondary);
+    border-radius: 12px;
+    padding: 1.5rem;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+    height: fit-content;
+    position: sticky;
+    top: 100px;
+
+    @include tablet {
+        padding: 2rem;
+    }
+}
+
+.title {
+    font-family: $font-heading;
+    font-size: 1.5rem;
+    font-weight: 600;
+    color: var(--text-primary);
+    margin-bottom: 1.5rem;
+    border-bottom: 2px solid var(--border-primary);
+    padding-bottom: 0.75rem;
+}
+
+.section {
+    margin-bottom: 2rem;
+
+    &:last-child {
+        margin-bottom: 0;
+    }
+}
+
+.sectionTitle {
+    font-family: $font-heading;
+    font-size: 1.125rem;
+    font-weight: 500;
+    color: var(--text-secondary);
+    margin-bottom: 1rem;
+}
+
+.collection {
+    display: flex;
+    gap: 0.5rem;
+    flex-direction: column;
+
+    @include tablet {
+        flex-direction: row;
+    }
+}
+
+.select {
+    flex: 1;
+    padding: 0.75rem;
+    border: 1px solid var(--border-primary);
+    border-radius: 8px;
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    font-family: $font-base;
+    font-size: 1rem;
+    cursor: pointer;
+    transition: border-color 0.2s;
+
+    &:hover:not(:disabled) {
+        border-color: var(--primary-color);
+    }
+
+    &:focus {
+        outline: none;
+        border-color: var(--primary-color);
+        box-shadow: 0 0 0 3px rgba(120, 145, 168, 0.1);
+    }
+
+    &:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+    }
+}
+
+.addButton {
+    padding: 0.75rem 1.5rem;
+    background: var(--primary-color);
+    color: white;
+    border: none;
+    border-radius: 8px;
+    font-family: $font-base;
+    font-size: 1rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s;
+
+    &:hover:not(:disabled) {
+        background: var(--primary-hover);
+        transform: translateY(-1px);
+    }
+
+    &:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+        transform: none;
+    }
+}
+
+.listGrid {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+}
+
+.listItem {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.75rem;
+    background: var(--bg-primary);
+    border: 1px solid var(--border-primary);
+    border-radius: 8px;
+    cursor: pointer;
+    transition: all 0.2s;
+
+    &:hover {
+        border-color: var(--primary-color);
+        background: var(--bg-tertiary);
+    }
+
+    input[type="checkbox"] {
+        cursor: pointer;
+        width: 18px;
+        height: 18px;
+
+        &:disabled {
+            cursor: not-allowed;
+        }
+    }
+
+    span {
+        flex: 1;
+        font-family: $font-base;
+        color: var(--text-primary);
+    }
+
+    .icon {
+        font-size: 0.875rem;
+    }
+}
+
+.empty {
+    font-family: $font-base;
+    color: var(--text-quaternary);
+    font-style: italic;
+    padding: 1rem;
+    text-align: center;
+}
+
+.authPrompt {
+    text-align: center;
+    padding: 2rem 1rem;
+
+    p {
+        font-family: $font-base;
+        color: var(--text-secondary);
+        line-height: 1.6;
+    }
+}
+
+.loading {
+    text-align: center;
+    font-family: $font-base;
+    color: var(--text-quaternary);
+    padding: 2rem;
+}
+
+.message {
+    padding: 1rem;
+    border-radius: 8px;
+    margin-bottom: 1rem;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-family: $font-base;
+    font-size: 0.875rem;
+
+    &.success {
+        background: #d4edda;
+        color: #155724;
+        border: 1px solid #c3e6cb;
+    }
+
+    &.error {
+        background: #f8d7da;
+        color: #721c24;
+        border: 1px solid #f5c6cb;
+    }
+
+    .closeMessage {
+        background: none;
+        border: none;
+        font-size: 1.5rem;
+        cursor: pointer;
+        padding: 0;
+        width: 24px;
+        height: 24px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: inherit;
+        opacity: 0.7;
+        transition: opacity 0.2s;
+
+        &:hover {
+            opacity: 1;
+        }
+    }
+}
+
+.warning {
+    background: #fff3cd;
+    color: #856404;
+    border: 1px solid #ffeeba;
+    border-radius: 8px;
+    padding: 1rem;
+    margin-bottom: 1rem;
+    font-family: $font-base;
+    font-size: 0.875rem;
+    line-height: 1.5;
+
+    p {
+        margin: 0;
+    }
+}

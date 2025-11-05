@@ -1,0 +1,742 @@
+= Composant Input - Documentation complète
+:toc:
+:toclevels: 3
+
+== Vue d'ensemble
+
+Le composant `Input` est un champ de saisie texte **WCAG 2.2 AA compliant** avec gestion des erreurs, labels accessibles et support de React Hook Form via `forwardRef`.
+
+---
+
+== Input.tsx - Explication ligne par ligne
+
+=== Imports (lignes 1-2)
+
+[source,typescript]
+----
+import { InputHTMLAttributes, forwardRef } from "react"
+import styles from "./Input.module.scss"
+----
+
+**Ligne 1 - Imports React :**
+
+* `InputHTMLAttributes<HTMLInputElement>` : Type TypeScript qui contient TOUS les attributs HTML natifs d'un `<input>` (type, placeholder, disabled, onChange, value, etc.). On l'utilise pour étendre notre interface sans réécrire tous les attributs possibles.
+
+* `forwardRef` : Fonction React spéciale qui permet de **passer une ref** au composant enfant. Nécessaire pour React Hook Form qui a besoin d'accéder directement au DOM de l'input (pour focus, validation, etc.).
+
+**Ligne 2 - Import CSS Module :**
+
+* `styles` : Objet JavaScript qui contient toutes les classes CSS du fichier `.module.scss`. Exemple : `styles.input` → classe `.input` avec hash unique pour éviter les conflits.
+
+---
+
+=== Interface TypeScript (lignes 4-9)
+
+[source,typescript]
+----
+interface InputProps extends InputHTMLAttributes<HTMLInputElement> {
+    label?: string
+    error?: string
+    success?: string
+    helperText?: string
+}
+----
+
+**Ligne 4 - Déclaration d'interface :**
+
+* `interface InputProps` : Définit la structure des props acceptées par le composant.
+* `extends InputHTMLAttributes<HTMLInputElement>` : **Héritage**. Notre composant accepte TOUS les attributs HTML d'un input natif (type, placeholder, value, onChange, disabled, etc.) PLUS nos props custom ci-dessous.
+
+**Lignes 5-9 - Props custom :**
+
+* `label?: string` : Texte affiché au-dessus de l'input. Le `?` signifie optionnel. Exemple : `<Input label="Email" />`
+
+* `error?: string` : Message d'erreur affiché en rouge sous l'input. Si présent, l'input aura une bordure rouge et le message sera annoncé aux screen readers.
+
+* `success?: string` : Message de succès affiché en vert sous l'input. Si présent, l'input aura une bordure verte. Priorité inférieure à `error`.
+
+* `helperText?: string` : Texte d'aide affiché en gris sous l'input (exemples, format attendu). Masqué si `error` ou `success` est présent.
+
+**Pourquoi pas inclure dans InputHTMLAttributes ?** Parce que `<input>` natif n'a pas ces attributs. Ce sont nos ajouts pour améliorer l'UX.
+
+---
+
+=== Composant avec forwardRef (lignes 10-56)
+
+[source,typescript]
+----
+export const Input = forwardRef<HTMLInputElement, InputProps>(
+    ({ label, error, helperText, className = "", id, required, ...props }, ref) => {
+----
+
+**Ligne 10 - Déclaration avec forwardRef :**
+
+* `export const Input` : Export nommé du composant (pas default).
+
+* `forwardRef<HTMLInputElement, InputProps>` :
+  - `<HTMLInputElement>` : Type de l'élément DOM auquel on passe la ref (un `<input>`)
+  - `<InputProps>` : Type des props acceptées
+  - Permet à un parent de faire `const inputRef = useRef<HTMLInputElement>(null)` puis `<Input ref={inputRef} />`
+
+**Ligne 11 - Destructuration des props :**
+
+* `{ label, error, success, helperText, className = "", id, required, ...props }` : Extraction des props spécifiques.
+  - `label, error, success, helperText` : Nos props custom
+  - `className = ""` : Classe CSS additionnelle (valeur par défaut = chaîne vide)
+  - `id` : ID HTML (optionnel, on le génère auto si absent)
+  - `required` : Boolean natif HTML pour champ obligatoire
+  - `...props` : **Rest operator** - Capture TOUS les autres props (type, placeholder, value, onChange, etc.)
+
+* `, ref` : La ref passée par le parent (deuxième paramètre de forwardRef)
+
+---
+
+=== Génération ID automatique (ligne 13-14)
+
+[source,typescript]
+----
+const inputId = id || label?.toLowerCase().replace(/\s+/g, '-')
+----
+
+**Ligne 13 - Logique d'ID :**
+
+* `id ||` : Si un `id` est fourni explicitement par le parent, on l'utilise.
+
+* `label?.toLowerCase()` : Sinon, on prend le label (le `?` évite l'erreur si label est undefined), on le convertit en minuscules.
+
+* `.replace(/\s+/g, '-')` : On remplace tous les espaces (`\s+` = un ou plusieurs espaces) par des tirets.
+  - Exemple : `"Mot de passe"` → `"mot-de-passe"`
+
+**Pourquoi générer un ID ?** Pour lier le `<label>` à l'`<input>` via `htmlFor` (WCAG 3.3.2). Sans ID, le label n'est pas cliquable et les screen readers ne savent pas qu'ils sont liés.
+
+---
+
+=== Structure JSX - Wrapper (ligne 16)
+
+[source,typescript]
+----
+return (
+    <div className={styles.inputWrapper}>
+----
+
+**Ligne 16 - Container :**
+
+* `<div className={styles.inputWrapper}>` : Div englobant tout (label + input + messages).
+* Permet de styliser l'ensemble comme un bloc avec `width: 100%` dans le SCSS.
+
+---
+
+=== Label avec indicateur requis (lignes 17-25)
+
+[source,typescript]
+----
+{label && (
+    <label
+        htmlFor={inputId}
+        className={styles.label}
+    >
+        {label}
+        {required && <span className={styles.required}> *</span>}
+    </label>
+)}
+----
+
+**Ligne 17 - Rendu conditionnel :**
+
+* `{label && (...)}` : Le label n'est affiché QUE si la prop `label` existe (pas undefined/null).
+
+**Ligne 18-20 - Label HTML :**
+
+* `<label htmlFor={inputId}>` :
+  - `htmlFor` : **ESSENTIEL WCAG 3.3.2**. Lie le label à l'input par son ID. Permet de cliquer sur le label pour focus l'input.
+  - Équivalent à `for` en HTML natif (mais en JSX c'est `htmlFor` car `for` est un mot-clé JS)
+
+* `className={styles.label}` : Applique les styles du label (font, couleur, margin)
+
+**Ligne 22 - Texte du label :**
+
+* `{label}` : Affiche le texte du label (ex: "Email")
+
+**Ligne 23 - Astérisque requis :**
+
+* `{required && <span className={styles.required}> *</span>}` :
+  - Si `required={true}`, affiche un astérisque rouge après le label
+  - Indication visuelle WCAG 3.3.2 (en plus de l'attribut `aria-required`)
+
+---
+
+=== Input avec attributs WCAG (lignes 27-35)
+
+[source,typescript]
+----
+<input
+    ref={ref}
+    id={inputId}
+    className={`${styles.input} ${error ? styles.error : ''} ${className}`}
+    aria-invalid={error ? 'true' : 'false'}
+    aria-describedby={error ? `${inputId}-error` : helperText ? `${inputId}-helper` : undefined}
+    aria-required={required}
+    {...props}
+/>
+----
+
+**Ligne 28 - Ref forwarding :**
+
+* `ref={ref}` : Passe la ref reçue du parent directement à l'`<input>` DOM. Permet à React Hook Form de contrôler l'input.
+
+**Ligne 29 - ID :**
+
+* `id={inputId}` : ID généré ou fourni, nécessaire pour lier avec `htmlFor` du label.
+
+**Ligne 30 - Classes CSS dynamiques :**
+
+* `className={...}` : String template qui combine plusieurs classes :
+  - `styles.input` : Classe de base (toujours appliquée)
+  - `${error ? styles.error : ''}` : Si erreur, ajoute classe `.error` (bordure rouge)
+  - `${success ? styles.success : ''}` : Si succès (et pas d'erreur), ajoute classe `.success` (bordure verte)
+  - `${className}` : Classes additionnelles passées par le parent (optionnel)
+
+**Ligne 31 - aria-invalid (WCAG 3.3.1) :**
+
+* `aria-invalid={error ? 'true' : 'false'}` :
+  - Indique aux screen readers si l'input contient une erreur
+  - Screen reader annonce : "Email, zone de texte, invalide" si `aria-invalid="true"`
+
+**Ligne 32 - aria-describedby (WCAG 3.3.3) :**
+
+* `aria-describedby={...}` : Lie l'input à un élément qui le décrit (message d'erreur, de succès ou helper text)
+  - Si `error` existe : pointe vers `${inputId}-error` (le `<p>` d'erreur) - **Priorité 1**
+  - Sinon si `success` existe : pointe vers `${inputId}-success` (le `<p>` de succès) - **Priorité 2**
+  - Sinon si `helperText` existe : pointe vers `${inputId}-helper` - **Priorité 3**
+  - Sinon `undefined` (pas de description)
+  - Screen reader lit automatiquement la description après le label
+
+**Ligne 33 - aria-required (WCAG 3.3.2) :**
+
+* `aria-required={required}` : Indique aux screen readers si le champ est obligatoire
+  - Screen reader annonce : "Email, zone de texte, requis"
+
+**Ligne 34 - Spread des props :**
+
+* `{...props}` : Applique TOUS les autres props non destructurés (type, placeholder, value, onChange, disabled, etc.)
+  - Permet d'utiliser : `<Input type="password" placeholder="••••••" onChange={...} />`
+
+---
+
+=== Message d'erreur (lignes 43-47)
+
+[source,typescript]
+----
+{error && (
+    <p id={`${inputId}-error`} className={styles.errorText} role="alert">
+        {error}
+    </p>
+)}
+----
+
+**Ligne 43 - Rendu conditionnel :**
+
+* `{error && (...)}` : Message affiché uniquement si `error` existe.
+
+**Ligne 44 - Paragraphe d'erreur :**
+
+* `id={`${inputId}-error`}` : ID utilisé par `aria-describedby` pour lier l'erreur à l'input.
+
+* `className={styles.errorText}` : Style rouge, petit texte.
+
+* `role="alert"` : **WCAG 4.1.3 - Status Messages**. Indique aux screen readers que c'est un message d'alerte urgent. Annoncé immédiatement sans que l'user doive naviguer dessus.
+
+**Ligne 46 - Texte d'erreur :**
+
+* `{error}` : Affiche le message d'erreur (ex: "Email invalide")
+
+---
+
+=== Message de succès (lignes 50-54)
+
+[source,typescript]
+----
+{success && !error && (
+    <p id={`${inputId}-success`} className={styles.successText}>
+        {success}
+    </p>
+)}
+----
+
+**Ligne 50 - Rendu conditionnel :**
+
+* `{success && !error && (...)}` : Affiché uniquement si :
+  - `success` existe
+  - ET `error` n'existe PAS (priorité à l'erreur)
+
+**Ligne 51 - Paragraphe de succès :**
+
+* `id={`${inputId}-success`}` : ID utilisé par `aria-describedby` pour lier le message de succès à l'input.
+
+* `className={styles.successText}` : Style vert, petit texte, poids medium.
+
+**Ligne 52 - Texte de succès :**
+
+* `{success}` : Affiche le message de succès (ex: "Mot de passe sécurisé")
+
+---
+
+=== Texte d'aide (lignes 56-60)
+
+[source,typescript]
+----
+{helperText && !error && !success && (
+    <p id={`${inputId}-helper`} className={styles.helperText}>
+        {helperText}
+    </p>
+)}
+----
+
+**Ligne 56 - Rendu conditionnel :**
+
+* `{helperText && !error && !success && (...)}` : Affiché uniquement si :
+  - `helperText` existe
+  - ET `error` n'existe PAS (priorité 1)
+  - ET `success` n'existe PAS (priorité 2)
+
+**Ligne 44 - Paragraphe d'aide :**
+
+* `id={`${inputId}-helper`}` : ID lié par `aria-describedby`.
+
+* `className={styles.helperText}` : Style gris, petit texte.
+
+**Ligne 45 - Texte d'aide :**
+
+* `{helperText}` : Exemple : "Minimum 8 caractères"
+
+---
+
+=== DisplayName (ligne 56)
+
+[source,typescript]
+----
+Input.displayName = "Input"
+----
+
+**Pourquoi ?** Quand on utilise `forwardRef`, React perd le nom du composant dans les DevTools. Il l'affiche comme "ForwardRef" au lieu de "Input".
+
+En ajoutant `displayName`, les DevTools React montrent "Input" dans l'arbre de composants → facilite le debug.
+
+---
+
+== Input.module.scss - Explication des mixins et clamps
+
+=== Structure générale
+
+[source,scss]
+----
+@use '../../../styles/variables' as *;
+----
+
+**Import des variables :** Permet d'utiliser toutes les variables SCSS (`$spacing-md`, `$color-primary`, etc.) et les mixins (`@include tablet`) sans préfixe.
+
+---
+
+=== Wrapper (ligne 3-5)
+
+[source,scss]
+----
+.inputWrapper {
+    width: 100%;
+}
+----
+
+**Container full-width :** Le wrapper prend toute la largeur disponible, permettant à l'input de s'adapter à son conteneur parent.
+
+---
+
+=== Label (lignes 7-13)
+
+[source,scss]
+----
+.label {
+    display: block;
+    font-family: $font-family-base;
+    font-size: $font-size-sm;
+    font-weight: $font-weight-medium;
+    color: $color-text-primary;
+    margin-bottom: $spacing-xs;
+}
+----
+
+**Styles du label :**
+
+* `display: block` : Force le label à prendre toute la largeur (input en dessous)
+* Variables utilisées : `$font-family-base` (Inter), `$font-size-sm` (0.875rem = 14px), `$spacing-xs` (0.25rem = 4px)
+
+---
+
+=== Astérisque requis (lignes 15-17)
+
+[source,scss]
+----
+.required {
+    color: $error;
+}
+----
+
+**Couleur rouge pour l'astérisque :** Utilise la variable `$error` (rouge bordeaux) pour indiquer visuellement que le champ est obligatoire.
+
+---
+
+=== Input - Base avec clamp() (lignes 19-31)
+
+[source,scss]
+----
+.input {
+    width: 100%;
+    padding: clamp(0.5rem, 2vw, 0.75rem) clamp(0.75rem, 3vw, 1rem);
+    font-size: clamp(0.875rem, 1.5vw, 1rem);
+    color: $color-text-primary;
+    background: $white-paper;
+    border: 1px solid $color-border-medium;
+    border-radius: $border-radius-md;
+    transition: all $transition-base;
+----
+
+**⭐ CLAMP() - Padding responsive fluide (ligne 21) :**
+
+`padding: clamp(0.5rem, 2vw, 0.75rem) clamp(0.75rem, 3vw, 1rem);`
+
+**Décomposition :**
+
+**Padding vertical (haut/bas) :** `clamp(0.5rem, 2vw, 0.75rem)`
+
+* **0.5rem** (8px) = MINIMUM (mobile 320px)
+* **2vw** = IDÉAL (2% de la largeur viewport) → Grandit progressivement
+* **0.75rem** (12px) = MAXIMUM (desktop 1920px+)
+
+**Padding horizontal (gauche/droite) :** `clamp(0.75rem, 3vw, 1rem)`
+
+* **0.75rem** (12px) = MINIMUM
+* **3vw** = IDÉAL (3% viewport)
+* **1rem** (16px) = MAXIMUM
+
+**Résultat :**
+
+* Mobile 320px → padding: 8px 12px (petit)
+* Tablet 768px → padding: ~10px 14px (moyen, grandit progressivement)
+* Desktop 1920px → padding: 12px 16px (max atteint)
+
+**Pourquoi clamp() ?** Transition FLUIDE sans breakpoints. L'input grandit doucement avec l'écran.
+
+---
+
+**⭐ CLAMP() - Font-size responsive (ligne 22) :**
+
+`font-size: clamp(0.875rem, 1.5vw, 1rem);`
+
+* **0.875rem** (14px) = MIN → Lisible sur mobile
+* **1.5vw** = Idéal → Grandit avec viewport
+* **1rem** (16px) = MAX → Confortable desktop
+
+**Résultat :**
+
+* Mobile 320px → 14px (minimum garanti)
+* Tablet 768px → ~11.5px → **Prend le MIN car 1.5vw trop petit** → 14px
+* Desktop 1200px → 18px → **Prend le MAX car 1.5vw trop grand** → 16px
+
+**Pourquoi c'est important ?** Garantit la lisibilité sur tous les écrans (WCAG 1.4.4).
+
+---
+
+=== Focus visible (lignes 33-42)
+
+[source,scss]
+----
+&:focus {
+    outline: none;
+    border-color: $terracotta;
+    box-shadow: 0 0 0 3px rgba($terracotta, 0.1);
+}
+
+&:focus-visible {
+    outline: 2px solid $terracotta;
+    outline-offset: 2px;
+}
+----
+
+**:focus (toujours) :**
+
+* Border terracotta + box-shadow léger → Feedback visuel au focus
+
+**:focus-visible (clavier uniquement) :**
+
+* **WCAG 2.4.7 - Focus Visible** : Outline épais pour navigation clavier (Tab)
+* `outline-offset: 2px` : Espace entre outline et input pour meilleure visibilité
+
+**Différence ?**
+
+* `:focus` → Déclenché par clic OU clavier
+* `:focus-visible` → Déclenché UNIQUEMENT par clavier (pas par clic souris)
+
+Résultat : User clavier voit outline épais, user souris voit juste border colorée.
+
+---
+
+=== Hover (lignes 44-47)
+
+[source,scss]
+----
+&:hover:not(:disabled) {
+    border-color: $color-border-dark;
+}
+----
+
+**Hover avec condition :** Border plus foncée au survol, SAUF si input désactivé (`:not(:disabled)`).
+
+---
+
+=== Disabled (lignes 49-54)
+
+[source,scss]
+----
+&:disabled {
+    background: $beige-page;
+    color: $gray-slate;
+    cursor: not-allowed;
+    opacity: 0.6;
+}
+----
+
+**État désactivé :**
+
+* Background beige, texte gris, curseur interdit, opacité réduite
+* **WCAG 1.4.3** : Contraste visuel suffisant pour indiquer l'état
+
+---
+
+=== Placeholder (lignes 56-59)
+
+[source,scss]
+----
+&::placeholder {
+    color: $gray-slate;
+    opacity: 0.7;
+}
+----
+
+**Style du placeholder :** Gris léger pour ne pas confondre avec valeur réelle.
+
+---
+
+=== État erreur (lignes 64-71)
+
+[source,scss]
+----
+.input.error {
+    border-color: $error;
+
+    &:focus {
+        border-color: $error;
+        box-shadow: 0 0 0 3px rgba($error, 0.1);
+    }
+}
+----
+
+**Classe error appliquée dynamiquement :** Border rouge + box-shadow rouge au focus pour indiquer visuellement l'erreur (WCAG 3.3.1).
+
+---
+
+=== État succès (lignes 81-88)
+
+[source,scss]
+----
+.input.success {
+    border-color: $success;
+
+    &:focus {
+        border-color: $success;
+        box-shadow: 0 0 0 3px rgba($success, 0.1);
+    }
+}
+----
+
+**Classe success appliquée dynamiquement :** Border verte + box-shadow vert au focus pour indiquer visuellement le succès de validation.
+
+---
+
+=== Messages d'erreur, succès et aide (lignes 73-101)
+
+[source,scss]
+----
+.errorText {
+    margin-top: $spacing-xs;
+    font-size: $font-size-xs;
+    color: $error;
+    font-weight: $font-weight-medium;
+}
+
+.successText {
+    margin-top: $spacing-xs;
+    font-size: $font-size-xs;
+    color: $success;
+    font-weight: $font-weight-medium;
+}
+
+.helperText {
+    margin-top: $spacing-xs;
+    font-size: $font-size-xs;
+    color: $gray-slate;
+}
+----
+
+**Textes sous l'input :**
+
+* Même taille (`$font-size-xs` = 0.75rem = 12px)
+* Erreur en rouge bold, succès en vert bold, helper en gris normal
+* Priorité d'affichage : error > success > helperText
+
+---
+
+== Pourquoi pas de mixins (@include tablet) dans Input ?
+
+**CLAMP() suffit pour Input** car :
+
+* Padding/font-size peuvent grandir **progressivement** → clamp() parfait
+* Pas besoin de changer la **structure** (display, layout) selon breakpoint
+
+**Quand utiliser mixins ?**
+
+[source,scss]
+----
+// Button.module.scss - EXEMPLE avec mixin
+.button {
+  padding: clamp(0.5rem, 2vw, 1rem);  // ✅ Clamp pour padding fluide
+
+  @include tablet {
+    display: inline-flex;  // ❌ Changement structurel → mixin nécessaire
+    min-width: 120px;      // ❌ Contrainte fixe → mixin
+  }
+}
+----
+
+**Input = Simple → clamp() uniquement**
+**Button = Complexe → clamp() + mixins**
+
+---
+
+== Conformité WCAG 2.2 AA
+
+|===
+| Critère | Niveau | Implémentation
+
+| **1.4.3** Contrast (Minimum)
+| AA
+| Variables couleur avec contrastes validés ($color-text-primary, $error)
+
+| **2.4.7** Focus Visible
+| AA
+| `:focus-visible` avec outline 2px terracotta
+
+| **3.3.1** Error Identification
+| A
+| `aria-invalid="true"` + border rouge
+
+| **3.3.2** Labels or Instructions
+| A
+| `<label htmlFor>` lié à l'input + astérisque requis
+
+| **3.3.3** Error Suggestion
+| AA
+| `aria-describedby` liant input et message d'erreur
+
+| **4.1.2** Name, Role, Value
+| A
+| `<input>` sémantique + attributs aria
+
+| **4.1.3** Status Messages
+| AA
+| `role="alert"` sur message d'erreur
+|===
+
+---
+
+== Exemples d'utilisation
+
+=== Input simple
+
+[source,tsx]
+----
+<Input
+  label="Email"
+  type="email"
+  placeholder="exemple@email.com"
+/>
+----
+
+=== Input avec erreur
+
+[source,tsx]
+----
+<Input
+  label="Mot de passe"
+  type="password"
+  error="Le mot de passe doit contenir au moins 8 caractères"
+  required
+/>
+----
+
+=== Input avec succès
+
+[source,tsx]
+----
+<Input
+  label="Mot de passe"
+  type="password"
+  success="Mot de passe sécurisé ✓"
+/>
+----
+
+=== Input avec helper text
+
+[source,tsx]
+----
+<Input
+  label="Username"
+  helperText="Minimum 3 caractères, lettres et chiffres uniquement"
+/>
+----
+
+=== Avec React Hook Form
+
+[source,tsx]
+----
+const { register, formState: { errors } } = useForm()
+
+<Input
+  label="Email"
+  {...register('email', { required: 'Email requis' })}
+  error={errors.email?.message}
+/>
+----
+
+---
+
+== Résumé technique
+
+**Points clés du code :**
+
+1. **forwardRef** : Permet à React Hook Form de contrôler l'input
+2. **aria-\*** : Attributs WCAG pour screen readers
+3. **ID automatique** : Génère un ID depuis le label si non fourni
+4. **Rendu conditionnel** : Label, error, helperText affichés selon contexte
+5. **Classes dynamiques** : Applique `.error` selon l'état
+6. **clamp()** : Padding et font-size responsive fluides
+7. **Pas de mixins** : Input simple ne nécessite pas de breakpoints structurels
+
+**Avantages :**
+
+✅ Accessible WCAG 2.2 AA
+✅ Compatible React Hook Form
+✅ Responsive fluide (clamp)
+✅ Type-safe (TypeScript)
+✅ Réutilisable partout
+
+**Temps de développement :** ~30 minutes
+**Utilisations futures :** Illimitées sans modification

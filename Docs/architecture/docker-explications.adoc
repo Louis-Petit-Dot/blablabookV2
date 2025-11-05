@@ -1,0 +1,951 @@
+= Docker Explications - BlaBlaBook V2
+:toc: left
+:toclevels: 3
+:sectanchors:
+:icons: font
+
+== 🐳 Vue d'ensemble
+
+Ce document explique en détail les Dockerfiles du projet BlaBlaBook V2 :
+
+* **Backend Deno** : 1 stage (simple et efficace)
+* **Frontend Next.js** : 1 stage (dev) + 2 stages (prod, optimisé)
+
+== 📦 Architecture Dockerfiles
+
+[cols="2,2,2,3"]
+|===
+|Service |Fichier |Stages |Usage
+
+|**Backend Dev**
+|`backend/Dockerfile.dev`
+|1 stage
+|Développement avec watch mode
+
+|**Backend Prod**
+|`backend/Dockerfile.prod`
+|1 stage
+|Production optimisé
+
+|**Frontend Dev**
+|`frontend/Dockerfile.dev`
+|1 stage
+|Développement avec hot reload
+
+|**Frontend Prod**
+|`frontend/Dockerfile.prod`
+|2 stages
+|Production ultra-optimisé
+|===
+
+== 🦕 Backend Deno : 1 Stage Suffit
+
+=== Pourquoi 1 seul stage ?
+
+**Deno n'a pas besoin de multi-stage car :**
+
+* ✅ Pas de `node_modules/` (dépendances cachées dans l'image)
+* ✅ Exécute TypeScript directement (pas de build complexe)
+* ✅ Code source nécessaire en runtime
+* ✅ Image déjà légère (~150 MB)
+
+**Gain multi-stage :** ~20-30 MB (faible)
+
+**Décision :** Simplicité > Optimisation excessive
+
+=== Dockerfile.prod Backend Expliqué
+
+==== Ligne 1 : Image de base
+
+[source,dockerfile]
+----
+FROM denoland/deno:alpine
+----
+
+**Explication :**
+
+* `FROM` : Directive Docker pour spécifier l'image de base
+* `denoland/deno` : Image officielle Deno
+* `alpine` : Distribution Linux minimaliste (~5 MB vs ~100 MB Debian)
+
+**Pourquoi Alpine ?**
+
+* ✅ Image légère (moins de packages = moins de vulnérabilités)
+* ✅ Startup rapide
+* ⚠️ Peut avoir des vulnérabilités (OpenSSL, etc.)
+
+==== Lignes 3-6 : Fix vulnérabilités Alpine
+
+[source,dockerfile]
+----
+RUN apk update && \
+    apk upgrade --no-cache && \
+    apk add --no-cache libstdc++ libgcc && \
+    rm -rf /var/cache/apk/*
+----
+
+**Explication mot par mot :**
+
+* `RUN` : Exécute une commande dans le conteneur pendant le build
+* `apk` : **Alpine Package Keeper** (gestionnaire de packages Alpine, équivalent `apt` Ubuntu)
+* `update` : Met à jour l'index des packages disponibles
+* `upgrade` : Met à jour les packages installés vers dernières versions (fix CVE OpenSSL)
+* `--no-cache` : Ne garde pas le cache téléchargé (image plus légère)
+* `add` : Installe de nouveaux packages
+* `libstdc++` : Librairie C++ standard (nécessaire pour argon2 - hash passwords)
+* `libgcc` : Librairie GCC (compilateur C, dépendance argon2)
+* `rm -rf /var/cache/apk/*` : Supprime le cache APK (économise ~10-20 MB)
+
+**Pourquoi `&&` et `\` ?**
+
+* `&&` : Enchaîne les commandes (si une échoue, tout s'arrête)
+* `\` : Retour à la ligne (lisibilité)
+
+**Alternative (sans `&&`) :**
+[source,dockerfile]
+----
+RUN apk update
+RUN apk upgrade --no-cache
+RUN apk add --no-cache libstdc++ libgcc
+RUN rm -rf /var/cache/apk/*
+----
+
+**Problème :** Crée 4 layers Docker au lieu d'1 → Image plus grosse
+
+**Règle :** Grouper les commandes liées avec `&&`
+
+==== Lignes 8-10 : User non-root (sécurité)
+
+[source,dockerfile]
+----
+RUN addgroup --system --gid 1001 denouser && \
+    adduser --system --uid 1001 denouser
+----
+
+**Explication :**
+
+* `addgroup` : Crée un groupe système Linux
+* `--system` : Groupe système (pas un user humain)
+* `--gid 1001` : **Group ID** = identifiant unique du groupe (1001 arbitraire, > 1000 = users)
+* `denouser` : Nom du groupe
+* `adduser` : Crée un utilisateur système
+* `--uid 1001` : **User ID** = identifiant unique de l'utilisateur
+* `denouser` : Nom de l'utilisateur
+
+**Pourquoi créer un user dédié ?**
+
+Par défaut, Docker tourne en **root** (UID 0, superutilisateur).
+
+**Risque :**
+[source,bash]
+----
+# Si une faille permet exécution de code malveillant:
+Attaquant → Exploit → Exécution code en root → Accès TOTAL au conteneur
+----
+
+**Avec user non-root :**
+[source,bash]
+----
+Attaquant → Exploit → Exécution code en denouser → Accès LIMITÉ
+                                                   (pas de sudo, pas accès fichiers système)
+----
+
+**Principe du moindre privilège :** Donner uniquement les droits nécessaires.
+
+**Analogie :** Tu ne donnes pas ton mot de passe admin Windows à une app random.
+
+==== Ligne 12 : Workdir
+
+[source,dockerfile]
+----
+WORKDIR /app
+----
+
+**Explication :**
+
+* `WORKDIR` : Définit le répertoire de travail (comme `cd /app`)
+* Toutes les commandes suivantes s'exécutent dans `/app`
+* Si `/app` n'existe pas, Docker le crée automatiquement
+
+==== Lignes 14-15 : Copier configs avec ownership
+
+[source,dockerfile]
+----
+COPY --chown=denouser:denouser deno.json deno.lock ./
+----
+
+**Explication mot par mot :**
+
+* `COPY` : Copie fichiers depuis l'hôte vers le conteneur
+* `--chown=denouser:denouser` : **Change ownership** (propriétaire des fichiers)
+  - Format : `--chown=USER:GROUP`
+  - `denouser` : User propriétaire
+  - `denouser` : Groupe propriétaire
+* `deno.json deno.lock` : Fichiers à copier (source sur hôte)
+* `./` : Destination dans le conteneur (ici `/app/` car WORKDIR)
+
+**Pourquoi `--chown` ?**
+
+Sans `--chown`, les fichiers copiés appartiennent à **root**.
+
+[source,bash]
+----
+# Sans --chown
+COPY deno.json ./
+# → Fichier appartient à root:root
+# → denouser ne peut pas le lire ❌
+
+# Avec --chown
+COPY --chown=denouser:denouser deno.json ./
+# → Fichier appartient à denouser:denouser
+# → denouser peut le lire ✅
+----
+
+**Vérifier ownership dans un conteneur :**
+[source,bash]
+----
+docker run --rm mon-image ls -la /app
+# -rw-r--r-- 1 denouser denouser  123 Jan 15 10:30 deno.json
+#             ↑ owner   ↑ group
+----
+
+==== Ligne 18 : Copier code source
+
+[source,dockerfile]
+----
+COPY --chown=denouser:denouser src/ ./src/
+----
+
+**Explication :**
+
+* Copie le dossier `src/` de l'hôte
+* Vers `/app/src/` dans le conteneur
+* Avec ownership `denouser:denouser`
+
+==== Ligne 21 : Cache dépendances Deno
+
+[source,dockerfile]
+----
+RUN deno cache src/index.ts
+----
+
+**Explication :**
+
+* `deno cache` : Télécharge et cache toutes les dépendances importées
+* Analyse `src/index.ts` et tous ses imports récursifs
+* Stocke les dépendances dans `~/.cache/deno/`
+
+**Exemple :**
+[source,typescript]
+----
+// src/index.ts
+import { Hono } from "https://deno.land/x/hono@v3.12.0/mod.ts";
+import { sign } from "jsonwebtoken";
+----
+
+**Résultat `deno cache` :**
+[source,bash]
+----
+Télécharge:
+├── hono@v3.12.0
+├── jsonwebtoken
+└── Toutes dépendances transitives
+
+Stocke dans: ~/.cache/deno/
+----
+
+**Avantage :** Au runtime, pas besoin de télécharger (déjà en cache).
+
+==== Ligne 24 : USER denouser
+
+[source,dockerfile]
+----
+USER denouser
+----
+
+**Explication :**
+
+* Change l'utilisateur pour toutes les commandes suivantes
+* Avant cette ligne : commandes en **root**
+* Après cette ligne : commandes en **denouser**
+
+**Impact :**
+
+* `CMD` (ligne 30) tournera en `denouser`, pas root
+* Le serveur Deno tourne en user non-root ✅
+
+==== Ligne 27 : EXPOSE
+
+[source,dockerfile]
+----
+EXPOSE 3000
+----
+
+**Explication :**
+
+* `EXPOSE` : Documente le port utilisé par le conteneur
+* **N'ouvre PAS le port** (juste documentation)
+* Pour ouvrir le port : `-p 3000:3000` lors du `docker run`
+
+**Usage :**
+[source,bash]
+----
+docker run -p 3000:3000 mon-image
+#           ↑ port hôte : port conteneur
+----
+
+==== Lignes 30-34 : CMD avec permissions Deno
+
+[source,dockerfile]
+----
+CMD ["deno", "run", \
+     "--allow-net", \
+     "--allow-read", \
+     "--allow-env", \
+     "src/index.ts"]
+----
+
+**Explication :**
+
+* `CMD` : Commande exécutée au démarrage du conteneur
+* Format JSON array : `["commande", "arg1", "arg2"]`
+* `\` : Retour à la ligne (lisibilité)
+
+**Arguments Deno :**
+
+* `deno run` : Lance un script TypeScript
+* `--allow-net` : **Autorise accès réseau** (HTTP/HTTPS, sockets)
+* `--allow-read` : **Autorise lecture fichiers** (config, .env, etc.)
+* `--allow-env` : **Autorise lecture variables d'environnement** (process.env)
+* `src/index.ts` : Fichier à exécuter
+
+**Pourquoi permissions explicites ?**
+
+Deno est **sécurisé par défaut** (deny all).
+
+[source,bash]
+----
+# Sans permissions
+deno run src/index.ts
+# → ❌ Error: Requires net access (essaie d'ouvrir port 3000)
+
+# Avec --allow-net
+deno run --allow-net src/index.ts
+# → ✅ Serveur démarre
+----
+
+**Permissions disponibles :**
+
+[cols="2,3,2"]
+|===
+|Permission |Description |BlaBlaBook V2
+
+|`--allow-net`
+|Réseau (HTTP, sockets)
+|✅ Nécessaire (API)
+
+|`--allow-read`
+|Lecture fichiers
+|✅ Nécessaire (config)
+
+|`--allow-env`
+|Variables env
+|✅ Nécessaire (.env)
+
+|`--allow-write`
+|Écriture fichiers
+|❌ Pas besoin
+
+|`--allow-run`
+|Exécuter sous-process
+|❌ Pas besoin
+
+|`--allow-all`
+|Toutes permissions
+|❌ Trop permissif
+|===
+
+**Principe :** Donner SEULEMENT les permissions nécessaires (moindre privilège).
+
+=== Question : Lancer manuellement ?
+
+**Question :**
+> "Je dois écrire à chaque fois `deno run --allow-net --allow-read --allow-env src/index.ts` ?"
+
+**Réponse :**
+
+==== En développement local (hors Docker)
+
+**Option 1 : Utiliser `deno task` (recommandé)** ✅
+
+[source,bash]
+----
+# Défini dans deno.json
+deno task dev
+----
+
+**Fichier `deno.json` :**
+[source,json]
+----
+{
+  "tasks": {
+    "dev": "deno run --allow-net --allow-read --allow-env --watch src/index.ts"
+  }
+}
+----
+
+**Avantages :**
+
+* ✅ Commande courte (`deno task dev`)
+* ✅ Permissions centralisées dans `deno.json`
+* ✅ `--watch` recharge automatiquement le code
+
+**Option 2 : Script Bash** ✅
+
+[source,bash]
+----
+# scripts/dev.sh
+#!/bin/bash
+deno run \
+  --allow-net \
+  --allow-read \
+  --allow-env \
+  --watch \
+  src/index.ts
+----
+
+**Usage :**
+[source,bash]
+----
+chmod +x scripts/dev.sh
+./scripts/dev.sh
+----
+
+**Option 3 : Taper la commande complète** ❌ (pénible)
+
+[source,bash]
+----
+deno run --allow-net --allow-read --allow-env src/index.ts
+----
+
+==== En production (Docker)
+
+**Dans le Dockerfile :**
+[source,dockerfile]
+----
+CMD ["deno", "run", "--allow-net", "--allow-read", "--allow-env", "src/index.ts"]
+----
+
+**Tu n'écris RIEN manuellement :**
+
+[source,bash]
+----
+# Démarrer le conteneur
+docker compose -f docker-compose.prod.yml up
+
+# La commande CMD est lancée automatiquement ✅
+----
+
+==== En production (VPS sans Docker)
+
+**Option 1 : Utiliser systemd service** ✅ (recommandé)
+
+[source,ini]
+----
+# /etc/systemd/system/blablabook.service
+[Unit]
+Description=BlaBlaBook Backend API
+After=network.target
+
+[Service]
+Type=simple
+User=denouser
+WorkingDirectory=/opt/blablabook/backend
+ExecStart=/usr/local/bin/deno run \
+  --allow-net \
+  --allow-read \
+  --allow-env \
+  src/index.ts
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
+----
+
+**Usage :**
+[source,bash]
+----
+sudo systemctl start blablabook
+sudo systemctl enable blablabook  # Auto-start au boot
+----
+
+**Avantages :**
+
+* ✅ Démarre automatiquement au boot
+* ✅ Redémarre si crash
+* ✅ Logs avec `journalctl -u blablabook`
+
+**Option 2 : PM2 (Process Manager)** ✅
+
+[source,bash]
+----
+# Installer PM2 (Node.js requis)
+npm install -g pm2
+
+# Démarrer avec PM2
+pm2 start "deno run --allow-net --allow-read --allow-env src/index.ts" --name blablabook
+
+# Sauvegarder config
+pm2 save
+pm2 startup
+----
+
+**Option 3 : Script + nohup** ⚠️ (basique)
+
+[source,bash]
+----
+nohup deno run --allow-net --allow-read --allow-env src/index.ts > output.log 2>&1 &
+----
+
+=== Résumé Backend
+
+**Dockerfile.prod Backend = 1 stage**
+
+[cols="2,3"]
+|===
+|Élément |Raison
+
+|**1 stage uniquement**
+|Deno léger, pas de build complexe
+
+|**Fix Alpine**
+|Patch OpenSSL vulnerability
+
+|**User non-root**
+|Sécurité (principe moindre privilège)
+
+|**--chown**
+|Files appartiennent à denouser
+
+|**Permissions explicites**
+|`--allow-net/read/env` uniquement
+|===
+
+== 🟢 Frontend Next.js : Multi-Stage Obligatoire
+
+=== Pourquoi 2 stages ?
+
+**Next.js nécessite multi-stage car :**
+
+* ❌ `node_modules/` énorme (500-800 MB avec dev dependencies)
+* ❌ Code source TypeScript/JSX pas nécessaire après build
+* ❌ Outils build (typescript, eslint, webpack) inutiles en prod
+
+**Gain multi-stage :** ~650 MB (78% plus léger !)
+
+**Décision :** Multi-stage obligatoire (standard industrie)
+
+=== Dockerfile.prod Frontend Expliqué
+
+==== STAGE 1 : Builder (construction)
+
+[source,dockerfile]
+----
+FROM node:22-alpine AS builder
+# ↑ AS builder = Nom du stage
+----
+
+**Explication :**
+
+* `AS builder` : Donne un nom à ce stage
+* Permet de référencer ce stage avec `--from=builder`
+
+**Contenu STAGE 1 :**
+
+[source,dockerfile]
+----
+RUN apk update && apk upgrade --no-cache
+
+WORKDIR /app
+
+COPY package*.json ./
+RUN npm ci              # Install TOUTES dépendances (dev + prod)
+
+COPY . .                # Copie TOUT le code source
+RUN npm run build       # Build Next.js
+----
+
+**Résultat :**
+[source,plaintext]
+----
+builder/ (800 MB) - TEMPORAIRE
+├── node_modules/        (500 MB - typescript, eslint, etc.)
+├── src/                 (code source)
+├── .next/standalone/    ✅ On va copier ça
+├── .next/static/        ✅ On va copier ça
+└── public/              ✅ On va copier ça
+----
+
+**Ce stage est JETÉ après le build !**
+
+==== STAGE 2 : Runner (production)
+
+[source,dockerfile]
+----
+FROM node:22-alpine AS runner
+# ↑ Nouvelle image VIERGE (on repart de zéro)
+----
+
+**Explication :**
+
+* Nouvelle image propre, sans rien du STAGE 1
+* On va copier SEULEMENT ce qui est nécessaire
+
+**Copie sélective depuis builder :**
+
+[source,dockerfile]
+----
+COPY --from=builder --chown=nextjs:nodejs /app/public ./public
+COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
+COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
+----
+
+**Explication :**
+
+* `--from=builder` : Copie depuis le STAGE 1 (builder), pas depuis l'hôte
+* `/app/public` dans builder → `./public` dans runner
+* `--chown=nextjs:nodejs` : Files appartiennent à nextjs (user non-root)
+
+**Résultat STAGE 2 :**
+[source,plaintext]
+----
+runner/ (150 MB) - IMAGE FINALE ✅
+├── public/              (images, fonts)
+├── .next/standalone/    (Node.js + deps prod minimales)
+├── .next/static/        (JS/CSS minifiés)
+└── C'est TOUT !
+
+Pas de:
+❌ node_modules/ complet
+❌ src/ code source
+❌ typescript, eslint, webpack
+----
+
+==== Next.js Standalone Output
+
+**Configuration requise (`next.config.js`) :**
+
+[source,javascript]
+----
+/** @type {import('next').NextConfig} */
+const nextConfig = {
+  output: 'standalone',  // ⚠️ Important pour Docker !
+};
+
+module.exports = nextConfig;
+----
+
+**Explication :**
+
+* `output: 'standalone'` : Next.js génère un build optimisé pour Docker
+* Crée `.next/standalone/` avec :
+  - `server.js` (serveur Node.js minimal)
+  - Dépendances prod uniquement (pas typescript, eslint)
+  - Prêt à run avec `node server.js`
+
+**Sans standalone :**
+[source,plaintext]
+----
+.next/
+├── build/
+├── cache/
+└── Nécessite node_modules/ complet (500 MB) ❌
+----
+
+**Avec standalone :**
+[source,plaintext]
+----
+.next/standalone/
+├── server.js                    ✅
+├── node_modules/ (minimal 50MB) ✅
+└── Prêt à lancer
+----
+
+=== Comparaison Taille Images
+
+[cols="2,2,2,2"]
+|===
+|Image |Taille |Contenu |Usage
+
+|**Backend Single-stage**
+|150 MB
+|Deno + src/
+|✅ OK
+
+|**Frontend Single-stage**
+|847 MB
+|Node + node_modules complet + src
+|❌ Trop lourd
+
+|**Frontend Multi-stage**
+|187 MB
+|Node + standalone minimal
+|✅ OK
+|===
+
+**Gain Frontend multi-stage : 660 MB (78%)**
+
+== 📊 Tableau Récapitulatif
+
+[cols="2,2,2,3"]
+|===
+|Service |Environnement |Stages |Caractéristiques
+
+|**Backend Dev**
+|Développement
+|1 stage
+|Watch mode, permissions larges
+
+|**Backend Prod**
+|Production
+|1 stage
+|User non-root, permissions minimales
+
+|**Frontend Dev**
+|Développement
+|1 stage
+|Hot reload, node_modules monté
+
+|**Frontend Prod**
+|Production
+|2 stages
+|Multi-stage, standalone, ultra-léger
+|===
+
+== 🔐 Sécurité : User Non-Root
+
+=== Pourquoi user non-root ?
+
+**Scénario d'attaque :**
+
+[source,plaintext]
+----
+1. Attaquant trouve vulnérabilité dans Hono/Next.js
+2. Exploit → Exécution code arbitraire
+3. Si conteneur tourne en root → Accès TOTAL
+4. Attaquant peut:
+   - Lire tous fichiers (dont secrets)
+   - Modifier l'application
+   - Installer backdoors
+   - Accéder à d'autres conteneurs (réseau Docker)
+----
+
+**Avec user non-root :**
+
+[source,plaintext]
+----
+1. Attaquant trouve vulnérabilité
+2. Exploit → Exécution code en denouser/nextjs
+3. Accès LIMITÉ:
+   - ❌ Pas accès root
+   - ❌ Pas modifier fichiers système
+   - ❌ Pas installer packages
+   - ✅ Seulement accès /app/ et ses fichiers
+----
+
+**Impact réduit de 90% !**
+
+=== Commandes pour vérifier
+
+[source,bash]
+----
+# Vérifier user dans un conteneur
+docker run --rm mon-image whoami
+# denouser  ✅
+
+# Vérifier ownership fichiers
+docker run --rm mon-image ls -la /app
+# -rw-r--r-- 1 denouser denouser  123 Jan 15 deno.json
+----
+
+== 🚀 Commandes Docker Utiles
+
+=== Build images
+
+[source,bash]
+----
+# Backend dev
+docker build -f backend/Dockerfile.dev -t backend-dev backend/
+
+# Backend prod
+docker build -f backend/Dockerfile.prod -t backend-prod backend/
+
+# Frontend dev
+docker build -f frontend/Dockerfile.dev -t frontend-dev frontend/
+
+# Frontend prod (multi-stage automatique)
+docker build -f frontend/Dockerfile.prod -t frontend-prod frontend/
+----
+
+=== Run conteneurs
+
+[source,bash]
+----
+# Backend
+docker run -p 3000:3000 --env-file backend/.env backend-prod
+
+# Frontend
+docker run -p 3001:3001 frontend-prod
+----
+
+=== Docker Compose (recommandé)
+
+[source,bash]
+----
+# Dev (backend + frontend + postgres + adminer)
+docker compose -f docker-compose.dev.yml up --build
+
+# Prod (backend + frontend + postgres)
+docker compose -f docker-compose.prod.yml up --build -d
+----
+
+=== Inspecter images
+
+[source,bash]
+----
+# Taille images
+docker images
+
+# Layers d'une image
+docker history mon-image
+
+# Scanner vulnérabilités
+docker run aquasec/trivy image mon-image
+----
+
+== 📚 Glossaire Docker
+
+[cols="2,3"]
+|===
+|Terme |Définition
+
+|**FROM**
+|Image de base (ex: node:22-alpine)
+
+|**RUN**
+|Exécute commande pendant BUILD
+
+|**CMD**
+|Commande exécutée au START du conteneur
+
+|**COPY**
+|Copie fichiers hôte → conteneur
+
+|**WORKDIR**
+|Définit répertoire de travail (cd)
+
+|**EXPOSE**
+|Documente port utilisé (pas d'ouverture)
+
+|**USER**
+|Change l'utilisateur pour commandes suivantes
+
+|**--chown**
+|Change propriétaire fichiers copiés
+
+|**AS**
+|Nomme un stage (multi-stage)
+
+|**--from=**
+|Copie depuis un autre stage
+
+|**Layer**
+|Couche Docker (chaque RUN/COPY = 1 layer)
+
+|**Cache**
+|Docker réutilise layers inchangés
+
+|**Multi-stage**
+|Plusieurs FROM dans 1 Dockerfile
+|===
+
+== 🎯 Best Practices
+
+=== Ordre des COPY (cache Docker)
+
+**❌ Mauvais ordre :**
+[source,dockerfile]
+----
+COPY . .              # Copie TOUT
+RUN npm ci            # Invalide cache à chaque modif code
+----
+
+**✅ Bon ordre :**
+[source,dockerfile]
+----
+COPY package*.json ./  # Layer 1: Configs (change rarement)
+RUN npm ci             # Layer 2: Install (mis en cache si package.json inchangé)
+COPY . .               # Layer 3: Code (change souvent)
+----
+
+**Avantage :** Si tu modifies `src/index.ts`, Docker réutilise layers 1-2 (npm ci pas relancé).
+
+=== Grouper commandes RUN
+
+**❌ Mauvais (4 layers) :**
+[source,dockerfile]
+----
+RUN apk update
+RUN apk upgrade
+RUN apk add libstdc++
+RUN rm -rf /var/cache/apk/*
+----
+
+**✅ Bon (1 layer) :**
+[source,dockerfile]
+----
+RUN apk update && \
+    apk upgrade && \
+    apk add libstdc++ && \
+    rm -rf /var/cache/apk/*
+----
+
+=== User non-root obligatoire prod
+
+[source,dockerfile]
+----
+# Créer user
+RUN addgroup --system myapp && adduser --system myapp
+
+# Copier avec ownership
+COPY --chown=myapp:myapp . .
+
+# Passer en user
+USER myapp
+----
+
+=== .dockerignore obligatoire
+
+[source,plaintext]
+----
+# frontend/.dockerignore
+node_modules
+.next
+.git
+.env.local
+----
+
+**Gain :** Image 5-10x plus légère, build plus rapide
+
+== 🔗 Ressources
+
+* Docker Best Practices : https://docs.docker.com/develop/dev-best-practices/
+* Multi-stage builds : https://docs.docker.com/build/building/multi-stage/
+* Next.js Docker : https://nextjs.org/docs/deployment#docker-image
+* Deno Docker : https://deno.land/manual/getting_started/setup_your_environment#docker
+
+---
+
+_Document créé : {docdate}_
+_Version : 1.0_
+_Projet : BlaBlaBook V2_

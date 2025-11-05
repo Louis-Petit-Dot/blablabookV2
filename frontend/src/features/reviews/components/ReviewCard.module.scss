@@ -1,0 +1,67 @@
+.card {
+    border: 1px solid var(--border);
+    padding: 1rem;
+    border-radius: 6px;
+    background: var(--surface);
+}
+
+.header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 0.5rem;
+}
+
+.meta {
+    display: flex;
+    gap: 0.6rem;
+    color: var(--muted);
+    font-size: 0.9rem;
+    align-items: center;
+}
+
+.author {
+    font-weight: 700;
+}
+
+.date {
+    color: var(--muted);
+    font-size: 0.85rem;
+}
+
+.controls {
+    display: flex;
+    gap: 0.5rem;
+}
+
+.title {
+    margin: 0;
+    font-size: 1.05rem;
+    margin-bottom: 0.5rem;
+}
+
+.body {
+    font-size: 0.95rem;
+    color: var(--text);
+}
+
+.spoilerPlaceholder {
+    background: var(--surface-2);
+    padding: 0.6rem;
+    border-radius: 4px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.comment {
+    white-space: pre-wrap;
+}
+
+.helperText {
+    margin-top: 0.5rem;
+}
+
+.helperError {
+    color: var(--error);
+}

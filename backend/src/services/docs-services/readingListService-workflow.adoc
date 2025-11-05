@@ -1,0 +1,542 @@
+= ReadingListService Workflow Documentation (Version Views SQL)
+:doctype: article
+:toc: left
+:toclevels: 3
+:sectlinks:
+:sectanchors:
+:source-highlighter: highlight.js
+
+== Vue d'ensemble
+
+Le `readingListService` gère les listes de lecture personnalisées des utilisateurs avec un système de permissions sophistiqué basé sur la propriété, la visibilité publique et les bibliothèques parentes.
+
+**Architecture modernisée** : Le service utilise maintenant la vue SQL `ReadingListView` pour éviter les JOINs manuels, des helpers internes pour factoriser le code, et des constantes pour les conditions WHERE réutilisables.
+
+== Architecture des permissions
+
+=== Règles d'accès
+
+* **Propriétaire** : Accès complet (lecture/écriture)
+* **Liste publique** : Accès lecture pour tous
+* **Bibliothèque parente privée** : Seul le propriétaire y accède
+* **Liste système** : Ne peut pas être supprimée
+
+== Vue SQL - ReadingListView
+
+**Définition SQL :**
+```sql
+CREATE VIEW reading_list_view AS
+SELECT
+  rl.id_list, rl.id_user, rl.id_library,
+  rl.list_name, rl.description,
+  rl.is_public, rl.is_system,
+  rl.created_at, rl.updated_at, rl.deleted_at,
+  u.username AS owner_username,
+  u.firstname AS owner_firstname,
+  u.lastname AS owner_lastname,
+  u.deleted_at AS user_deleted_at,
+  lib.lib_name AS library_name,
+  lib.is_public AS library_is_public,
+  lib.deleted_at AS library_deleted_at
+FROM READING_LIST rl
+INNER JOIN USER u ON rl.id_user = u.id_user
+LEFT JOIN LIBRARY lib ON rl.id_library = lib.id_library;
+```
+
+**Avantages :**
+- Évite les JOINs manuels côté application
+- Données pré-agrégées (propriétaire et bibliothèque)
+- Code plus lisible et maintenable
+- Performance améliorée avec index sur la vue
+
+== Constantes de requêtes
+
+=== VIEW_NOT_DELETED
+
+**Usage :** Conditions WHERE pour filtrer les entités supprimées dans la vue.
+
+```typescript
+const VIEW_NOT_DELETED = and(
+    isNull(ReadingListView.deleted_at),
+    isNull(ReadingListView.user_deleted_at),
+    or(
+        isNull(ReadingListView.library_deleted_at),
+        isNull(ReadingListView.id_library)
+    )
+);
+```
+
+**Explication :**
+- Liste non supprimée
+- Utilisateur propriétaire non supprimé
+- Bibliothèque non supprimée OU pas de bibliothèque associée
+
+=== READING_LIST_NOT_DELETED
+
+**Usage :** Condition simple pour les requêtes directes sur la table `ReadingList`.
+
+```typescript
+const READING_LIST_NOT_DELETED = isNull(ReadingList.deleted_at);
+```
+
+== Helpers internes
+
+Le service utilise un objet `helpers` pour factoriser le code commun :
+
+=== getUserPermission
+
+**But :** Calcule les permissions d'un utilisateur sur une liste.
+
+```typescript
+getUserPermission(
+    readingList: { id_user: string; is_public: boolean },
+    userId: string
+) {
+    if (readingList.id_user === userId) return 'owner';
+    if (readingList.is_public) return 'read';
+    return null;
+}
+```
+
+**Retour :**
+- `'owner'` : Propriétaire de la liste
+- `'read'` : Accès en lecture seule
+- `null` : Pas d'accès
+
+=== checkDuplicateName
+
+**But :** Vérifie l'unicité du nom de liste pour un utilisateur.
+
+```typescript
+async checkDuplicateName(userId: string, listName: string) {
+    const existing = await db.select().from(ReadingList).where(
+        and(
+            eq(ReadingList.id_user, userId),
+            eq(ReadingList.list_name, listName),
+            READING_LIST_NOT_DELETED
+        )
+    ).limit(1);
+
+    if (existing.length > 0) {
+        throw new Error('A reading list with this name already exists.');
+    }
+}
+```
+
+**Validation :** Lance une erreur si un nom identique existe déjà pour cet utilisateur.
+
+=== validateLibraryOwnership
+
+**But :** Vérifie que la bibliothèque appartient bien à l'utilisateur.
+
+```typescript
+async validateLibraryOwnership(libraryId: string, userId: string) {
+    const library = await EntityValidator.validateLibrary(libraryId);
+    if (library.id_user !== userId) {
+        throw new Error('You can only move lists to your own libraries.');
+    }
+    return library;
+}
+```
+
+**Sécurité :** Empêche d'associer une liste à une bibliothèque d'un autre utilisateur.
+
+== Méthodes du service
+
+=== getAccessibleLists(userId: string)
+
+**But :** Retourne toutes les listes accessibles à un utilisateur.
+
+**Workflow simplifié avec ReadingListView :**
+```
+1. SELECT FROM ReadingListView
+2. WHERE VIEW_NOT_DELETED
+3. AND (is_public = true OR id_user = userId)
+4. Retour direct avec toutes les infos (propriétaire + bibliothèque)
+```
+
+**Code :**
+```typescript
+async getAccessibleLists(userId: string) {
+    return await db.select().from(ReadingListView).where(
+        and(
+            VIEW_NOT_DELETED,
+            or(
+                eq(ReadingListView.is_public, true),
+                eq(ReadingListView.id_user, userId)
+            )
+        )
+    );
+}
+```
+
+**Données retournées :**
+- Informations complètes de la liste
+- owner_username, owner_firstname, owner_lastname
+- library_name, library_is_public (si applicable)
+
+=== getUserLists(targetUserId: string, requestingUserId: string)
+
+**But :** Récupère les listes d'un utilisateur spécifique avec gestion du profil personnel.
+
+**Workflow simplifié avec ReadingListView :**
+```
+1. Validation utilisateur cible (EntityValidator.validateUser)
+2. Détermination : profil personnel ? (targetUserId === requestingUserId)
+3. SELECT FROM ReadingListView WHERE id_user = targetUserId
+4. Si pas profil personnel : AND is_public = true
+5. Retour avec indicateur is_own_profile
+```
+
+**Code :**
+```typescript
+async getUserLists(targetUserId: string, requestingUserId: string) {
+    const targetUser = await EntityValidator.validateUser(targetUserId);
+    const isOwnProfile = targetUserId === requestingUserId;
+
+    const readingLists = await db.select().from(ReadingListView).where(
+        and(
+            VIEW_NOT_DELETED,
+            eq(ReadingListView.id_user, targetUserId),
+            isOwnProfile ? undefined : eq(ReadingListView.is_public, true)
+        )
+    );
+
+    return {
+        user: {
+            id_user: targetUser.id_user,
+            username: targetUser.username,
+            firstname: targetUser.firstname,
+            lastname: targetUser.lastname
+        },
+        reading_lists: readingLists,
+        is_own_profile: isOwnProfile
+    };
+}
+```
+
+**Logique conditionnelle :**
+- `isOwnProfile ? undefined : eq(ReadingListView.is_public, true)` - Filtre les listes privées si pas propriétaire
+
+=== getListById(listId: string, userId: string)
+
+**But :** Récupère une liste spécifique avec vérification d'accès complexe.
+
+**Workflow avec ReadingListView :**
+```
+1. SELECT FROM ReadingListView WHERE id_list = listId
+2. WHERE VIEW_NOT_DELETED
+3. Validation d'accès via EntityValidator.validateReadingListAccess
+4. Calcul des permissions (helper getUserPermission)
+5. Retour avec user_permission
+```
+
+**Code :**
+```typescript
+async getListById(listId: string, userId: string) {
+    const readingList = await db.select().from(ReadingListView).where(
+        and(
+            VIEW_NOT_DELETED,
+            eq(ReadingListView.id_list, listId)
+        )
+    ).limit(1);
+
+    if (readingList.length === 0) return null;
+
+    const listData = readingList[0];
+    EntityValidator.validateReadingListAccess(
+        listData as unknown as ReadingListSelect,
+        userId,
+        false,
+        listData.library_is_public ?? undefined
+    );
+
+    return {
+        ...listData,
+        user_permission: helpers.getUserPermission(listData, userId)
+    };
+}
+```
+
+**Permissions retournées :**
+- `'owner'` : Propriétaire de la liste
+- `'read'` : Accès en lecture seule (liste publique)
+- `null` : Pas d'accès (ne devrait pas arriver car validé avant)
+
+**Particularité :** Gère la logique des bibliothèques parentes privées via `library_is_public`.
+
+=== create(listData: ReadingListInsert)
+
+**But :** Création d'une nouvelle liste de lecture avec validations.
+
+**Workflow avec helpers :**
+```
+1. Validation utilisateur (EntityValidator.validateUser)
+2. Si bibliothèque : validation propriété (helper validateLibraryOwnership)
+3. Interdiction listes système
+4. Vérification unicité nom (helper checkDuplicateName)
+5. INSERT dans ReadingList
+```
+
+**Code :**
+```typescript
+async create(listData: ReadingListInsert) {
+    await EntityValidator.validateUser(listData.id_user);
+
+    if (listData.id_library) {
+        await helpers.validateLibraryOwnership(
+            listData.id_library,
+            listData.id_user
+        );
+    }
+
+    if (listData.is_system) {
+        throw new Error('System reading lists cannot be created via API.');
+    }
+
+    await helpers.checkDuplicateName(listData.id_user, listData.list_name);
+
+    const newReadingList = await db.insert(ReadingList)
+        .values(listData)
+        .returning();
+    return newReadingList[0];
+}
+```
+
+**Contraintes :**
+- Nom unique par utilisateur (helper)
+- Bibliothèque doit appartenir à l'utilisateur (helper)
+- Pas de création de listes système
+
+=== update(listId: string, listData: Partial<ReadingListInsert>, userId: string)
+
+**But :** Mise à jour d'une liste existante (propriétaire uniquement).
+
+**Workflow avec helpers :**
+```
+1. Note : Propriété validée par middleware requireListOwnership()
+2. Si changement nom : vérification unicité (helper checkDuplicateName)
+3. Si changement bibliothèque : validation propriété (helper validateLibraryOwnership)
+4. UPDATE avec updated_at automatique
+```
+
+**Code :**
+```typescript
+async update(listId: string, listData: Partial<ReadingListInsert>, userId: string) {
+    // Note: list existence and ownership already validated by requireListOwnership() middleware
+
+    if (listData.list_name) {
+        await helpers.checkDuplicateName(userId, listData.list_name);
+    }
+
+    if (listData.id_library) {
+        await helpers.validateLibraryOwnership(listData.id_library, userId);
+    }
+
+    const updateData = { ...listData, updated_at: new Date() };
+    const updatedList = await db.update(ReadingList)
+        .set(updateData)
+        .where(eq(ReadingList.id_list, listId))
+        .returning();
+    return updatedList[0];
+}
+```
+
+**Optimisation :** Le middleware a déjà validé l'existence et la propriété, pas besoin de re-valider.
+
+=== delete(listId: string, userId: string)
+
+**But :** Suppression logique d'une liste (soft delete).
+
+**Workflow optimisé avec ReadingListView :**
+```
+1. Note : Propriété validée par middleware requireListOwnership()
+2. SELECT is_system FROM ReadingListView (requête unique efficace)
+3. Interdiction suppression listes système
+4. Soft delete : UPDATE deleted_at = NOW()
+```
+
+**Code :**
+```typescript
+async delete(listId: string, _userId: string) {
+    // Note: list existence and ownership already validated by requireListOwnership() middleware
+
+    // Check if it's a system list by getting it from view (efficient single query)
+    const list = await db.select({ is_system: ReadingListView.is_system })
+        .from(ReadingListView)
+        .where(eq(ReadingListView.id_list, listId))
+        .limit(1);
+
+    if (list[0]?.is_system) {
+        throw new Error('System reading lists cannot be deleted.');
+    }
+
+    const deletedList = await db.update(ReadingList).set({
+        deleted_at: new Date(),
+        updated_at: new Date()
+    }).where(eq(ReadingList.id_list, listId)).returning();
+
+    return deletedList[0];
+}
+```
+
+**Optimisation :** Requête unique sur la vue pour vérifier `is_system` au lieu de charger toute la liste.
+
+== Gestion des erreurs
+
+=== Erreurs courantes
+
+- `"User not found."` - Utilisateur inexistant (EntityValidator)
+- `"Reading list not found."` - Liste inexistante ou supprimée (EntityValidator)
+- `"Library not found."` - Bibliothèque inexistante (EntityValidator)
+- `"Access denied to this reading list."` - Accès lecture refusé (EntityValidator)
+- `"A reading list with this name already exists."` - Nom déjà utilisé (helper)
+- `"You can only move lists to your own libraries."` - Bibliothèque pas à soi (helper)
+- `"System reading lists cannot be created via API."` - Tentative création système
+- `"System reading lists cannot be deleted."` - Tentative suppression liste système
+
+=== Validation centralisée
+
+Le service utilise `EntityValidator` pour :
+- **validateUser** : Validation d'existence des utilisateurs
+- **validateLibrary** : Validation d'existence des bibliothèques
+- **validateReadingList** : Validation d'existence des listes (via middlewares)
+- **validateReadingListAccess** : Contrôle d'accès complexe avec bibliothèques
+- Messages d'erreur cohérents et standardisés
+
+== Optimisations appliquées
+
+=== Performance
+
+- **ReadingListView** : Évite les JOINs manuels User + Library
+- **Constantes WHERE réutilisables** : `VIEW_NOT_DELETED`, `READING_LIST_NOT_DELETED`
+- **Helpers factorés** : Évite la duplication de code
+- **Validation précoce** : Échec rapide sur erreurs prévisibles
+- **LIMIT 1** : Pour les vérifications d'existence
+- **SELECT spécifiques** : Seulement `is_system` dans `delete`
+
+=== Sécurité
+
+- **Contrôle d'accès multiniveau** : Propriétaire + public + bibliothèque parente
+- **Soft delete** : Préservation de l'intégrité référentielle
+- **Validation stricte** : Toutes les entrées validées (EntityValidator + helpers)
+- **Protection listes système** : Impossible à supprimer ou créer via API
+- **Validation propriété bibliothèque** : Helper dédié
+
+=== Maintenabilité
+
+- **Logique centralisée** : EntityValidator + helpers
+- **Code réutilisable** : Constantes WHERE, helpers
+- **Séparation des responsabilités** : Service vs validation vs accès
+- **Vue SQL** : Simplifie le code, facilite la maintenance
+- **Commentaires dans le code** : Note sur les validations middleware
+
+== Diagramme de flux - Création de liste
+
+```
+┌──────────────────────────────────────────────────┐
+│ Controller: create(listData)                     │
+└─────────────────┬────────────────────────────────┘
+                  │
+                  v
+┌──────────────────────────────────────────────────┐
+│ EntityValidator.validateUser(listData.id_user)   │
+└─────────────────┬────────────────────────────────┘
+                  │
+                  v
+        ┌─────────────────┐
+        │ id_library ?    │
+        └────┬────────┬───┘
+             │ OUI    │ NON
+             v        v
+   ┌─────────────┐   │
+   │ Helper:     │   │
+   │ validate-   │   │
+   │ Library-    │   │
+   │ Ownership() │   │
+   └──────┬──────┘   │
+          │          │
+          └──────┬───┘
+                 v
+        ┌─────────────────┐
+        │ is_system ?     │
+        └────┬────────┬───┘
+             │ OUI    │ NON
+             v        v
+   ┌───────────┐     │
+   │ ERROR     │     │
+   └───────────┘     │
+                     v
+           ┌──────────────────┐
+           │ Helper:          │
+           │ checkDuplicate-  │
+           │ Name()           │
+           └────────┬─────────┘
+                    v
+           ┌──────────────────┐
+           │ INSERT INTO      │
+           │ ReadingList      │
+           │ RETURNING        │
+           └────────┬─────────┘
+                    v
+           ┌──────────────────┐
+           │ Return new list  │
+           └──────────────────┘
+```
+
+== Diagramme de flux - Consultation avec accès
+
+```
+┌──────────────────────────────────────────────────┐
+│ Controller: getListById(listId, userId)          │
+└─────────────────┬────────────────────────────────┘
+                  │
+                  v
+┌──────────────────────────────────────────────────┐
+│ SELECT FROM ReadingListView                      │
+│ WHERE id_list = ? AND VIEW_NOT_DELETED           │
+└─────────────────┬────────────────────────────────┘
+                  │
+        ┌─────────┴─────────┐
+        │ Found ?           │
+        └───┬───────────┬───┘
+            │ NON       │ OUI
+            v           v
+   ┌───────────┐  ┌──────────────────────────────┐
+   │ Return    │  │ EntityValidator.validate-    │
+   │ null      │  │ ReadingListAccess()          │
+   └───────────┘  │ (vérifie propriétaire/public │
+                  │  + bibliothèque privée)      │
+                  └───────────┬──────────────────┘
+                              │
+                    ┌─────────┴─────────┐
+                    │ Accès autorisé ?  │
+                    └───┬───────────┬───┘
+                        │ NON       │ OUI
+                        v           v
+               ┌───────────┐  ┌──────────────────┐
+               │ ERROR     │  │ Helper:          │
+               │ "Access   │  │ getUserPermission│
+               │ denied"   │  │ ()               │
+               └───────────┘  └────────┬─────────┘
+                                       v
+                              ┌──────────────────┐
+                              │ Return liste +   │
+                              │ user_permission  │
+                              └──────────────────┘
+```
+
+== Résumé
+
+Le service readingListService est un **gestionnaire de listes de lecture** avec :
+
+- **ReadingListView** : Vue SQL pré-agrégée pour éviter JOINs manuels
+- **Helpers réutilisables** : `getUserPermission`, `checkDuplicateName`, `validateLibraryOwnership`
+- **Constantes WHERE** : `VIEW_NOT_DELETED`, `READING_LIST_NOT_DELETED` pour réutilisabilité
+- **Contrôle d'accès multiniveau** : Propriétaire + public + bibliothèque parente
+- **Validation centralisée** : EntityValidator pour cohérence
+- **Protection système** : Listes système non modifiables
+- **Soft delete** : Préservation intégrité référentielle
+- **Optimisations** : LIMIT 1, SELECT spécifiques, validation précoce
+
+**Architecture modernisée : Vue SQL + Helpers + Constantes = Code simple, performant et maintenable.**

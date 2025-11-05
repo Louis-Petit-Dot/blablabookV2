@@ -1,0 +1,41 @@
+.reviewForm {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+}
+
+.field {
+    display: flex;
+    flex-direction: column;
+}
+
+.field input,
+.field textarea {
+    padding: 0.5rem;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    font-size: 0.95rem;
+}
+
+.options {
+    display: flex;
+    gap: 1rem;
+    align-items: center;
+}
+
+.actions {
+    display: flex;
+    gap: 0.5rem;
+}
+
+.helperText {
+    margin-top: 0.5rem;
+}
+
+.helperSuccess {
+    color: var(--success);
+}
+
+.helperError {
+    color: var(--error);
+}

@@ -1,0 +1,104 @@
+@use '../../../styles/variables' as *;
+
+.card {
+    border-radius: 1rem;
+    overflow: hidden;
+    position: relative;
+    transition: transform 200ms ease;
+}
+
+  // Variants
+.default {
+    background: var(--bg-primary);
+    border: 1px solid var(--bg-secondary);
+}
+
+.bordered {
+    background: var(--bg-primary);
+    border: 2px solid var(--bg-tertiary);
+}
+
+.elevated {
+    background: var(--bg-primary);
+    box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1);
+}
+
+.glass {
+      // Glassmorphism avec effet iOS
+    background: rgba(254, 251, 246, 0.7);
+    backdrop-filter: blur(20px) saturate(180%);
+    -webkit-backdrop-filter: blur(20px) saturate(180%);
+
+      // Bordures avec dégradé de transparence
+    border: 1px solid rgba(193, 119, 103, 0.2);
+    border-right-color: rgba(193, 119, 103, 0.1);
+    border-bottom-color: rgba(193, 119, 103, 0.1);
+
+    box-shadow:
+        0 20px 30px rgba(28, 25, 23, 0.1),
+        inset 0 1px 0 0 rgba(254, 251, 246, 0.5);
+
+      // ⭐ Effet de reflet qui glisse au hover
+    &:before {
+        content: "";
+        position: absolute;
+        display: block;
+        width: 50%;
+        height: 100%;
+        top: 0;
+        left: 0;
+        background: rgba(254, 251, 246, 0.5);
+        filter: blur(0px);
+        transition: transform 400ms cubic-bezier(0.4, 0, 0.2, 1);
+        transform: skewX(45deg) translateX(200%);
+        z-index: 1;
+    }
+
+    &:hover {
+        transform: translateY(-8px);
+        box-shadow:
+            0 24px 40px rgba(28, 25, 23, 0.15),
+            inset 0 1px 0 0 rgba(254, 251, 246, 0.5);
+
+        &:before {
+            transform: skewX(45deg) translateX(-200%);
+        }
+    }
+
+      // Assure que le contenu reste visible au-dessus du reflet
+      & > * {
+        position: relative;
+        z-index: 2;
+    }
+}
+
+  // Padding variants
+.padding-none { padding: 0; }
+.padding-sm { padding: 0.75rem; }
+.padding-md { padding: 1.5rem; }
+.padding-lg { padding: 2rem; }
+
+// Card sub-components
+.header {
+    border-bottom: 1px solid var(--bg-secondary);
+    padding-bottom: 0.75rem;
+    margin-bottom: 0.75rem;
+}
+
+.title {
+    font-family: $font-heading;
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: var(--text-primary);
+    margin: 0;
+}
+
+// .content {
+//     // Pas de styles specifiques, juste un conteneur au cas ,ou
+// }
+
+.footer {
+    border-top: 1px solid var(--bg-secondary);
+    padding-top: 0.75rem;
+    margin-top: 0.75rem;
+}

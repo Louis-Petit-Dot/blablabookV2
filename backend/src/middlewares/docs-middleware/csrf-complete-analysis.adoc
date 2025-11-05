@@ -1,0 +1,320 @@
+= Middleware CSRF - Analyse Complète
+:toc:
+:toclevels: 3
+
+== Vue d'ensemble
+
+Le middleware CSRF (Cross-Site Request Forgery) protège l'API BlaBlaBook V2 contre les attaques où un site malveillant tente de faire exécuter des actions à l'insu d'un utilisateur connecté. Il fonctionne comme un système de jetons secrets qui prouvent que les demandes proviennent bien du site officiel et non d'un attaquant.
+
+== Fonctions principales
+
+=== csrfProtection
+**Objectif:** Vérifier qu'une requête de modification provient bien du site officiel
+**Quand:** Appliqué sur toutes les routes qui modifient des données (POST, PUT, PATCH, DELETE)
+**Pourquoi important:** Empêche les sites malveillants de faire des actions à l'insu de l'utilisateur
+
+=== generateCSRFToken
+**Objectif:** Créer un jeton secret unique pour une session utilisateur
+**Quand:** Appelé quand l'application a besoin d'un nouveau jeton
+**Pourquoi important:** Fournit les jetons que le site officiel peut utiliser pour prouver sa légitimité
+
+=== getCSRFToken
+**Objectif:** Fournir un endpoint pour récupérer un jeton CSRF
+**Quand:** Utilisé par le frontend pour obtenir des jetons valides
+**Pourquoi important:** Permet au site officiel d'obtenir les jetons nécessaires
+
+== Principe des attaques CSRF
+
+=== Qu'est-ce qu'une attaque CSRF en mots simples
+Imaginez que vous êtes connecté à votre banque en ligne dans un onglet de votre navigateur. Dans un autre onglet, vous visitez un site malveillant qui contient secrètement un bouton "Transférer 1000€". Si vous cliquez dessus par accident, votre navigateur enverrait la demande à votre banque en utilisant votre session active, et le transfert pourrait s'exécuter à votre insu.
+
+=== Application à BlaBlaBook
+Sans protection CSRF, un site malveillant pourrait :
+- Supprimer vos listes de lecture
+- Publier de faux avis en votre nom
+- Modifier votre profil
+- Effectuer toute action que vous pouvez normalement faire
+
+=== Comment le middleware CSRF empêche cela
+Le middleware exige un "mot de passe secret" (le jeton CSRF) pour toute action de modification. Seul le vrai site BlaBlaBook connaît ce mot de passe, donc les sites malveillants ne peuvent pas effectuer d'actions même si vous êtes connecté.
+
+== Fonctionnement du middleware CSRF
+
+=== Principe du jeton secret
+Le système CSRF fonctionne comme un club privé avec un mot de passe secret :
+
+1. **Génération du secret** : Quand vous vous connectez, le système génère un mot de passe secret unique
+2. **Communication du secret** : Le site officiel récupère ce mot de passe
+3. **Utilisation du secret** : Pour chaque action, le site officiel inclut le mot de passe dans sa demande
+4. **Vérification du secret** : Le serveur vérifie que le bon mot de passe est fourni
+5. **Autorisation ou refus** : Si le mot de passe est correct, l'action est autorisée
+
+=== Stockage des jetons
+Les jetons CSRF sont stockés en mémoire sur le serveur :
+- Chaque session utilisateur a ses propres jetons
+- Les jetons expirent après 1 heure
+- Un nettoyage automatique supprime les jetons expirés toutes les 5 minutes
+
+=== Méthodes HTTP protégées
+Le middleware ne vérifie les jetons que pour les méthodes qui modifient des données :
+- **GET, HEAD, OPTIONS** : Pas de vérification (considérées comme "sûres")
+- **POST, PUT, PATCH, DELETE** : Vérification obligatoire du jeton
+
+== Routes utilisant la protection CSRF
+
+=== Catégorie : Authentification et profils utilisateur
+
+**Routes protégées :**
+- Connexion utilisateur
+- Création de nouveau compte
+- Modification du profil
+- Changement de mot de passe
+- Suppression de compte (admin)
+
+**Pourquoi protéger ces routes :**
+- **Connexion** : Empêcher les connexions forcées sur des comptes
+- **Création de compte** : Éviter la création de comptes fantômes
+- **Modification de profil** : Protéger les données personnelles
+- **Changement de mot de passe** : Sécurité critique
+- **Suppression** : Action irréversible à protéger absolument
+
+=== Catégorie : Contenu et opinions utilisateur
+
+**Routes protégées :**
+- Création et modification d'avis
+- Suppression d'avis
+- Création et suppression de notes
+
+**Pourquoi protéger ces routes :**
+- **Avis** : Empêcher la publication de fausses critiques
+- **Notes** : Protéger l'intégrité du système de notation
+- **Suppressions** : Éviter l'effacement malveilleux de contenu
+
+=== Catégorie : Collections personnelles
+
+**Routes protégées :**
+- Création et modification de listes de lecture
+- Suppression de listes de lecture
+- Création et modification de bibliothèques
+- Ajout/suppression de livres dans les collections
+
+**Pourquoi protéger ces routes :**
+- **Listes de lecture** : Collections personnelles importantes pour l'utilisateur
+- **Bibliothèques** : Organisation personnelle du contenu
+- **Modifications de collections** : Éviter les manipulations non désirées
+
+=== Catégorie : Administration du système
+
+**Routes protégées :**
+- Toutes les opérations administratives
+- Gestion des rôles et permissions
+- Création/suppression d'auteurs et genres
+
+**Pourquoi protéger ces routes :**
+- **Administration** : Actions critiques pour le système
+- **Gestion des rôles** : Sécurité du contrôle d'accès
+- **Contenu éditorial** : Intégrité du catalogue
+
+== Exemple de flux complet
+
+=== Scénario : Un utilisateur veut créer un avis, mais un site malveillant tente une attaque
+
+==== Situation de départ
+David est connecté sur BlaBlaBook et lit un article sur un autre site. Ce site contient secrètement du code malveillant qui tente de publier un faux avis en son nom.
+
+==== Étape 1 : Tentative d'attaque malveillante
+Le site malveillant envoie une requête vers l'API BlaBlaBook :
+- URL : POST /api/reviews
+- Données : Un faux avis très positif sur un livre
+- Session : Le navigateur de David inclut automatiquement ses cookies de session
+
+==== Étape 2 : Authentification réussie mais CSRF manquant
+- Le middleware jwtMiddleware reconnaît David grâce à son token
+- La requête arrive au middleware csrfProtection()
+- Le middleware cherche le jeton CSRF dans les en-têtes
+- Aucun jeton n'est trouvé (le site malveillant ne le connaît pas)
+
+==== Étape 3 : Blocage de l'attaque
+Le middleware CSRF :
+- Constate l'absence du jeton requis
+- Bloque immédiatement la requête
+- Renvoie une erreur 403 "CSRF token required"
+- Empêche la publication du faux avis
+
+==== Alternative : Utilisation légitime depuis le vrai site
+Quand David utilise vraiment le site BlaBlaBook :
+- Le site récupère un jeton CSRF valide via l'API
+- Il inclut ce jeton dans l'en-tête de sa requête
+- Le middleware vérifie et accepte le jeton
+- L'avis de David est publié normalement
+
+==== Protection assurée
+Ce système garantit que :
+- Seul le vrai site BlaBlaBook peut effectuer des actions
+- Les sites malveillants sont systématiquement bloqués
+- Les utilisateurs sont protégés même s'ils visitent des sites dangereux
+
+== Gestion des jetons
+
+=== Cycle de vie d'un jeton
+1. **Génération** : Création d'un jeton aléatoire de 32 bytes
+2. **Stockage** : Sauvegarde dans la mémoire serveur avec timestamp
+3. **Distribution** : Transmission au frontend via l'API
+4. **Utilisation** : Inclusion dans les en-têtes des requêtes modifiantes
+5. **Vérification** : Contrôle de validité à chaque utilisation
+6. **Expiration** : Suppression automatique après 1 heure
+
+=== Association avec les sessions
+Chaque jeton est lié à une session utilisateur :
+- **Sessions authentifiées** : Jeton associé au token JWT de l'utilisateur
+- **Sessions anonymes** : Jeton associé à un identifiant temporaire
+- **Isolation** : Les jetons d'une session ne fonctionnent pas pour une autre
+
+=== Nettoyage automatique
+Le système fait le ménage régulièrement :
+- Toutes les 5 minutes, suppression des jetons expirés
+- Évite l'accumulation en mémoire
+- Maintient la performance du système
+
+== Sécurité du système CSRF
+
+=== Génération cryptographiquement sécurisée
+Les jetons utilisent `randomBytes(32)` :
+- Génération vraiment aléatoire, pas prévisible
+- 32 bytes = 256 bits d'entropie
+- Impossible à deviner même avec des millions d'essais
+
+=== Validation stricte
+La vérification des jetons est rigoureuse :
+- Comparaison exacte du jeton fourni avec celui stocké
+- Pas de tolérance aux variations
+- Échec immédiat si le jeton ne correspond pas parfaitement
+
+=== Expiration forcée
+Les jetons ont une durée de vie limitée :
+- Maximum 1 heure de validité
+- Renouvellement nécessaire pour les sessions longues
+- Limite la fenêtre d'exposition en cas de compromission
+
+=== Résistance aux attaques communes
+
+**Attaque par force brute** : Impossible avec 256 bits d'entropie
+**Attaque par réutilisation** : Les jetons expirent et sont renouvelés
+**Attaque par interception** : Les jetons voyagent uniquement en HTTPS
+**Attaque par prédiction** : Génération cryptographiquement sécurisée
+
+== Expérience utilisateur
+
+=== Transparence pour l'utilisateur normal
+Pour l'utilisateur légitime :
+- Le processus est complètement invisible
+- Aucune action supplémentaire requise
+- Fonctionnement normal du site
+- Protection automatique et transparente
+
+=== Gestion des erreurs utilisateur
+En cas de problème avec les jetons :
+- Messages d'erreur clairs et spécifiques
+- Possibilité de recharger la page pour obtenir de nouveaux jetons
+- Pas de blocage permanent de l'utilisateur
+
+=== Performance optimisée
+Le système est conçu pour la rapidité :
+- Vérifications en mémoire très rapides
+- Pas d'accès base de données pour la validation
+- Impact minimal sur les performances
+
+== Intégration avec le frontend
+
+=== Récupération des jetons
+Le frontend peut obtenir des jetons via :
+- L'endpoint dédié GET /csrf-token
+- Réponse contenant le jeton, l'ID de session (partiel) et l'expiration
+- Rafraîchissement automatique avant expiration
+
+=== Utilisation dans les requêtes
+Le frontend inclut les jetons via :
+- En-tête `X-CSRF-Token` (recommandé)
+- En-tête `CSRF-Token` (alternative)
+- Inclusion automatique dans toutes les requêtes modifiantes
+
+=== Gestion des expirations
+Quand un jeton expire :
+- Le backend renvoie une erreur spécifique
+- Le frontend peut automatiquement demander un nouveau jeton
+- Nouvelle tentative de la requête avec le jeton frais
+
+== Résumé
+
+Le middleware CSRF est le **protecteur contre les attaques cross-site** de l'API BlaBlaBook V2. Il sécurise **35 endpoints critiques** avec :
+- **Protection par jetons** : Vérification obligatoire pour toutes les actions modifiantes
+- **Génération sécurisée** : Jetons cryptographiquement forts et imprévisibles
+- **Gestion automatique** : Expiration et nettoyage automatiques des jetons
+- **Intégration transparente** : Fonctionnement invisible pour les utilisateurs légitimes
+- **Blocage des attaques** : Protection absolue contre les sites malveillants
+
+**Il garantit que seul le vrai site BlaBlaBook peut effectuer des modifications au nom des utilisateurs, les protégeant ainsi contre toutes les tentatives d'actions malveillantes provenant de sites tiers.**
+
+== Diagramme de séquence - Workflow CSRF
+
+[mermaid]
+----
+sequenceDiagram
+    participant Client
+    participant MaliciousSite
+    participant CSRFMiddleware
+    participant CSRFStore
+    participant Controller
+
+    Note over Client, Controller: Scénario: Protection contre attaque CSRF
+
+    rect rgb(255, 200, 200)
+        Note over Client, Controller: 1. TENTATIVE D'ATTAQUE MALVEILLANTE
+        MaliciousSite->>CSRFMiddleware: POST /api/reviews (sans token CSRF)
+        Note over MaliciousSite: Site malveillant tente action à l'insu de l'utilisateur
+        CSRFMiddleware->>CSRFMiddleware: Vérifier method != GET/HEAD/OPTIONS
+        CSRFMiddleware->>CSRFMiddleware: Chercher x-csrf-token header
+        CSRFMiddleware->>CSRFMiddleware: Token CSRF absent
+
+        CSRFMiddleware-->>MaliciousSite: 403 "CSRF token required"
+        Note over CSRFMiddleware, MaliciousSite: ATTAQUE BLOQUÉE ✋
+    end
+
+    rect rgb(200, 255, 200)
+        Note over Client, Controller: 2. UTILISATION LÉGITIME
+        Client->>CSRFMiddleware: GET /csrf-token (récupération token)
+        CSRFMiddleware->>CSRFMiddleware: Extraire sessionId du JWT
+        CSRFMiddleware->>CSRFStore: generateCSRFToken(sessionId)
+        CSRFStore->>CSRFStore: randomBytes(32).toString('hex')
+        CSRFStore->>CSRFStore: Stocker token avec timestamp
+        CSRFStore-->>CSRFMiddleware: Token généré
+        CSRFMiddleware-->>Client: 200 {csrfToken: "abc123...", expires: timestamp}
+
+        Client->>CSRFMiddleware: POST /api/reviews (avec x-csrf-token: "abc123...")
+        CSRFMiddleware->>CSRFMiddleware: Vérifier method = POST (modifie données)
+        CSRFMiddleware->>CSRFMiddleware: Extraire x-csrf-token header = "abc123..."
+        CSRFMiddleware->>CSRFMiddleware: Extraire sessionId du JWT
+        CSRFMiddleware->>CSRFStore: Vérifier token pour sessionId
+        CSRFStore->>CSRFStore: Chercher token "abc123..." dans la session
+        CSRFStore->>CSRFStore: Vérifier expiration (< 1h)
+
+        alt Token valide et non expiré
+            CSRFStore-->>CSRFMiddleware: Token validé ✅
+            CSRFMiddleware->>Controller: next() - Autoriser action
+            Controller->>Controller: Créer avis utilisateur
+            Controller-->>Client: 201 "Review created successfully"
+            Note over CSRFMiddleware, Client: UTILISATION LÉGITIME AUTORISÉE ✅
+        else Token invalide ou expiré
+            CSRFStore-->>CSRFMiddleware: Token invalide ❌
+            CSRFMiddleware-->>Client: 403 "Invalid CSRF token"
+        end
+    end
+
+    rect rgb(200, 200, 255)
+        Note over Client, Controller: 3. NETTOYAGE AUTOMATIQUE
+        CSRFStore->>CSRFStore: setInterval(5min) - Nettoyage périodique
+        CSRFStore->>CSRFStore: Parcourir tous les tokens
+        CSRFStore->>CSRFStore: Supprimer tokens expirés (> 1h)
+        Note over CSRFStore: Maintien performances et sécurité 🧹
+    end
+----

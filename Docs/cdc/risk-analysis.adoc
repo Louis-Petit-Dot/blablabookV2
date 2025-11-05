@@ -1,0 +1,614 @@
+= BlaBlaBook V2 - Risk Analysis & GDPR / Analyse des Risques & RGPD
+:toc: left
+:toclevels: 3
+:sectanchors:
+:icons: font
+:version: 2.0
+:date: {docdate}
+
+// Navigation inter-documents
+link:../README.adoc[📚 Documentation Hub] |
+link:business-requirements.adoc[📋 Business] |
+link:technical-architecture.adoc[🏗️ Architecture] |
+link:api-specifications.adoc[🛣️ API]
+
+// Navigation langues
+<<section-fr,🇫🇷 Version Française>> | <<section-en,🇬🇧🇺🇸 English Version>>
+
+---
+
+[[section-fr]]
+== 🇫🇷 Analyse des Risques & RGPD
+
+<<section-en,🇬🇧🇺🇸 Switch to English>> | 🇫🇷 *Français*
+
+=== ⚠️ Analyse des Risques
+
+==== API et Services Externes
+
+[cols="2,1,1,3"]
+|===
+|Risque |Probabilité |Impact |Mitigation V2
+
+|**API Open Library indisponible**
+|Faible
+|Fort
+|Cache local + message d'erreur utilisateur + livres par défaut
+
+|**Quotas API dépassés**
+|Moyenne
+|Moyen
+|Rate limiting côté client + cache intelligent + pagination
+
+|**Données incorrectes API**
+|Moyenne
+|Faible
+|Validation Drizzle-Zod + nettoyage données + signalement erreurs
+|===
+
+==== Base de Données
+
+[cols="2,1,1,3"]
+|===
+|Risque |Probabilité |Impact |Mitigation V2
+
+|**Perte de données PostgreSQL**
+|Faible
+|Fort
+|Sauvegardes automatisées + réplication + environnement de test
+
+|**Problèmes de performance**
+|Moyenne
+|Moyen
+|Index Drizzle optimisés + pagination + cache queries
+
+|**Corruption de données**
+|Très faible
+|Fort
+|Transactions ACID + validation schéma + monitoring intégrité
+|===
+
+==== Sécurité
+
+[cols="2,1,1,3"]
+|===
+|Risque |Probabilité |Impact |Mitigation V2
+
+|**Compromission JWT**
+|Moyenne
+|Fort
+|Rotation clés + tokens courte durée + blacklist client + monitoring
+
+|**Attaques brute force**
+|Forte
+|Moyen
+|Rate limiting Deno + Argon2 + captcha après échecs + logs
+
+|**Injection de données**
+|Faible
+|Fort
+|Drizzle ORM + validation Drizzle-Zod + sanitisation + tests sécurité
+
+|**Failles XSS/CSRF**
+|Faible
+|Moyen
+|Headers Helmet + SameSite cookies + Content-Type validation
+|===
+
+==== Infrastructure
+
+[cols="2,1,1,3"]
+|===
+|Risque |Probabilité |Impact |Mitigation V2
+
+|**Problèmes déploiement Docker**
+|Moyenne
+|Moyen
+|Docker Compose testé + documentation + rollback automatique
+
+|**Panne serveur unique**
+|Moyenne
+|Fort
+|Load balancer + réplication + monitoring + alertes
+
+|**Problèmes SSL/HTTPS**
+|Faible
+|Moyen
+|Certificats auto-renouvelés + monitoring SSL + redirections forcées
+|===
+
+=== ⚖️ RGPD (Règlement Général sur la Protection des Données)
+
+==== 1. Inventaire des Données Personnelles
+
+**Données collectées :**
+
+[cols="2,1,2,2"]
+|===
+|Type de Donnée |Nécessité |Base Légale |Durée Conservation
+
+|**Nom, prénom, email**
+|Essentielle
+|Exécution du contrat
+|Jusqu'à suppression compte
+
+|**Nom d'utilisateur**
+|Essentielle
+|Exécution du contrat
+|Jusqu'à suppression compte
+
+|**Mot de passe (haché Argon2)**
+|Essentielle
+|Exécution du contrat
+|Jusqu'à suppression compte
+
+|**Listes de livres, avis**
+|Fonctionnelle
+|Exécution du contrat
+|Jusqu'à suppression compte
+
+|**Adresse IP, logs connexion**
+|Sécurité
+|Intérêt légitime
+|30 jours maximum
+
+|**Données utilisation (statistiques)**
+|Amélioration
+|Consentement
+|Anonymisées après 12 mois
+|===
+
+==== 2. Politique de Confidentialité
+
+**Éléments obligatoires :**
+
+* **Responsable du traitement** : Équipe BlaBlaBook (contact DPO)
+* **Finalités des traitements** :
+  - Inscription et authentification sécurisée
+  - Gestion bibliothèque personnelle et listes de lecture
+  - Partage d'avis et recommandations
+  - Amélioration continue du service
+* **Bases légales** : Contrat utilisateur + consentement fonctionnalités optionnelles
+* **Destinataires** : Données non transmises à des tiers
+* **Transferts hors UE** : Aucun (hébergement UE uniquement)
+* **Durée de conservation** : Voir tableau ci-dessus
+
+==== 3. Droits des Utilisateurs
+
+**Implémentation technique :**
+
+[cols="2,3,2"]
+|===
+|Droit RGPD |Implémentation API |Délai Réponse
+
+|**Droit d'accès**
+|`GET /api/user/export` - Export JSON complet
+|Immédiat (automatisé)
+
+|**Droit de rectification**
+|`PUT /api/user/profile` - Modification profil
+|Immédiat (automatisé)
+
+|**Droit à l'effacement**
+|`DELETE /api/user/account` - Suppression compte + données
+|Immédiat (automatisé)
+
+|**Droit à la portabilité**
+|Export JSON structuré (format standard)
+|Immédiat (automatisé)
+
+|**Droit d'opposition**
+|Paramètres compte + désinscription newsletters
+|Immédiat (automatisé)
+
+|**Droit de limitation**
+|Suspension temporaire traitement (admin)
+|24h maximum
+|===
+
+==== 4. Consentement et Transparence
+
+**Mécanismes de consentement :**
+
+* **Inscription** : Acceptation explicite des CGU et politique confidentialité
+* **Cookies non-essentiels** : Banner RGPD avec choix granulaire
+* **Newsletters** : Opt-in explicite + double confirmation
+* **Statistiques** : Consentement séparé avec possibilité retrait
+
+**Information des utilisateurs :**
+
+* Politique de confidentialité accessible (lien permanent footer)
+* Notifications des modifications importantes (email + interface)
+* Tableau de bord RGPD dans paramètres compte
+* Documentation claire sur collecte et utilisation données
+
+==== 5. Sécurité des Données
+
+**Mesures techniques V2 :**
+
+[cols="2,3"]
+|===
+|Mesure |Implémentation
+
+|**Chiffrement en transit**
+|HTTPS forcé + TLS 1.3 + HSTS
+
+|**Chiffrement au repos**
+|PostgreSQL avec encryption + mots de passe Argon2
+
+|**Contrôle d'accès**
+|JWT avec rôles + permissions granulaires Deno
+
+|**Audit et logs**
+|Logs sécurisés + monitoring accès + alertes anomalies
+
+|**Sauvegarde sécurisée**
+|Backups chiffrés + tests restauration + rétention limitée
+
+|**Mise à jour sécurité**
+|Deno auto-update + monitoring vulnérabilités + patch management
+|===
+
+==== 6. Registre des Traitements
+
+**Traitement principal - Gestion bibliothèque personnelle :**
+
+* **Finalité** : Permettre aux utilisateurs de gérer leurs livres et listes de lecture
+* **Catégories de personnes** : Utilisateurs inscrits volontaires
+* **Données traitées** : Identité, authentification, préférences de lecture
+* **Destinataires** : Équipe technique BlaBlaBook uniquement
+* **Transferts** : Aucun transfert hors UE
+* **Délais suppression** : Suppression immédiate sur demande utilisateur
+* **Mesures sécurité** : Voir section 5 ci-dessus
+
+==== 7. Gestion des Cookies
+
+**Classification cookies :**
+
+[cols="2,1,2,2"]
+|===
+|Cookie |Type |Finalité |Durée
+
+|**Session JWT**
+|Essentiel
+|Authentification utilisateur
+|8h (access uniquement, httpOnly cookie)
+
+|**Préférences UI**
+|Essentiel
+|Interface utilisateur (langue, thème)
+|1 an
+
+|**Analytics (optionnel)**
+|Non-essentiel
+|Statistiques d'utilisation anonymes
+|13 mois (avec consentement)
+
+|**Marketing (futur)**
+|Non-essentiel
+|Recommandations personnalisées
+|Avec consentement explicite
+|===
+
+**Gestionnaire de consentement :**
+* Banner conforme CNIL avec rejet facile
+* Choix granulaire par catégorie
+* Modification consentement accessible (paramètres)
+* Conservation preuve du consentement
+
+==== 8. Violations de Données
+
+**Procédure de notification :**
+
+1. **Détection** : Monitoring automatique + alertes temps réel
+2. **Évaluation** : Impact sur droits et libertés (72h max)
+3. **Notification CNIL** : Si risque élevé (72h après détection)
+4. **Information utilisateurs** : Si risque élevé pour leurs droits (sans délai injustifié)
+5. **Documentation** : Registre des violations + mesures correctives
+
+**Mesures préventives V2 :**
+* Monitoring sécurité 24/7
+* Tests d'intrusion réguliers
+* Formation équipe aux bonnes pratiques
+* Plan de réponse aux incidents documenté
+
+---
+
+[[section-en]]
+== 🇬🇧🇺🇸 Risk Analysis & GDPR
+
+🇬🇧🇺🇸 *English* | <<section-fr,🇫🇷 Passer au Français>>
+
+=== ⚠️ Risk Analysis
+
+==== API and External Services
+
+[cols="2,1,1,3"]
+|===
+|Risk |Probability |Impact |V2 Mitigation
+
+|**Open Library API unavailable**
+|Low
+|High
+|Local cache + user error message + default books
+
+|**API quotas exceeded**
+|Medium
+|Medium
+|Client-side rate limiting + intelligent cache + pagination
+
+|**Incorrect API data**
+|Medium
+|Low
+|Drizzle-Zod validation + data cleaning + error reporting
+|===
+
+==== Database
+
+[cols="2,1,1,3"]
+|===
+|Risk |Probability |Impact |V2 Mitigation
+
+|**PostgreSQL data loss**
+|Low
+|High
+|Automated backups + replication + test environment
+
+|**Performance issues**
+|Medium
+|Medium
+|Optimized Drizzle indexes + pagination + query cache
+
+|**Data corruption**
+|Very Low
+|High
+|ACID transactions + schema validation + integrity monitoring
+|===
+
+==== Security
+
+[cols="2,1,1,3"]
+|===
+|Risk |Probability |Impact |V2 Mitigation
+
+|**JWT compromise**
+|Medium
+|High
+|Key rotation + short-lived tokens + client blacklist + monitoring
+
+|**Brute force attacks**
+|High
+|Medium
+|Deno rate limiting + Argon2 + captcha after failures + logs
+
+|**Data injection**
+|Low
+|High
+|Drizzle ORM + Drizzle-Zod validation + sanitization + security tests
+
+|**XSS/CSRF vulnerabilities**
+|Low
+|Medium
+|Helmet headers + SameSite cookies + Content-Type validation
+|===
+
+==== Infrastructure
+
+[cols="2,1,1,3"]
+|===
+|Risk |Probability |Impact |V2 Mitigation
+
+|**Docker deployment issues**
+|Medium
+|Medium
+|Tested Docker Compose + documentation + automatic rollback
+
+|**Single server failure**
+|Medium
+|High
+|Load balancer + replication + monitoring + alerts
+
+|**SSL/HTTPS issues**
+|Low
+|Medium
+|Auto-renewed certificates + SSL monitoring + forced redirects
+|===
+
+=== ⚖️ GDPR (General Data Protection Regulation)
+
+==== 1. Personal Data Inventory
+
+**Collected data:**
+
+[cols="2,1,2,2"]
+|===
+|Data Type |Necessity |Legal Basis |Retention Period
+
+|**Name, surname, email**
+|Essential
+|Contract execution
+|Until account deletion
+
+|**Username**
+|Essential
+|Contract execution
+|Until account deletion
+
+|**Password (Argon2 hashed)**
+|Essential
+|Contract execution
+|Until account deletion
+
+|**Book lists, reviews**
+|Functional
+|Contract execution
+|Until account deletion
+
+|**IP address, connection logs**
+|Security
+|Legitimate interest
+|30 days maximum
+
+|**Usage data (statistics)**
+|Improvement
+|Consent
+|Anonymized after 12 months
+|===
+
+==== 2. Privacy Policy
+
+**Mandatory elements:**
+
+* **Data controller** : BlaBlaBook Team (DPO contact)
+* **Processing purposes** :
+  - Secure registration and authentication
+  - Personal library and reading list management
+  - Review and recommendation sharing
+  - Continuous service improvement
+* **Legal bases** : User contract + consent for optional features
+* **Recipients** : No data transmitted to third parties
+* **Non-EU transfers** : None (EU hosting only)
+* **Retention periods** : See table above
+
+==== 3. User Rights
+
+**Technical implementation:**
+
+[cols="2,3,2"]
+|===
+|GDPR Right |API Implementation |Response Time
+
+|**Right of access**
+|`GET /api/user/export` - Complete JSON export
+|Immediate (automated)
+
+|**Right of rectification**
+|`PUT /api/user/profile` - Profile modification
+|Immediate (automated)
+
+|**Right to erasure**
+|`DELETE /api/user/account` - Account + data deletion
+|Immediate (automated)
+
+|**Right to portability**
+|Structured JSON export (standard format)
+|Immediate (automated)
+
+|**Right to object**
+|Account settings + newsletter unsubscribe
+|Immediate (automated)
+
+|**Right to restriction**
+|Temporary processing suspension (admin)
+|24h maximum
+|===
+
+==== 4. Consent and Transparency
+
+**Consent mechanisms:**
+
+* **Registration** : Explicit acceptance of T&C and privacy policy
+* **Non-essential cookies** : GDPR banner with granular choice
+* **Newsletters** : Explicit opt-in + double confirmation
+* **Statistics** : Separate consent with withdrawal option
+
+**User information:**
+
+* Privacy policy accessible (permanent footer link)
+* Important change notifications (email + interface)
+* GDPR dashboard in account settings
+* Clear documentation on data collection and use
+
+==== 5. Data Security
+
+**V2 technical measures:**
+
+[cols="2,3"]
+|===
+|Measure |Implementation
+
+|**Encryption in transit**
+|Forced HTTPS + TLS 1.3 + HSTS
+
+|**Encryption at rest**
+|PostgreSQL with encryption + Argon2 passwords
+
+|**Access control**
+|JWT with roles + granular Deno permissions
+
+|**Audit and logs**
+|Secure logs + access monitoring + anomaly alerts
+
+|**Secure backup**
+|Encrypted backups + restoration tests + limited retention
+
+|**Security updates**
+|Deno auto-update + vulnerability monitoring + patch management
+|===
+
+==== 6. Processing Records
+
+**Main processing - Personal library management:**
+
+* **Purpose** : Allow users to manage their books and reading lists
+* **Data subjects** : Voluntary registered users
+* **Data processed** : Identity, authentication, reading preferences
+* **Recipients** : BlaBlaBook technical team only
+* **Transfers** : No transfers outside EU
+* **Deletion deadlines** : Immediate deletion on user request
+* **Security measures** : See section 5 above
+
+==== 7. Cookie Management
+
+**Cookie classification:**
+
+[cols="2,1,2,2"]
+|===
+|Cookie |Type |Purpose |Duration
+
+|**JWT Session**
+|Essential
+|User authentication
+|8h (access only, httpOnly cookie)
+
+|**UI Preferences**
+|Essential
+|User interface (language, theme)
+|1 year
+
+|**Analytics (optional)**
+|Non-essential
+|Anonymous usage statistics
+|13 months (with consent)
+
+|**Marketing (future)**
+|Non-essential
+|Personalized recommendations
+|With explicit consent
+|===
+
+**Consent management:**
+* CNIL-compliant banner with easy rejection
+* Granular choice by category
+* Accessible consent modification (settings)
+* Consent proof conservation
+
+==== 8. Data Breaches
+
+**Notification procedure:**
+
+1. **Detection** : Automatic monitoring + real-time alerts
+2. **Assessment** : Impact on rights and freedoms (72h max)
+3. **CNIL notification** : If high risk (72h after detection)
+4. **User information** : If high risk to their rights (without undue delay)
+5. **Documentation** : Breach register + corrective measures
+
+**V2 preventive measures:**
+* 24/7 security monitoring
+* Regular penetration testing
+* Team training on best practices
+* Documented incident response plan
+
+---
+
+*Document créé le {14/09/2025} - Version {V1} - Generated on {2025/09/14} - Version {V1}*

@@ -1,0 +1,179 @@
+@use '../../../styles/variables' as *;
+
+// === VISUALLY HIDDEN (accessible pour lecteurs d'écran) ===
+.visuallyHidden {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border-width: 0;
+}
+
+.burgerMenu {
+background: none;
+border: 1px solid var(--bg-secondary);
+border-radius: 8px;
+padding: 0.5rem 1rem;
+cursor: pointer;
+transition: all 400ms ease;
+
+&:hover {
+    background: rgba(193, 119, 103, 0.1);
+}
+}
+
+.burgerButton {
+background: none;
+border: 2px solid var(--text-primary);
+border-radius: 20%;
+cursor: pointer;
+padding: 3px;
+color: var(--text-primary);
+transition: all 400ms ease;
+
+&:hover {
+    background: var(--text-primary);
+    color: var(--bg-primary);
+}
+}
+
+// === OVERLAY (fond sombre) ===
+.overlay {
+position: fixed;
+inset: 0;
+background: rgba(0, 0, 0, 0.5);
+z-index: 1000;
+}
+
+// === DRAWER  ===
+.drawer {
+position: fixed;
+top: 0;
+right: 0;
+min-height: 100vh;
+width: 75%;
+min-width: 240px;
+max-width: 20rem;
+background: var(--bg-primary);
+border-radius: 2rem 0 0 2rem;
+z-index: 1001;
+padding: 1rem;
+box-shadow: -4px 0 20px rgba(0, 0, 0, 0.2);
+
+// Tablet et plus: réduire la largeur
+@media (min-width: 768px) {
+    width: 33%;
+}
+}
+// === BOUTON FERMER (X) ===
+.closeButton {
+position: absolute;
+top: 1rem;
+right: 1rem;
+background: var(--text-primary);
+color: var(--bg-primary);
+border: none;
+border-radius: 50%;
+width: 1.5rem;
+height: 1.5rem;
+font-size: 1rem;
+cursor: pointer;
+transition: all 200ms ease;
+display: flex;
+align-items: center;
+justify-content: center;
+
+&:hover {
+    color: var(--text-primary);
+    background: var(--bg-primary);
+}
+}
+
+// === THEME TOGGLE ===
+.themeToggleContainer {
+    display: flex;
+    justify-content: center;
+    margin-top: 2rem;
+    padding-top: 1rem;
+    border-top: 1px solid var(--bg-secondary);
+}
+
+// === NAVIGATION  ===
+.nav {
+display: flex;
+flex-direction: column;
+gap: 1rem;
+margin-top: 2rem;
+
+a, button {
+    font-family: $font-heading;
+    font-size: 0.7rem;
+    color: var(--text-primary);
+    text-decoration: none;
+    background: none;
+    border: none;
+    cursor: pointer;
+    text-align: center;
+    padding: 0.5rem 1rem;
+    transition: all 200ms ease;
+    width: 100%;
+
+    &:hover {
+    transform: scale(1.05);
+    color: var(--primary-color);
+    }
+}
+}
+
+// === NAV BUTTON WITH ICON ===
+.navButton {
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+    gap: 0.75rem;
+    padding: 0.75rem 1rem !important;
+    text-align: left !important;
+    font-size: 0.9rem !important;
+    border-radius: 8px;
+    
+    &:hover {
+        background: var(--hover-background);
+        transform: translateX(5px);
+    }
+}
+
+.navIcon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.2rem;
+    opacity: 0.8;
+}
+
+.navLabel {
+    flex: 1;
+}
+
+// === SEPARATOR ===
+.separator {
+    height: 1px;
+    background: var(--border-color);
+    margin: 0.5rem 0;
+}
+
+// === MOBILE ONLY NAV (navigation links hidden on desktop) ===
+.mobileOnlyNav {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+
+    // Caché en tablet/desktop (≥ 768px) car Navbar est visible
+    @media (min-width: 768px) {
+        display: none;
+    }
+}
+

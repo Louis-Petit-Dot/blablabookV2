@@ -1,0 +1,175 @@
+@use '../../styles/variables' as *;
+
+// ============================================
+// HERO SECTION - PAGE D'ACCUEIL (MOBILE-FIRST)
+// ============================================
+
+// === STYLES DE BASE : MOBILE (320px+) ===
+.hero {
+  position: relative;
+  height: 28vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  background: var(--bg-primary);
+
+  // À partir de 375px : alignement bas gauche
+  // @media (min-width: 375px) {
+  //   align-items: flex-end;
+  //   justify-content: flex-start;
+  // }
+}
+
+// === THEME TOGGLE (Desktop only - top right) ===
+.heroThemeToggle {
+  position: absolute;
+  top: 2rem;
+  right: 2rem;
+  z-index: 20;
+  display: none; // Caché sur mobile (visible dans BurgerMenu)
+
+  @media (min-width: 768px) {
+    display: block; // Visible sur desktop
+  }
+}
+
+// === BACKGROUND IMAGE (plein écran) ===
+.heroBackground {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+}
+
+.heroImage {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center;
+  filter: brightness(0.8);
+}
+
+.heroOverlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.05);
+}
+
+
+
+// === CONTENU PRINCIPAL (mobile : centré) ===
+.heroContent {
+  position: relative;
+  z-index: 10;
+  text-align: center;
+  padding: 2rem 1.5rem;
+  max-width: 100%;
+  margin-bottom: 0;
+  animation: fadeInUp 1s ease-out;
+
+  // À partir de 375px : en bas à gauche
+  // @media (min-width: 375px) {
+  //   text-align: left;
+  //   align-self: flex-end;
+  //   padding: 2rem;
+  // }
+}
+
+// === BASELINE (SLOGAN) - FONT LOVE STORY ===
+.heroBaseline {
+  font-family: $font-display;
+  font-size: clamp(1.25rem, 5vw, 2rem);
+  font-weight: normal;
+  font-style: italic;
+  color: #FEFBF6;
+  line-height: 1.4;
+  margin: 1.5rem 0 2rem;
+  text-shadow: 0 2px 8px rgba(0, 0, 0, 0.6);
+  letter-spacing: 0.02em;
+
+  // Optimisation rendu pour font custom
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+
+  // Effet subtil doré/chaud
+  filter: drop-shadow(0 0 15px rgba(242, 229, 208, 0.2));
+}
+
+
+
+
+
+// === ANIMATIONS ===
+@keyframes fadeInUp {
+from {
+    opacity: 0;
+    transform: translateY(30px);
+}
+to {
+    opacity: 1;
+    transform: translateY(0);
+}
+}
+
+@keyframes bounce {
+0%, 20%, 50%, 80%, 100% {
+    transform: translateY(0);
+}
+40% {
+    transform: translateY(-10px);
+}
+60% {
+    transform: translateY(-5px);
+}
+}
+
+// === RESPONSIVE : TABLET ET DESKTOP (min-width) ===
+
+// Tablette (768px+)
+@media (min-width: 768px) {
+  .hero {
+    height: 50vh;
+    align-items: flex-end; // Alignement vers le bas
+    justify-content: flex-start; // Alignement vers la gauche
+  }
+
+  .heroLogo {
+    display: none; // Logo caché sur desktop (il est dans le header)
+  }
+
+  .heroContent {
+    text-align: left;
+    padding: 3rem;
+    max-width: 600px;
+    margin-bottom: 5rem;
+  
+  }
+
+  .heroBaseline {
+    font-size: clamp(1.5rem, 4vw, 2.75rem);
+    margin: 2rem 0 3rem;
+
+    br {
+      display: inline; // Retours à ligne visibles sur desktop
+    }
+  }
+
+  .heroScrollIndicator {
+    bottom: 2rem;
+  }
+}
+
+// Desktop (1024px+)
+@media (min-width: 1024px) {
+  .hero {
+    height: 55vh;
+  }
+}
+
+// Grand écran (1280px+)
+@media (min-width: 1280px) {
+  .hero {
+    height: 58vh;
+  } 
+}

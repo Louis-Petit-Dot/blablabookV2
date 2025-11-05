@@ -1,0 +1,334 @@
+= Middleware Auth - Analyse Complète
+:toc:
+:toclevels: 3
+
+== Vue d'ensemble
+
+Le middleware auth fournit l'authentification JWT pour l'API BlaBlaBook V2. Il contient des utilitaires de hachage et vérification de mots de passe avec Argon2, plus la gestion complète des JWT.
+
+== Utilitaires d'authentification
+
+=== hashPassword
+**Objectif:** Transformer un mot de passe en texte clair en hash sécurisé avec Argon2
+**Quand:** Utilisé dans le service userService lors de la création d'un nouvel utilisateur ou changement de mot de passe
+**Pourquoi important:** Les mots de passe ne sont jamais stockés en clair dans la base de données
+
+=== verifyPassword
+**Objectif:** Comparer un mot de passe en texte clair avec son hash stocké
+**Quand:** Utilisé dans le service userService lors du processus de login
+**Pourquoi important:** Permet de valider l'identité sans stocker le mot de passe réel
+
+=== generateJWT
+**Objectif:** Créer un token JWT signé contenant les informations utilisateur
+**Quand:** Utilisé dans le service userService après un login réussi
+**Pourquoi important:** Le token permet à l'utilisateur de prouver son identité pour les requêtes suivantes
+**Durée de vie:** 8 heures
+
+=== verifyJWT
+**Objectif:** Vérifier la validité d'un token JWT et extraire les données utilisateur
+**Quand:** Utilisé dans le middleware jwtMiddleware pour chaque requête authentifiée
+**Pourquoi important:** Permet de récupérer l'identité utilisateur depuis le token
+
+=== setCookieToken
+**Objectif:** Stocker le token JWT dans un cookie httpOnly sécurisé
+**Quand:** Utilisé après un login réussi ou une inscription
+**Pourquoi important:** Protection contre le vol de token via XSS (JavaScript ne peut pas accéder au cookie)
+**Configuration:**
+- Nom du cookie: `access_token`
+- HttpOnly: Oui (protection XSS)
+- Secure: Oui en production (HTTPS uniquement)
+- SameSite: Strict (protection CSRF)
+- Max-Age: 8 heures
+
+=== clearCookieToken
+**Objectif:** Supprimer le cookie contenant le token JWT lors de la déconnexion
+**Quand:** Utilisé lors du logout
+**Pourquoi important:** Termine proprement la session utilisateur en invalidant le cookie côté client
+
+== Middleware jwtMiddleware
+
+=== Fonctionnement en mots simples
+
+Le middleware jwtMiddleware fonctionne comme un garde à l'entrée qui :
+
+1. **Récupère le token** depuis :
+   - L'en-tête Authorization (Bearer token) OU
+   - Le cookie httpOnly `access_token`
+2. **Vérifie la validité** du token en utilisant la clé secrète JWT_SECRET
+3. **Décode les informations utilisateur** contenues dans le token
+4. **Enrichit le contexte utilisateur** avec ses rôles et permissions depuis le cache ou la base de données
+5. **Stocke toutes ces informations** dans le contexte de la requête pour les middleware suivants
+6. **Laisse passer** la requête vers le middleware suivant
+
+=== Double support d'authentification
+
+Le middleware accepte le token JWT depuis deux sources :
+
+**1. Header Authorization (traditionnel) :**
+```http
+Authorization: Bearer eyJ0eXAiOiJKV1Q...
+```
+
+**2. Cookie httpOnly (recommandé) :**
+```http
+Cookie: access_token=eyJ0eXAiOiJKV1Q...
+```
+
+**Priorité :** Le header Authorization est vérifié en premier, puis le cookie si le header est absent.
+
+=== Informations stockées dans le contexte
+
+Après le passage du jwtMiddleware, le contexte de la requête contient les informations enrichies de l'utilisateur connecté :
+- **Son identifiant unique** (id)
+- **Son email**
+- **Son nom d'utilisateur** (username)
+- **Ses rôles** (roles[]) - Récupérés depuis le cache Deno KV ou la base de données
+- **Ses permissions** (permissions[]) - Récupérées depuis le cache ou la base
+- **Flag admin** (is_admin) - Booléen indiquant si l'utilisateur a le rôle ADMIN
+- Les timestamps de création et expiration du token
+
+=== Système de cache avec Deno KV
+
+Le middleware utilise un système de cache intelligent pour optimiser les performances :
+
+**1. Tentative de récupération depuis le cache :**
+- Le middleware essaie d'abord de récupérer les rôles/permissions depuis le cache Deno KV
+- Si présents, ils sont utilisés directement sans interroger la base de données
+
+**2. Fallback base de données :**
+- Si les données ne sont pas dans le cache ou sont vides
+- Le middleware récupère les rôles/permissions depuis userRoleService
+- Il met ensuite ces données en cache pour les prochaines requêtes
+
+**3. Gestion des erreurs :**
+- En cas d'erreur lors de la récupération, le système continue avec un contexte minimal
+- Approche sécurisée : échec en mode dégradé plutôt que blocage complet
+
+**Avantages :**
+- **Performance** : Évite les requêtes DB répétitives pour chaque requête
+- **Scalabilité** : Réduit la charge sur la base de données
+- **Fiabilité** : Fallback automatique en cas d'indisponibilité du cache
+
+== Routes utilisant jwtMiddleware
+
+=== Catégorie : Gestion des utilisateurs
+
+**Routes concernées :** Consultation des utilisateurs, modification de profil, changement de mot de passe, suppression
+
+**Pourquoi jwtMiddleware est nécessaire :**
+- Pour lister tous les utilisateurs : On doit vérifier que l'utilisateur connecté est administrateur
+- Pour consulter un profil utilisateur : On doit vérifier que l'utilisateur connecté consulte son propre profil
+- Pour modifier un profil : On doit vérifier que l'utilisateur connecté modifie son propre profil
+- Pour changer un mot de passe : On doit vérifier que l'utilisateur connecté change son propre mot de passe
+- Pour supprimer un utilisateur : On doit vérifier que l'utilisateur connecté est administrateur
+
+**Comment ça fonctionne :** Le middleware jwtMiddleware stocke l'identité de l'utilisateur connecté, puis les middlewares suivants utilisent cette identité pour vérifier les permissions
+
+=== Catégorie : Avis et notes sur les livres
+
+**Routes concernées :** Création d'avis, modification d'avis, suppression d'avis, création de notes, suppression de notes
+
+**Pourquoi jwtMiddleware est nécessaire :**
+- Pour créer un avis : On doit savoir quel utilisateur crée l'avis pour l'associer à son compte
+- Pour modifier un avis : On doit vérifier que l'utilisateur connecté modifie son propre avis
+- Pour supprimer un avis : On doit vérifier que l'utilisateur connecté supprime son propre avis
+- Pour créer une note : On doit savoir quel utilisateur donne la note pour l'associer à son compte
+- Pour supprimer une note : On doit vérifier que l'utilisateur connecté supprime sa propre note
+
+**Comment ça fonctionne :** Le middleware stocke l'identité de l'utilisateur, puis les controllers utilisent cette identité pour associer les avis/notes à l'utilisateur ou vérifier qu'il en est le propriétaire
+
+=== Catégorie : Listes de lecture
+
+**Routes concernées :** Consultation des listes accessibles, consultation des listes d'un utilisateur, consultation d'une liste spécifique, création de liste, modification de liste, suppression de liste
+
+**Pourquoi jwtMiddleware est nécessaire :**
+- Pour voir les listes accessibles : On doit filtrer selon l'utilisateur connecté et ses permissions
+- Pour voir les listes d'un utilisateur : On doit vérifier les permissions d'accès
+- Pour consulter une liste : On doit vérifier que l'utilisateur a le droit d'y accéder
+- Pour créer une liste : On doit associer la liste à l'utilisateur connecté
+- Pour modifier une liste : On doit vérifier que l'utilisateur connecté en est le propriétaire
+- Pour supprimer une liste : On doit vérifier que l'utilisateur connecté en est le propriétaire
+
+**Comment ça fonctionne :** Le middleware stocke l'identité de l'utilisateur, puis les services utilisent cette identité pour filtrer les données ou vérifier la propriété
+
+=== Catégorie : Bibliothèques personnelles
+
+**Routes concernées :** Création de bibliothèque, modification de visibilité, suppression de bibliothèque
+
+**Pourquoi jwtMiddleware est nécessaire :**
+- Pour créer une bibliothèque : On doit associer la bibliothèque à l'utilisateur connecté
+- Pour changer la visibilité : On doit vérifier que l'utilisateur connecté en est le propriétaire
+- Pour supprimer une bibliothèque : On doit vérifier que l'utilisateur connecté en est le propriétaire
+
+**Comment ça fonctionne :** Le middleware fournit l'identité de l'utilisateur aux controllers qui l'utilisent pour créer ou vérifier la propriété
+
+=== Catégorie : Administration du système
+
+**Routes concernées :** Gestion des auteurs, genres, rôles, permissions utilisateur, assignation de rôles
+
+**Pourquoi jwtMiddleware est nécessaire :**
+- Toutes ces opérations sont réservées aux administrateurs
+- On doit d'abord identifier l'utilisateur connecté avant de vérifier s'il a le rôle administrateur
+- Le système doit tracer qui effectue ces actions sensibles
+
+**Comment ça fonctionne :** Le middleware identifie l'utilisateur, puis le middleware de vérification des rôles utilise cette identité pour consulter les rôles de l'utilisateur en base de données
+
+=== Catégorie : Relations entre livres et données
+
+**Routes concernées :** Association livre-genre, ajout de livre à une bibliothèque, ajout de livre à une liste de lecture
+
+**Pourquoi jwtMiddleware est nécessaire :**
+- Ces actions doivent être associées à l'utilisateur qui les effectue
+- On doit vérifier que l'utilisateur a le droit d'effectuer ces actions sur ses propres collections
+- Le système doit tracer qui effectue ces modifications
+
+**Comment ça fonctionne :** Le middleware fournit l'identité de l'utilisateur aux controllers qui l'utilisent pour associer les actions à l'utilisateur connecté
+
+== Exemple de flux complet en mots simples
+
+=== Scénario : Un utilisateur veut changer son mot de passe
+
+==== Situation de départ
+L'utilisateur Jean Dupont, déjà connecté à l'application, veut changer son mot de passe. Il envoie une requête pour modifier le mot de passe de son compte utilisateur numéro 123.
+
+==== Étape 1 : La requête arrive
+La requête HTTP arrive avec :
+- L'URL qui indique quel utilisateur (numéro 123)
+- Un token JWT dans l'en-tête qui prouve l'identité de Jean
+- Les données : ancien mot de passe et nouveau mot de passe
+
+==== Étape 2 : Le middleware jwtMiddleware intervient
+Le middleware jwtMiddleware agit comme un garde de sécurité :
+- Il récupère le token JWT de Jean depuis l'en-tête de la requête
+- Il vérifie que ce token est valide et n'a pas expiré
+- Il décode le token pour extraire les informations de Jean : son ID, son email, son nom d'utilisateur
+- Il stocke ces informations dans un "casier" partagé pour que les étapes suivantes puissent les utiliser
+- Il laisse passer la requête vers l'étape suivante
+
+==== Étape 3 : Le middleware requireOwnership vérifie la propriété
+Ce middleware vérifie que Jean a le droit de modifier ce compte :
+- Il regarde dans le "casier" pour voir qui est connecté (Jean, ID user_123)
+- Il regarde l'URL pour voir quel compte doit être modifié (compte 123)
+- Il compare : Jean (user_123) ne peut pas modifier le compte 123 car ce n'est pas le même ID
+- Il bloque la requête et renvoie une erreur "Accès refusé"
+
+==== Alternative : Si les IDs correspondaient
+Si Jean avait voulu modifier son propre compte (user_123 → compte user_123) :
+- Le middleware aurait laissé passer
+- Le contrôleur aurait traité la demande de changement de mot de passe
+- Le service aurait vérifié l'ancien mot de passe avec Argon2
+- Il aurait haché le nouveau mot de passe avec Argon2
+- Il aurait mis à jour la base de données
+
+==== Rôle crucial du jwtMiddleware dans ce flux
+Sans le jwtMiddleware :
+- On ne saurait pas qui fait la demande
+- On ne pourrait pas vérifier si la personne a le droit de modifier ce compte
+- N'importe qui pourrait modifier le mot de passe de n'importe quel utilisateur
+
+Avec le jwtMiddleware :
+- On identifie précisément qui fait la demande
+- On peut vérifier ses droits
+- On peut tracer qui fait quoi dans le système
+
+== Le concept du contexte partagé en mots simples
+
+Le contexte Hono fonctionne comme un "sac à dos" que la requête porte avec elle :
+
+=== Au début de la requête
+Le sac à dos est presque vide, il contient juste les informations de base de la requête HTTP.
+
+=== Après le passage du jwtMiddleware
+Le middleware ajoute dans le sac à dos une carte d'identité de l'utilisateur connecté avec :
+- Son identifiant unique
+- Son email
+- Son nom d'utilisateur
+- Les informations du token (quand il a été créé, quand il expire)
+
+=== Pendant le reste du traitement
+Tous les middlewares et contrôleurs suivants peuvent regarder dans ce sac à dos pour :
+- Savoir qui fait la demande
+- Vérifier ses permissions
+- Associer ses actions à son compte
+
+=== Fin de la requête
+Quand la réponse est envoyée, le sac à dos disparaît. La prochaine requête aura son propre sac à dos.
+
+== Aspects sécurité en mots simples
+
+=== La clé secrète JWT_SECRET
+C'est comme la clé de chiffrement principale de l'application :
+- Elle sert à créer et vérifier tous les tokens JWT
+- Elle est stockée dans les variables d'environnement
+- Si quelqu'un la récupère, il peut créer de faux tokens et se faire passer pour n'importe quel utilisateur
+
+=== L'expiration des tokens
+Les tokens ont une durée de vie de 24 heures :
+- Après ce délai, ils deviennent invalides
+- L'utilisateur doit se reconnecter
+- Cela limite les dégâts si un token est volé
+
+=== Le hachage Argon2
+C'est la technique utilisée pour protéger les mots de passe :
+- Les mots de passe ne sont jamais stockés en clair
+- Ils sont transformés en hash impossible à décoder
+- Même si la base de données est volée, les vrais mots de passe restent secrets
+- Argon2 est très résistant aux attaques par force brute
+
+== Résumé : 43 endpoints protégés
+
+Le middleware jwtMiddleware protège 43 endpoints différents répartis en 6 catégories principales :
+- Gestion des comptes utilisateur
+- Avis et notes sur les livres
+- Listes de lecture personnelles
+- Bibliothèques personnelles
+- Administration du système
+- Relations entre livres et collections
+
+**Dans chaque cas, le middleware fournit l'identité de l'utilisateur connecté aux étapes suivantes pour qu'elles puissent vérifier les permissions et tracer les actions.**
+
+== Diagramme de séquence - Workflow Auth
+
+[mermaid]
+----
+sequenceDiagram
+    participant Client
+    participant JWTMiddleware
+    participant AuthUtils
+    participant RequireOwnership
+    participant Controller
+    participant Service
+    participant Database
+
+    Note over Client, Database: Exemple: PUT /api/users/123/password
+
+    Client->>JWTMiddleware: Requête avec Authorization: Bearer <token>
+    JWTMiddleware->>JWTMiddleware: Extraire token de l'en-tête
+    JWTMiddleware->>AuthUtils: verifyJWT(token)
+    AuthUtils->>AuthUtils: Vérifier signature avec JWT_SECRET
+    AuthUtils-->>JWTMiddleware: {id: "user_123", email: "john@example.com"}
+    JWTMiddleware->>JWTMiddleware: c.set('user', decoded)
+    JWTMiddleware->>RequireOwnership: next() - Passer au middleware suivant
+
+    RequireOwnership->>RequireOwnership: c.get('user') - Récupérer user du contexte
+    RequireOwnership->>RequireOwnership: c.req.param('id') - Récupérer ID cible
+    RequireOwnership->>RequireOwnership: Comparer user.id === param.id
+
+    alt Si user.id !== param.id
+        RequireOwnership-->>Client: 403 Access denied
+    else Si user.id === param.id
+        RequireOwnership->>Controller: next() - Autoriser l'accès
+    end
+
+    Controller->>Controller: c.get('user') - Utiliser données utilisateur
+    Controller->>Controller: c.get('validatedData') - Récupérer données validées
+    Controller->>Service: updatePassword(userId, currentPass, newPass)
+    Service->>AuthUtils: verifyPassword(storedHash, currentPass)
+    AuthUtils-->>Service: true/false
+    Service->>AuthUtils: hashPassword(newPassword)
+    AuthUtils-->>Service: hashedNewPassword
+    Service->>Database: UPDATE users SET password_hash = ...
+    Database-->>Service: Résultat mise à jour
+    Service-->>Controller: Succès
+    Controller-->>Client: 200 { message: "Password updated successfully" }
+----
