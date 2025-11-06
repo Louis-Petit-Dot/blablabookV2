@@ -18,6 +18,10 @@ RUN npm ci
 # Copier le code source
 COPY . .
 
+# Déclarer l'ARG pour l'URL de l'API
+ARG VITE_API_URL
+ENV VITE_API_URL=$VITE_API_URL
+
 # Build de production Vite optimisé
 RUN npm run build
 

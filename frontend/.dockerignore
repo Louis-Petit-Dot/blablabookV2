@@ -19,6 +19,7 @@ coverage/
 **/*.spec.tsx
 
 # Environment variables (secrets)
+.env
 .env.local
 .env.production
 .env*.local
