@@ -1,0 +1,8 @@
+# BlaBlaBook - Robots.txt
+# https://blablabook.online/robots.txt
+
+User-agent: *
+Allow: /
+
+# Sitemap
+Sitemap: https://blablabook.online/sitemap.xml
