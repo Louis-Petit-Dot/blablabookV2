@@ -1,4 +1,4 @@
-import { or, eq, sql } from "drizzle-orm";
+import { or, eq, sql, inArray } from "drizzle-orm";
 import createDatabaseConnexion from "../config/database.ts";
 import { Book, BookAuthor, Author } from "../models/index.ts";
 import { EntityValidator } from "../utils/validators.ts";
@@ -85,6 +85,20 @@ export const bookService = {
         // }));
 
         // NOUVEAU CODE - RANDOM DEPUIS DB LOCALE (performance optimale)
+        // Étape 1: Sélectionner d'abord les IDs de livres uniques
+        const randomBookIds = await db
+            .select({ id_book: Book.id_book })
+            .from(Book)
+            .orderBy(sql`RANDOM()`)
+            .limit(limit);
+
+        const bookIds = randomBookIds.map(row => row.id_book);
+
+        if (bookIds.length === 0) {
+            return { books: [], total_books: 0, source: "local-random" };
+        }
+
+        // Étape 2: Récupérer tous les détails avec auteurs pour ces livres
         const localBooks = await db
             .select({
                 id_book: Book.id_book,
@@ -93,14 +107,12 @@ export const bookService = {
                 publication_year: Book.publication_year,
                 image: Book.image,
                 openlibrary_key: Book.openlibrary_key,
-                // Jointure pour récupérer les auteurs
                 author_name: Author.author_name,
             })
             .from(Book)
             .leftJoin(BookAuthor, eq(Book.id_book, BookAuthor.id_book))
             .leftJoin(Author, eq(BookAuthor.id_author, Author.id_author))
-            .orderBy(sql`RANDOM()`)
-            .limit(limit);
+            .where(inArray(Book.id_book, bookIds));
 
         // Grouper les livres par ID et combiner les auteurs
         const booksMap = new Map();
