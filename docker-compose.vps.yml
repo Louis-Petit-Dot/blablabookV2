@@ -50,7 +50,7 @@ services:
   frontend:
     build:
       context: ./frontend
-      dockerfile: Dockerfile.dev  # Utilise dev, Vite sert en prod aussi
+      dockerfile: Dockerfile.prod  # Build optimisé pour production
       args:
         - VITE_API_URL=https://blablabook.online
     container_name: blablabook-frontend
