@@ -45,22 +45,32 @@ export function BookCard({ book, onClick, showActions = false, onDelete, onEdit 
   const getCoverUrl = () => {
     if (book.image) return book.image;
     if (book.cover_i) return `https://covers.openlibrary.org/b/id/${book.cover_i}-M.jpg`;
-    return '/placeholder-book.png';
+    return null;
   };
+
+  const coverUrl = getCoverUrl();
 
   return (
     <div className={styles.bookCard} onClick={handleClick}>
       <div className={styles.coverContainer}>
-        <img 
-          src={getCoverUrl()} 
-          alt={`Couverture de ${book.title}`}
-          className={styles.cover}
-          loading="lazy"
-          onError={(e) => {
-            const target = e.target as HTMLImageElement;
-            target.src = '/placeholder-book.png';
-          }}
-        />
+        {coverUrl ? (
+          <img
+            src={coverUrl}
+            alt={`Couverture de ${book.title}`}
+            className={styles.cover}
+            loading="lazy"
+            onError={(e) => {
+              const target = e.target as HTMLImageElement;
+              target.style.display = 'none';
+              if (target.nextElementSibling) {
+                (target.nextElementSibling as HTMLElement).style.display = 'flex';
+              }
+            }}
+          />
+        ) : null}
+        <div className={styles.placeholder} style={{ display: coverUrl ? 'none' : 'flex' }}>
+          Pas de couverture
+        </div>
         {book.average_rating && (
           <div className={styles.ratingBadge}>
             <StarFilledIcon /> {book.average_rating.toFixed(1)}
