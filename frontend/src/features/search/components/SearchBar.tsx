@@ -55,6 +55,7 @@ export function SearchBar({ onResults, onLoading, placeholder = "Rechercher un l
                     type="submit"
                     disabled={isLoading}
                     className={styles.button}
+                    aria-label="Rechercher"
                 >
                     {isLoading ? 'Recherche...' : <MagnifyingGlassIcon width={20} height={20} />}
                 </Button>

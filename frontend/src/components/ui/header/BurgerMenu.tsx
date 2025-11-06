@@ -62,7 +62,7 @@ export function BurgerMenu({ isAuthenticated }: BurgerMenuProps) {
         <>
         <Dialog.Root open={isOpen} onOpenChange={setIsOpen}>
 
-        <Dialog.Trigger className={Styles.burgerButton}>
+        <Dialog.Trigger className={Styles.burgerButton} aria-label="Ouvrir le menu de navigation">
         <HamburgerMenuIcon width={20} height={20} />
         </Dialog.Trigger>
 
